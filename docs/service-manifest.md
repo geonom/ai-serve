@@ -1,12 +1,12 @@
-# Integrating an app into ai-serve-ui's Services tab
+# Integrating an app into ai-serve's Apps & Services page
 
 (Besides manifest-described apps, the tab lists **built-in** services the backend runs itself — currently ComfyUI. They are opened and exposed the same way; start/stop go through the backend's own code.)
 
-Any local app can show up in the dashboard's **Services** tab (status, start, stop, open, log, and who can reach it via Tailscale). The app needs **no code changes** — it describes itself in one file in its project root.
+Any local app can show up in the dashboard's **Apps & Services** page (status, start, stop, open, log, and who can reach it via Tailscale). The app needs **no code changes** — it describes itself in one file in its project root.
 
 ## 1. Put the project under a service root
 
-The dashboard scans every **direct child** of its service roots (`SERVICE_ROOTS`, default `~/projects` and `~/Documents/Programming`) for a `llama-serve.service.json`. Hidden and symlinked directories are skipped.
+The dashboard scans every **direct child** of its service roots (`SERVICE_ROOTS`, default `./apps` and `./plugins` in the ai-serve folder) for a `llama-serve.service.json`. Hidden and symlinked directories are skipped.
 
 A project elsewhere can be added in ai-serve-ui's optional `services.json`; the same file can hide projects:
 
@@ -63,7 +63,7 @@ What the start does: runs `command` in the project directory, in its own session
 
 ## 3. Check it
 
-Open the Services tab, or:
+Open *Apps & Services*, or:
 
 ```bash
 curl -s localhost:8030/api/services | python3 -m json.tool
@@ -79,6 +79,9 @@ python3 -c "import json,jsonschema; jsonschema.validate(json.load(open('llama-se
 The schema checks shape; only the dashboard can check file-system facts (script exists and is executable, port not reserved or taken by another service).
 
 ## 4. Reachability via Tailscale
+
+Only with `NETWORK_PROVIDER=tailscale`; tried on the developer's tailnet (the *Only my Tailscale user* level live,
+*Whole tailnet* through unit tests only).
 
 Per service, the card's **Reachable for** chooses:
 

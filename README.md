@@ -4,7 +4,9 @@ A gateway for local AI on your own machine: language models (llama.cpp), text-to
 generation and document reading – behind **one** OpenAI-compatible API (`/v1/...`) plus a dashboard. Models are
 loaded when they're needed and unloaded when the memory is needed for something else.
 
-> **Alpha.** Runs on Linux (NVIDIA, AMD, Vulkan, CPU) and macOS (Apple Silicon). Windows will come later.
+> **Alpha.** Developed and tested on Linux with NVIDIA GPUs; first runs on one Apple Silicon Mac. AMD, Vulkan-only and
+> CPU-only machines are meant to work (the installer picks the matching llama.cpp build) but haven't been tried.
+> Windows will come later. What exactly has been tried: [Status](#status).
 
 > **A vibe coding project.** ai-serve was built largely through AI-assisted ("vibe") coding, for my own machines first.
 > It has a sizeable test suite and the security-relevant parts were written test-first, but it has not been audited.
@@ -20,16 +22,21 @@ git clone https://github.com/geonom/ai-serve.git && cd ai-serve
 ./install.sh
 ```
 
-The installer fetches the right llama.cpp build for this machine and offers a basic set of services – all optional,
-every download is verified by sha256:
+The installer fetches the right llama.cpp build for this machine and offers a basic set of services – all optional.
+llama.cpp, Gemma, Iris and the ComfyUI models are pinned and checked by sha256; Chatterbox and Whisper are fetched by
+their own libraries from Hugging Face (current version, not pinned). Sizes are estimates:
 
 | Offer | What | Approx. size |
 |---|---|---|
 | Gemma 4 E4B or E2B | Language model that also understands images | 5.5 / 3.8 GB |
 | Chatterbox Multilingual | Text-to-speech with voice cloning (through MLX on a Mac) | 3–7 GB |
-| Whisper (WhisperX small) | Speech-to-text with speaker diarization | 2–8 GB |
+| Whisper (WhisperX small) | Speech-to-text; telling speakers apart needs a free Hugging Face token (below) | 2–8 GB |
 | Iris-3B Turbo | Images from text descriptions (stable-diffusion.cpp) | 5.5 GB |
 | ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo; MOSS-Image (text in images, placing things in boxes) as a later download | ~30 GB |
+
+Speaker diarization uses pyannote's model, which is gated on Hugging Face: accept its terms on
+<https://huggingface.co/pyannote/speaker-diarization-community-1> and put `HF_TOKEN=<your token>` into
+`ai-serve.local.env`. Transcription works without it.
 
 Then: `./ai-serve start` → <http://localhost:8030> (another port: `AI_SERVE_PORT=8031 ./ai-serve start`;
 in the background: `./ai-serve start -d`; also `./ai-serve stop`, `restart`, `status`). The
@@ -51,16 +58,17 @@ from any git repository:
 
 A plugin is someone else's code: `plugin add` checks its manifest, and runs its `setup.sh` only after you confirm.
 
-Existing model servers such as **Ollama** or **LM Studio** are detected and can be added in the dashboard
-(*Rechner & Modelle → Weitere Modellserver*), on custom ports too. The other way round, the Spielwiese also works
-directly against an Ollama or LM Studio server. Writing a plugin: [docs/plugins.md](docs/plugins.md),
+Existing OpenAI-compatible model servers such as **Ollama** or **LM Studio** can be added in the dashboard
+(*Compute & models → More model servers*), on custom ports too. The other way round, the Spielwiese can talk to such a
+server directly. Both were tried with a plain llama-server standing in – not yet with Ollama or LM Studio themselves. Writing a plugin: [docs/plugins.md](docs/plugins.md),
 [docs/service-manifest.md](docs/service-manifest.md). API: [docs/API.md](docs/API.md).
 
 ## More machines
 
 Other machines of yours – a MacBook, a second PC, a Raspberry Pi – can lend their GPU or memory: install Tailscale on
 both, set `NETWORK_PROVIDER=tailscale`, then *Compute & models → Add a machine* gives a one-time command for the new
-device. Step by step: [docs/devices.md](docs/devices.md).
+device. Step by step: [docs/devices.md](docs/devices.md). Tried with a Linux PC and a MacBook; Raspberry Pi and
+Android not yet.
 
 ## Security
 
@@ -68,6 +76,23 @@ By default only this machine can use the dashboard and the API. Other devices on
 (`LLAMA_SERVE_API_KEY`, at least 32 characters, in `ai-serve.local.env`); a private overlay network (Tailscale,
 WireGuard …) can be configured. Nothing is exposed to the internet unless you set that up explicitly. ai-serve starts
 and stops programs on your machine – only add plugins and apps you trust.
+
+## Status
+
+What has actually been run, as of this release (one NVIDIA Linux machine, one Apple Silicon MacBook):
+
+| Part | Linux + NVIDIA | Mac (Apple Silicon) | Other |
+|---|---|---|---|
+| `./install.sh` on a clean copy, Gemma 4 E2B, chat with images | ✅ | installed and started; several Mac bugs found and fixed, chat not confirmed since | AMD / Vulkan / CPU: not tried |
+| Chatterbox (TTS), Whisper (STT) offers in `./ai-serve setup` | engines run here; the offers themselves not run on a clean machine | not tried (Chatterbox uses MLX there) | – |
+| Iris (sd-serve) | ✅ clean setup, Vulkan build | memory check fixed after a refusal; an image not confirmed | – |
+| ComfyUI (image-serve): Z-Image, Qwen-Image-Edit, style transfer, MOSS | ✅ clean setup | not tried (int8/fp8 weights are made for CUDA; may be slow or fail) | – |
+| Downloads from the Spielwiese / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
+| More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |
+| `./ai-serve plugin add <git-url>` | unit-tested; not yet with a real third-party repo | – | – |
+
+Everything else listed in the docs (other TTS engines, diarization, OCR, the GPU manager …) runs daily on the
+developer's NVIDIA machine, but not necessarily from a fresh install. Reports of what works elsewhere are welcome.
 
 ## Licenses
 

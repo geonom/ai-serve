@@ -65,7 +65,8 @@ def offers(m: Machine) -> List[Offer]:
               size_gb=tts_size, license="MIT", plugin="tts-serve",
               setup=(f"providers/{tts_provider}/setup.sh", "--download")),
         Offer(id="stt-whisper", label="Spracherkennung (Whisper, mit Sprechertrennung)",
-              what="Aufnahmen abschreiben (WhisperX small)" + ("" if m.nvidia else " -- auf der CPU"),
+              what="Aufnahmen abschreiben (WhisperX small)" + ("" if m.nvidia else " -- auf der CPU")
+                   + "; Sprechertrennung braucht einen Hugging-Face-Token (HF_TOKEN, siehe README)",
               size_gb=stt_size, license="BSD-2 / MIT", plugin="stt-serve", setup=("setup.sh", "--download")),
         Offer(id="image-iris", label="Bilder erzeugen (Iris-3B Turbo)",
               what="Bilder aus Beschreibungen in ~5-15 s; englische Schrift im Bild gelingt, deutsche nicht",

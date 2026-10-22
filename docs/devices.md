@@ -6,7 +6,12 @@ and it sends a request to a device only when it can't serve the model itself (no
 only exists on the device).
 
 The machines talk over a private network. This guide uses **Tailscale**; WireGuard, Nebula, NetBird, ZeroTier and
-Headscale work too (see the end).
+Headscale are meant to work too (see the end).
+
+> **Tried so far:** a Linux PC with NVIDIA (also with a Vulkan and a CPU build of llama.cpp) and a MacBook with Apple
+> Silicon (Metal build, autostart as a LaunchAgent, budget changed from the dashboard). **Not tried yet:** Raspberry Pi,
+> Android/Termux, AMD/ROCm builds, and anything without Tailscale – those paths exist in the code and have unit tests,
+> but no real device has run them.
 
 ## 1. Tailscale on both machines
 
@@ -40,7 +45,7 @@ else on your local network still needs `LLAMA_SERVE_API_KEY`.
    ```
 
    macOS: a LaunchAgent; Linux: a `systemd --user` service (on a machine nobody logs into, also run
-   `loginctl enable-linger $USER`); Android: Termux:Boot. `--uninstall-service` undoes it.
+   `loginctl enable-linger $USER`); Android: Termux:Boot (not tried yet). `--uninstall-service` undoes it.
 
 The device now appears under **Compute & models** with its accelerators.
 
@@ -76,10 +81,10 @@ best-fitting device in the background and answers `503` with `Retry-After` meanw
 
 Updating the agent: download `agent.py` again from `http://<coordinator>:8030/api/cluster/agent.py` and restart it.
 
-## Without Tailscale
+## Without Tailscale (not tried on real machines yet)
 
 Any overlay network where an address belongs to exactly one device (WireGuard, Nebula, NetBird, ZeroTier,
-Headscale) works with `NETWORK_PROVIDER=static` on the coordinator and a `network.json` next to it
+Headscale) is meant to work with `NETWORK_PROVIDER=static` on the coordinator and a `network.json` next to it
 (`NETWORK_CONFIG_FILE` to put it elsewhere):
 
 ```json

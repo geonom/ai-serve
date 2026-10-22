@@ -18,8 +18,8 @@ checked while downloading.
 
 ## Setup
 
-It comes with ai-serve (`plugins/image-serve`). Nothing has to be done by hand: the plugin starts even before ComfyUI
-is set up, and the Spielwiese or the dashboard (*Compute & models → Downloads*) offer ComfyUI and the models -- a
+It comes with ai-serve (`plugins/image-serve`). Nothing has to be done by hand (tried on Linux): the plugin starts even
+before ComfyUI is set up, and the Spielwiese or the dashboard (*Compute & models → Downloads*) offer ComfyUI and the models -- a
 model download sets up ComfyUI first. By hand:
 
 ```bash
@@ -40,8 +40,10 @@ draws them. ComfyUI runs on 127.0.0.1:8192 behind this plugin (not 8188,
 so a ComfyUI you already run keeps its port).
 
 **Status:** tested on Linux with NVIDIA (fresh setup with ComfyUI v0.42.4 and CUDA 13: Z-Image, Qwen-Image 2.1,
-editing, style transfer, MOSS with and without layout, int8 and bf16). On Apple Silicon ComfyUI runs on Metal
-but much slower; whether Qwen-Image-Edit's fp8 text encoder works there is not verified yet.
+editing, style transfer, MOSS with and without layout, int8 and bf16; a real bundle file downloaded and checked).
+ERNIE runs on the developer's machine but wasn't part of the fresh-setup test. **Apple Silicon: not tried.** setup.sh
+installs PyTorch with Metal there, but expect it to be much slower, and the int8 / fp8 / w4a8 weights (MOSS,
+Qwen-Image-Edit's text encoder) are made for CUDA – they may not work at all. AMD and CPU-only: not tried.
 
 ## License
 

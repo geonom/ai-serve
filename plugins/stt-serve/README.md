@@ -9,3 +9,8 @@ curl -s localhost:8060/v1/transcribe -H 'Content-Type: application/json' \
 ```
 
 Details: `CLAUDE.md`, API docs at `/docs`.
+
+**Status:** runs on the developer's Linux machine with NVIDIA (WhisperX, pyannote, Nemotron, MOSS-Transcribe, live
+sessions). Not tried: a clean setup through ai-serve's installer, a Mac, CPU only. Nemotron and MOSS-Transcribe need
+an NVIDIA GPU; pyannote's diarization model is gated: accept its terms on Hugging Face
+(pyannote/speaker-diarization-community-1) and set `HF_TOKEN` (with ai-serve: in `ai-serve.local.env`).

@@ -1,5 +1,9 @@
 # 🦙 AI-Serve Dashboard API Guide
 
+> Engines named below (OmniVoice, CosyVoice, Qwen3-TTS, VoxCPM, Nemotron, MOSS …) are only there once their plugin
+> provider is set up; the installer offers Chatterbox and Whisper. Everything here was exercised on the developer's
+> NVIDIA Linux machine – see the README's *Status* for what has been tried elsewhere.
+
 The AI-Serve Dashboard provides a RESTful API to manage multiple `llama-server` instances programmatically.
 
 ## Base URL
@@ -222,11 +226,11 @@ Retrieves the execution status, node progress, and final base64 image of a queue
 Returns a list of local preset voices, their absolute paths, and their stored transcriptions.
 
 **POST** `/api/tts/generate`
-Generates speech. Engine-agnostic — `engine` selects the backend; a caller that just wants speech omits it and gets the **server default** (`DEFAULT_TTS_ENGINE`, normally **`cosyvoice`**). An unspecified-engine request with no reference clip clones `DEFAULT_TTS_VOICE`; if tts-serve isn't available the request gets 503.
+Generates speech. Engine-agnostic — `engine` selects the backend; a caller that just wants speech omits it and gets the **server default** (`DEFAULT_TTS_ENGINE`; unset = the first installed engine – with the installer's offer that is Chatterbox). An unspecified-engine request with no reference clip clones `DEFAULT_TTS_VOICE`; if tts-serve isn't available the request gets 503.
 
 | `engine` | What | Runs in | Weights license |
 |---|---|---|---|
-| `"cosyvoice"` **(default)** | **CosyVoice 3** — clone from a reference clip, and with `variant="instruct"` a **free-form style description** ("slower, angrier, higher") *on the cloned voice*. Language is inferred from the text. | tts-serve | Apache-2.0 |
+| `"cosyvoice"` | **CosyVoice 3** — clone from a reference clip, and with `variant="instruct"` a **free-form style description** ("slower, angrier, higher") *on the cloned voice*. Language is inferred from the text. | tts-serve | Apache-2.0 |
 | `"omnivoice"` | Clone, **or** 23 fixed instruct-design tags (accent/age/pitch/gender/whisper) — never both. | tts-serve | **CC-BY-NC — non-commercial only** |
 | `"qwen3"` | 3 checkpoints via `variant` (`base` clone / `voice_design` style / `custom_voice` preset+style). Clone and style are mutually exclusive. | tts-serve | Apache-2.0 |
 | `"chatterbox"` | **Chatterbox-Multilingual** — clone + expressiveness knobs (`exaggeration` / `cfg_weight`). 23 languages incl. German. Output carries an inaudible Perth watermark. | tts-serve | MIT |
@@ -247,7 +251,7 @@ Every engine runs in **tts-serve** (`~/projects/tts-serve`, port 8050), a separa
 
 **GET** `/api/tts/status`
 Engine-agnostic TTS subsystem status for other processes to poll — is it up, still loading, or busy — without caring which engine serves the request.
-* Returns: `status` (`error` | `starting` | `loading` | `generating` | `idle` | `unloaded` — the worst engine state), `ready` (bool), `busy` (bool), `default_engine` (from `DEFAULT_TTS_ENGINE`, normally `"cosyvoice"`), and `engines` (`omnivoice`, `qwen3tts`, `cosyvoice`, `chatterbox`) with per-engine `status`/`loaded`/`device` (plus `variant`/`pid` for the workers).
+* Returns: `status` (`error` | `starting` | `loading` | `generating` | `idle` | `unloaded` — the worst engine state), `ready` (bool), `busy` (bool), `default_engine` (from `DEFAULT_TTS_ENGINE`, else the first installed engine, e.g. `"cosyvoice"`), and `engines` (`omnivoice`, `qwen3tts`, `cosyvoice`, `chatterbox`) with per-engine `status`/`loaded`/`device` (plus `variant`/`pid` for the workers).
 * The same payload is also embedded as the `tts` key of `GET /api/system/status`.
 
 **GET** `/api/logs/tts`
@@ -288,8 +292,8 @@ The gateway exposes OpenAI compatible endpoints under `http://localhost:8030/v1`
 
 **POST** `/v1/audio/speech`
 Generates binary WAV audio. The `voice` field can be a filename from the `voices/` directory (matched prefix, case-insensitive, e.g. `"synth-default"`), one of OpenAI's built-in voice names (ignored — treated as "no voice"), otherwise a voice **description**. (`voices/` may also hold local clips of real people — those are the operator's own data; don't rely on them in shared examples or publish anything derived from them.)
-* Engine follows `model`: `"qwen"` in it → Qwen3-TTS, `"chatter"` → Chatterbox, `"omni"` → OmniVoice; anything else (incl. `"tts-1"`) → the server default (**CosyVoice 3**).
-* **CosyVoice (default):** a matched preset `voice` → clone it (`zero_shot`, transcript from its `.txt`); a free-form `voice` → that description drives `instruct` on `DEFAULT_TTS_VOICE`; nothing → `zero_shot` on `DEFAULT_TTS_VOICE`.
+* Engine follows `model`: `"qwen"` in it → Qwen3-TTS, `"chatter"` → Chatterbox, `"omni"` → OmniVoice; anything else (incl. `"tts-1"`) → the server default (`DEFAULT_TTS_ENGINE`, else the first installed engine).
+* **CosyVoice:** a matched preset `voice` → clone it (`zero_shot`, transcript from its `.txt`); a free-form `voice` → that description drives `instruct` on `DEFAULT_TTS_VOICE`; nothing → `zero_shot` on `DEFAULT_TTS_VOICE`.
 * **OmniVoice:** the description is an instruct-design tag — narrow vocabulary (accent / age / pitch / whisper); anything outside it fails upstream (HTTP 500, model's error in `detail`).
 * **Qwen3:** a non-file `voice` routes to the **VoiceDesign** checkpoint (free-form, no fixed vocabulary). For reference-clip cloning or preset timbres, use `POST /api/tts/generate` with `engine="qwen3"` and `variant="base"` / `"custom_voice"`.
 

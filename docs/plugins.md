@@ -235,11 +235,10 @@ missing model should be downloadable from the Spielwiese and the dashboard inste
   fields checked by `normalize_install`), `POST /api/plugins/{plugin}/install {"id"}` (only `{"id"}`; dashboard
   access = this machine and the owner's devices). The Spielwiese forwards the start only for its owner.
 
-## Migration status
+## Which plugins exist
 
-Fixed 2026-10-21 (contracts, manifest field, jobs pattern; the capability list chosen by the owner). Moved behind
-the contracts: tts-serve (`tts`), stt-serve (`stt`), edge-door (`access`) -- the gateway has no URL, port or name of
-them any more; Strata is an `llm` plugin through its adapter (the separate `strata-plugin` app). Next: MOSS, Iris and
-ComfyUI into an `image` plugin; document reading
-(NuExtract3) can become a `documents` plugin. No plugin exists yet for video, audio, 3D, translation, moderation,
+Bundled with this release: tts-serve (`tts`), stt-serve (`stt`), sd-serve and image-serve (`image`; image-serve also
+carries MOSS-Image). Built and used on the developer's machine but **not part of this release**: an `access` plugin
+(the "door" for letting other people in, see `docs/identity.md`) and an `llm` adapter for Strata. Document reading
+(NuExtract3) still lives in the gateway; it could become a `documents` plugin. No plugin exists yet for video, audio, 3D, translation, moderation,
 tools or realtime -- the contracts are there so the first ones fit.

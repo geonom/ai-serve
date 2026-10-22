@@ -5,8 +5,11 @@ so the owner can let people they know use selected apps from anywhere, without a
 building its own login. Decided 2026-10-17 (user: apps shareable per person, "egal über
 welchen Service per Konto-Login / SSO / selbst angebotene User Identification").
 
-Status: **v1 draft**. Parts marked *(planned)* need the door (step 3) and do not exist yet;
-the manifest field `identity` and its guard are live.
+Status: **v1 draft.** In this release: the manifest field `identity` and its guard, the building blocks in
+`sdk/identity/` (unit-tested), and the Spielwiese as a `multi` app. **The door itself – an `access` plugin with the
+login, the per-app policy and the signed header – is not included**; it runs on the developer's own setup (a small
+VPS + Nextcloud as login) and isn't general enough to publish yet. Without it, only this machine (the owner) and the
+owner's Tailscale devices reach the apps.
 
 ## 1. The pieces
 

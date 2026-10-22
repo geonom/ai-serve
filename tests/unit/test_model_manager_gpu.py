@@ -91,3 +91,17 @@ def test_fetch_gpu_status_darwin_falls_back_to_psutil_when_ioreg_unavailable(mon
     gpu = status["gpus"][0]
     assert gpu["used"] == 20480  # whole-system psutil figure, unchanged fallback
     assert gpu["memory_source"] == "psutil_system_ram"
+
+
+def test_gpu_status_endpoint_keeps_the_apple_fields(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.main import app
+
+    async def fake():
+        return {"gpus": [{"index": 0, "name": "Apple Silicon (Unified Memory)", "total": 24576, "gpu_limit_mb": 16384,
+                          "used": 8944, "free": 7440, "usage_percent": 36.4, "driver_version": None,
+                          "memory_source": "ioreg_gpu"}]}
+    import backend.routers.dashboard as dash
+    monkeypatch.setattr(dash, "fetch_gpu_status", fake)
+    g = TestClient(app, client=("127.0.0.1", 50000)).get("/api/gpu/status").json()["gpus"][0]
+    assert g["memory_source"] == "ioreg_gpu" and g["gpu_limit_mb"] == 16384

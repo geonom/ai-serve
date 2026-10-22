@@ -174,6 +174,9 @@ class GPUInfo(BaseModel):
     free: int
     usage_percent: float
     driver_version: Optional[str] = None
+    # Apple Silicon only: where `used` comes from (ioreg_gpu | psutil_system_ram) and Metal's GPU limit
+    memory_source: Optional[str] = None
+    gpu_limit_mb: Optional[int] = None
 
 
 class GPUStatusResponse(BaseModel):

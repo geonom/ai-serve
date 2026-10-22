@@ -56,6 +56,12 @@ Existing model servers such as **Ollama** or **LM Studio** are detected and can 
 directly against an Ollama or LM Studio server. Writing a plugin: [docs/plugins.md](docs/plugins.md),
 [docs/service-manifest.md](docs/service-manifest.md). API: [docs/API.md](docs/API.md).
 
+## More machines
+
+Other machines of yours – a MacBook, a second PC, a Raspberry Pi – can lend their GPU or memory: install Tailscale on
+both, set `NETWORK_PROVIDER=tailscale`, then *Compute & models → Add a machine* gives a one-time command for the new
+device. Step by step: [docs/devices.md](docs/devices.md).
+
 ## Security
 
 By default only this machine can use the dashboard and the API. Other devices on your local network need a key

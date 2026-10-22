@@ -202,3 +202,12 @@ def test_set_budgets_passthrough(app, monkeypatch):
     r = c(app, "127.0.0.1").put("/api/cluster/nodes/macbook/budgets", json={"0": 9000})
     assert r.status_code == 200 and calls == [("PUT", "/v1/budgets", {"0": 9000})]
     assert c(app, "127.0.0.1").put("/api/cluster/nodes/macbook/budgets", json=["x"]).status_code == 422
+
+
+def test_no_one_time_code_without_a_private_network(app):
+    """Default install (NETWORK_PROVIDER=none): a code would be useless -- no device could reach or vouch for this
+    machine. Say what to switch on instead of handing out a command that can't work."""
+    network.set_active(None)
+    r = c(app, "127.0.0.1").post("/api/cluster/enrollments")
+    assert r.status_code == 409
+    assert "NETWORK_PROVIDER=tailscale" in r.json()["detail"] and "docs/devices.md" in r.json()["detail"]

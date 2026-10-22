@@ -43,6 +43,11 @@ def _agent_bytes() -> bytes:
 
 @router.post("/api/cluster/enrollments", status_code=201, summary="Create a one-time code to enroll a device")
 async def create_enrollment(request: Request):
+    if network.active().name == "none":   # default install: no device could reach or vouch for this machine
+        raise HTTPException(status_code=409, detail=(
+            "Adding devices needs a private network between the machines. Install Tailscale on both, set "
+            "NETWORK_PROVIDER=tailscale in ai-serve.local.env and restart ai-serve (./ai-serve restart) -- "
+            "see docs/devices.md (WireGuard and others: NETWORK_PROVIDER=static)."))
     e = BOOK.create()
     sha = hashlib.sha256(_agent_bytes()).hexdigest()
     host = request.headers.get("host", "")

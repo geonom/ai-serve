@@ -221,3 +221,27 @@ def test_room_is_free_minus_promised_and_zero_under_an_exclusive_holder(tmp_path
         return gpus, [Consumer(id="strata", kind="exclusive", label="Strata", root_pids={9})], {}
     monkeypatch.setattr(m, "snapshot", strata_snapshot)
     assert asyncio.run(m.room()) == {0: 0, 1: 0}
+
+
+def test_snapshot_on_unified_memory_measures_the_consumers(tmp_path, monkeypatch):
+    """Apple Silicon: no nvidia-smi -- the consumers' own processes are measured (Iris rendering showed "nothing
+    loaded" on a Mac, 2026-10-22)."""
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"))
+    iris = Consumer(id="sd-serve:sd-server", kind="image", label="Iris", root_pids={4242})
+
+    async def consumers():
+        return [iris]
+
+    async def gpu_status():
+        return {"gpus": [{"index": 0, "name": "Apple Silicon (Unified Memory)", "total": 24576, "free": 9300,
+                          "gpu_limit_mb": 16384}]}
+    import backend.model_manager as mm
+    monkeypatch.setattr(mm, "fetch_gpu_status", gpu_status)
+    monkeypatch.setattr(m, "consumers", consumers)
+    monkeypatch.setattr(local, "_unified_memory", lambda: True)
+    monkeypatch.setattr(local, "_nvidia_procs", lambda: pytest.fail("no nvidia-smi on a Mac"))
+    monkeypatch.setattr(local, "_footprint_mb", {4242: 5400}.get)
+    monkeypatch.setattr(local, "_children", lambda pid: [])
+    monkeypatch.setattr(local, "_parents", lambda pids: {})
+    _, cons, att = asyncio.run(m.snapshot())
+    assert cons == [iris] and att == {("sd-serve:sd-server", 0): 5400}

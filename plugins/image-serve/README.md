@@ -39,6 +39,13 @@ use a ComfyUI you already have, set `COMFYUI_DIR` (and `COMFYUI_PYTHON`, `COMFYU
 draws them. ComfyUI runs on 127.0.0.1:8192 behind this plugin (not 8188,
 so a ComfyUI you already run keeps its port).
 
+**Getting MOSS-Image on an older setup:** image-serve's own ComfyUI (`./ComfyUI`, e.g. set up before setup.sh pinned
+v0.42) is updated to the pinned release when you download MOSS-Image (Spielwiese → *With positions*, or the
+dashboard's *Downloads*) or run `./setup.sh` again; a running ComfyUI is restarted once it's idle. A ComfyUI of your
+own (`COMFYUI_DIR` in `.env`) is never changed: MOSS is then listed with the reason, and you update that ComfyUI
+yourself (`git fetch --depth 1 origin tag v0.42.4 && git checkout v0.42.4`, then its `requirements.txt` into its
+Python) or remove `COMFYUI_DIR` to let image-serve use its own.
+
 **Status:** tested on Linux with NVIDIA (fresh setup with ComfyUI v0.42.4 and CUDA 13: Z-Image, Qwen-Image 2.1,
 editing, style transfer, MOSS with and without layout, int8 and bf16; a real bundle file downloaded and checked).
 ERNIE runs on the developer's machine but wasn't part of the fresh-setup test. **Apple Silicon: not tried.** setup.sh

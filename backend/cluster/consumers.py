@@ -2,7 +2,7 @@
 tests/unit/test_gpu_consumers.py. Built on the cluster ledger (domain.py): one
 accelerator per local GPU, one lease per (consumer, GPU) sized by MEASURED VRAM."""
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from backend.cluster.domain import AccelKind, Accelerator, ConsumerKind, Lease, Ledger
 
@@ -34,6 +34,28 @@ class RoomPlan:
     evict: List[str]
     reason: str = ""
     exclusive_holder: Optional[str] = None   # refused because this holds the GPU exclusively
+
+
+UNIFIED_MIN_MB = 32   # below this a process is just an idle runtime, not a model
+
+
+def unified_procs(consumers: Sequence[Consumer], children: Callable[[int], Optional[Iterable[int]]],
+                  size_mb: Callable[[int], Optional[int]]) -> List[Tuple[int, int, int]]:
+    """Unified memory (Apple Silicon): there is no per-process GPU list like nvidia-smi's, so measure the processes of
+    every known consumer and their children instead -> (pid, 0, MiB), the same shape attribute_vram takes. Other
+    programs aren't measured (on unified memory everything uses RAM; only the GPU limit's remainder counts as free)."""
+    out, seen = [], set()
+    stack = [pid for c in consumers for pid in sorted(c.root_pids)]
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        mb = size_mb(pid)
+        if mb is not None and mb >= UNIFIED_MIN_MB:
+            out.append((pid, 0, int(mb)))
+        stack.extend(children(pid) or [])
+    return out
 
 
 def attribute_vram(procs: Iterable[Tuple[int, int, int]], parents: Mapping[int, int],

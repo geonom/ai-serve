@@ -114,14 +114,51 @@ def test_moss_refused_when_missing_or_unsupported(monkeypatch):
     assert r.status_code == 400 and "0.42" in r.json()["detail"]
 
 
-def test_moss_bundles_are_offered_only_where_moss_can_run(monkeypatch):
+def test_moss_bundles_are_offered_where_moss_can_run(monkeypatch):
     monkeypatch.setattr(config, "moss_possible", lambda: True)
-    ids = {i["id"] for i in client.get("/plugin/install").json()["items"]}
-    assert {"moss", "moss-bf16"} <= ids
+    items = {i["id"]: i for i in client.get("/plugin/install").json()["items"]}
+    assert {"moss", "moss-bf16"} <= set(items) and items["moss"]["state"] in ("missing", "installed")
+
+
+def test_an_older_comfyui_of_someone_elses_is_named_not_hidden(monkeypatch):
+    """COMFYUI_DIR points at a ComfyUI image-serve doesn't own and it's too old: MOSS isn't hidden (the page would then
+    only say "not available"), it's listed with the reason -- and never upgraded behind the owner's back."""
     monkeypatch.setattr(config, "moss_possible", lambda: False)
-    ids = {i["id"] for i in client.get("/plugin/install").json()["items"]}
-    assert not ids & {"moss", "moss-bf16"}
+    monkeypatch.setattr(config, "comfy_version", lambda: (0, 37, 0))
+    items = {i["id"]: i for i in client.get("/plugin/install").json()["items"]}
+    assert items["moss"]["state"] == "failed"
+    assert "v0.42" in items["moss"]["error"] and "COMFYUI_DIR" in items["moss"]["error"] and "0.37" in items["moss"]["error"]
     assert client.post("/plugin/install", json={"id": "moss"}).status_code == 409
+
+
+def test_own_older_comfyui_counts_as_upgradable(tmp_path, monkeypatch):
+    """image-serve's own ComfyUI (./ComfyUI, cloned by setup.sh) is brought to the pinned release by setup.sh."""
+    own = tmp_path / "ComfyUI"
+    own.mkdir()
+    (own / "main.py").write_text("")
+    (own / "comfyui_version.py").write_text('__version__ = "0.37.0"\n')
+    monkeypatch.setattr(config, "HERE", tmp_path)
+    monkeypatch.setattr(config, "COMFYUI_DIR", str(own))
+    assert config.own_comfy() and config.moss_possible() and config.moss_needs_upgrade()
+    elsewhere = tmp_path / "other"
+    elsewhere.mkdir()
+    (elsewhere / "main.py").write_text("")
+    (elsewhere / "comfyui_version.py").write_text('__version__ = "0.37.0"\n')
+    monkeypatch.setattr(config, "COMFYUI_DIR", str(elsewhere))
+    assert not config.own_comfy() and not config.moss_possible() and not config.moss_needs_upgrade()
+
+
+def test_moss_download_upgrades_an_own_old_comfyui_first(monkeypatch):
+    from image_serve import bundles
+    steps = []
+    monkeypatch.setattr(config, "moss_needs_upgrade", lambda: True)
+    monkeypatch.setattr(plugin, "_setup_comfy", lambda: steps.append("setup"))
+    monkeypatch.setattr(plugin, "_restart_comfy_if_idle", lambda: steps.append("restart"))
+    monkeypatch.setattr(bundles, "present", lambda b, root: False)
+    monkeypatch.setattr(bundles, "download", lambda b, root, progress=None, opener=None: steps.append(b))
+    plugin._install["moss"] = {"state": "downloading", "done": 0}
+    plugin._run_install("moss")
+    assert steps == ["setup", "restart", "moss"] and plugin._install["moss"]["state"] == "installed"
 
 
 def test_bf16_download_brings_the_shared_files_first(monkeypatch):

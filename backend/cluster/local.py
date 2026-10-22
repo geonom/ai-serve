@@ -20,7 +20,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 import psutil
 from backend.procs import processes
 
-from backend.cluster.consumers import (Consumer, Reservation, Reservations, attribute_vram, gpu_view,
+from backend.cluster.consumers import (Consumer, Reservation, Reservations, attribute_vram, gpu_view, unified_procs,
                                       plan_exclusive, plan_room)
 
 logger = logging.getLogger("ai-serve-ui.gpu")
@@ -45,6 +45,43 @@ def _nvidia_procs() -> List[Tuple[int, int, int]]:
             except ValueError:
                 pass
     return procs
+
+
+def _unified_memory() -> bool:
+    import platform
+    return platform.system() == "Darwin" and "arm64" in platform.machine()
+
+
+def _footprint_mb(pid: int) -> Optional[int]:
+    """Memory a process uses on Apple Silicon: its physical footprint (what Activity Monitor shows; Metal buffers are
+    charged to it) -- at least its resident size, since llama.cpp maps the model file and Metal uses those pages
+    directly. None when the process is gone. Not verified on a real Mac yet (written 2026-10-22)."""
+    try:
+        rss = psutil.Process(pid).memory_info().rss
+    except (psutil.Error, OSError):
+        return None
+    footprint = 0
+    try:
+        import ctypes
+
+        class _RusageV0(ctypes.Structure):    # <sys/resource.h> rusage_info_v0
+            _fields_ = [("uuid", ctypes.c_uint8 * 16)] + [(n, ctypes.c_uint64) for n in (
+                "user_time", "system_time", "pkg_idle_wkups", "interrupt_wkups", "pageins", "wired_size",
+                "resident_size", "phys_footprint", "proc_start_abstime", "proc_exit_abstime")]
+        info = _RusageV0()
+        lib = ctypes.CDLL("/usr/lib/libproc.dylib")
+        if lib.proc_pid_rusage(int(pid), 0, ctypes.byref(info)) == 0:
+            footprint = int(info.phys_footprint)
+    except Exception:
+        pass
+    return max(rss, footprint) >> 20
+
+
+def _children(pid: int) -> List[int]:
+    try:
+        return [c.pid for c in psutil.Process(pid).children()]
+    except (psutil.Error, OSError):
+        return []
 
 
 def _parents(pids) -> Dict[int, int]:
@@ -134,6 +171,12 @@ class LocalGpuManager:
     async def snapshot(self):
         from backend.model_manager import fetch_gpu_status
         gpus = (await fetch_gpu_status()).get("gpus", [])
+        if _unified_memory():   # no nvidia-smi: measure the known consumers' processes (consumers.unified_procs)
+            consumers = await self.consumers()
+            procs = await asyncio.to_thread(unified_procs, consumers, _children, _footprint_mb)
+            parents = await asyncio.to_thread(_parents, [p for p, _, _ in procs])
+            self._procs, self._parents = procs, parents
+            return gpus, consumers, attribute_vram(procs, parents, consumers)
         procs = await asyncio.to_thread(_nvidia_procs)
         parents = await asyncio.to_thread(_parents, [p for p, _, _ in procs])
         self._procs, self._parents = procs, parents

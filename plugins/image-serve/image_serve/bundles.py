@@ -80,7 +80,7 @@ BUNDLES: Dict[str, Dict[str, str]] = {
                        "description": "Edit images by instruction and transfer a style (with the 4-step Lightning LoRA)"},
     "ernie-turbo": {"label": "ERNIE-Image Turbo", "license": "Apache-2.0",
                     "description": "Fast images from text, a bit more illustrative"},
-    "moss": {"label": "MOSS-Image", "license": "Apache-2.0", "needs": "moss",
+    "moss": {"label": "MOSS-Image", "license": "Apache-2.0",
              "description": "Text in images, long prompts, things placed where you draw them; with the 4- and 8-step turbo LoRAs"},
     "moss-bf16": {"label": "MOSS-Image bf16 main model", "license": "Apache-2.0", "needs": "moss",
                   "description": "The full-precision main model (10 GB) for the bf16 MOSS variants; needs MOSS-Image"},

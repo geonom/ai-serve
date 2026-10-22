@@ -84,3 +84,8 @@ def test_a_model_download_sets_up_comfyui_first(monkeypatch):
     monkeypatch.setattr(plugin, "_install", {"z-image-turbo": {"state": "downloading", "done": 0}})
     plugin._run_install("z-image-turbo")
     assert order == ["setup", "download z-image-turbo"] and plugin._install["z-image-turbo"]["state"] == "installed"
+
+
+def test_a_bundle_never_needs_itself():
+    for b, info in bundles.BUNDLES.items():
+        assert info.get("needs") in (None, *[x for x in bundles.BUNDLES if x != b])

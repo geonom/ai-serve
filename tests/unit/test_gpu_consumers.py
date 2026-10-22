@@ -262,3 +262,24 @@ def test_gpu_view_keeps_the_apple_gpu_limit():
     view = gpu_view([{"index": 0, "total": 24576, "free": 13000, "gpu_limit_mb": 16384}], [], {})
     assert view[0]["gpu_limit_mb"] == 16384
     assert "gpu_limit_mb" not in gpu_view([{"index": 0, "total": 24576, "free": 2000}], [], {})[0]
+
+
+from backend.cluster.consumers import unified_procs
+
+
+def test_unified_memory_counts_each_consumers_process_tree():
+    """Apple Silicon has no nvidia-smi: the memory of every known consumer's processes (and their children) is
+    measured instead -- found on a Mac: Iris was rendering, the card said "nothing loaded"."""
+    cons = [Consumer("sd-serve:sd-server", "image", "Iris", {100}), Consumer("llm:8081", "llm", "gemma", {200})]
+    children = {100: [101], 101: [], 200: []}
+    sizes = {100: 6000, 101: 300, 200: 4100, 999: 50000}          # 999: some other program -- never measured
+    procs = unified_procs(cons, children.get, sizes.get)
+    assert sorted(procs) == [(100, 0, 6000), (101, 0, 300), (200, 0, 4100)]
+    att = attribute_vram(procs, {101: 100}, cons)
+    assert att == {("sd-serve:sd-server", 0): 6300, ("llm:8081", 0): 4100}
+
+
+def test_unified_memory_skips_gone_and_tiny_processes():
+    cons = [Consumer("a", "llm", "a", {1, 2}), Consumer("b", "llm", "b", {3})]
+    procs = unified_procs(cons, lambda pid: [], {1: 900, 2: None, 3: 12}.get)
+    assert procs == [(1, 0, 900)]          # 2 is gone (None), 3 is below the noise floor

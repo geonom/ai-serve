@@ -722,6 +722,9 @@ async def get_comfyui_task(task_id: str):
 # ComfyUI image generation internals
 # ---------------------------------------------------------------------------
 
+COMFYUI_START_TIMEOUT_S = int(os.environ.get("COMFYUI_START_TIMEOUT_S") or "120")
+
+
 async def _ensure_comfyui_running(gpu_id: Optional[int] = None):
     """Auto-starts ComfyUI if it isn't already up -- called from every generate/edit/
     style-transfer/models/workflows entry point so a caller never has to remember to
@@ -739,14 +742,19 @@ async def _ensure_comfyui_running(gpu_id: Optional[int] = None):
     if not status["ready"]:
         logger.info(f"ComfyUI not ready — starting automatically (gpu_id={gpu_id})...")
         await start_comfyui(ComfyUIStartRequest(port=state.comfyui_port, gpu_id=gpu_id))
-        for _ in range(15):
+        # a first start sets up its database and scans the models (found 2026-10-22: >15 s on a fresh ComfyUI;
+        # slower machines need more) -- wait up to COMFYUI_START_TIMEOUT_S, but not for a process that already died
+        for _ in range(COMFYUI_START_TIMEOUT_S):
             await asyncio.sleep(1)
             status = await get_comfyui_status()
             if status["ready"]:
                 logger.info("ComfyUI became ready.")
                 break
+            proc = state.comfyui_process
+            if proc is not None and proc.poll() is not None:
+                raise HTTPException(status_code=500, detail="ComfyUI exited while starting -- see its log (logs/comfyui.log).")
         else:
-            raise HTTPException(status_code=500, detail="ComfyUI failed to start in time.")
+            raise HTTPException(status_code=500, detail=f"ComfyUI didn't start within {COMFYUI_START_TIMEOUT_S} s -- see logs/comfyui.log.")
     elif gpu_id is not None and state.comfyui_gpu_id != gpu_id:
         logger.warning(
             f"ComfyUI is already running on gpu_id={state.comfyui_gpu_id}; "

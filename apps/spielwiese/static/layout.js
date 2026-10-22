@@ -244,10 +244,13 @@ async function layLoadVariants() {
         Downloads.panel(document.getElementById('dl-layout'), false, '');
     } else {
         await Downloads.ready();
-        const offered = Downloads.items().some(i => i.capability === 'image' && LAY_DOWNLOADS.includes(i.id) && i.state !== 'installed');
+        const mine = Downloads.items().filter(i => i.capability === 'image' && LAY_DOWNLOADS.includes(i.id) && i.state !== 'installed');
+        const offered = mine.length > 0, blocked = offered && mine.every(i => i.state === 'failed');
         Downloads.panel(document.getElementById('dl-layout'), 'image', offered
-            ? tx('Placing things by position needs MOSS-Image. It can be downloaded here.')
-            : tx('No model on this gateway can place things by position. That needs MOSS-Image (in the image-serve plugin, with ComfyUI v0.42 or newer) – it isn\'t available in this installation.'),
+            ? (blocked ? tx('Placing things by position needs MOSS-Image – below is why it can\'t be installed yet.')
+                       : tx('Placing things by position needs MOSS-Image. It can be downloaded here.'))
+            : { text: tx('No model here can place things by position yet. That needs MOSS-Image from the image-serve plugin (part of ai-serve, plugins/image-serve): if it is there, start it under Apps & Services in the dashboard – the download then shows up here. How to set it up:'),
+                href: 'https://github.com/geonom/ai-serve/blob/main/plugins/image-serve/README.md', link: tx('image-serve README') },
             LAY_DOWNLOADS);
     }
     layRender();

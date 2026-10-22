@@ -26,9 +26,20 @@ uv pip install -q --python .venv/bin/python -r requirements.txt
 set -a; . ./.env; set +a
 COMFYUI_DIR="${COMFYUI_DIR:-$HERE/ComfyUI}"
 
+UPGRADED=""
 if [ ! -d "$COMFYUI_DIR" ]; then
     echo "== ComfyUI $COMFYUI_TAG"
     git clone -q --depth 1 --branch "$COMFYUI_TAG" https://github.com/Comfy-Org/ComfyUI.git "$COMFYUI_DIR"
+elif [ "$(cd "$COMFYUI_DIR" && pwd -P)" = "$HERE/ComfyUI" ] && [ -d "$COMFYUI_DIR/.git" ]; then
+    # our own ComfyUI (cloned here before): bring it to the pinned release -- e.g. one set up before v0.42 (MOSS).
+    # A ComfyUI configured elsewhere (COMFYUI_DIR in .env) is never touched.
+    HAVE="$(git -C "$COMFYUI_DIR" describe --tags --exact-match 2>/dev/null || echo unknown)"
+    if [ "$HAVE" != "$COMFYUI_TAG" ]; then
+        echo "== ComfyUI $HAVE -> $COMFYUI_TAG"
+        git -C "$COMFYUI_DIR" fetch -q --depth 1 origin tag "$COMFYUI_TAG"
+        git -C "$COMFYUI_DIR" checkout -q "$COMFYUI_TAG"
+        UPGRADED=1
+    fi
 fi
 GGUF="$COMFYUI_DIR/custom_nodes/ComfyUI-GGUF"
 if [ ! -d "$GGUF" ]; then
@@ -49,6 +60,11 @@ if [ ! -x "$PY" ]; then
     elif [ "$(uname -s)" = "Darwin" ]; then TORCH_INDEX=""
     else TORCH_INDEX="https://download.pytorch.org/whl/cpu"; fi
     COMFYUI_DIR="$COMFYUI_DIR" TORCH_INDEX="$TORCH_INDEX" scripts/setup-comfyui-venv.sh "$(dirname "$(dirname "$PY")")"
+fi
+
+if [ -n "$UPGRADED" ] && [ -x "$PY" ]; then
+    echo "== ComfyUI's requirements for $COMFYUI_TAG"
+    uv pip install -q --python "$PY" -r "$COMFYUI_DIR/requirements.txt"
 fi
 
 if [ -n "$MODELS" ]; then

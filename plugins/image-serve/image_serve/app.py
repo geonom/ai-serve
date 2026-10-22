@@ -292,6 +292,32 @@ def _offered(bundle: str) -> bool:
     return bundle not in MOSS_BUNDLES or config.moss_possible()
 
 
+def _moss_blocked_reason() -> str:
+    v = config.comfy_version()
+    return (f"MOSS-Image needs ComfyUI v0.42 or newer; the ComfyUI set in COMFYUI_DIR (.env) is "
+            f"{'v' + '.'.join(map(str, v)) if v else 'of an unknown version'}. Update that ComfyUI, or remove "
+            f"COMFYUI_DIR so image-serve uses its own (plugins/image-serve/README.md).")
+
+
+def _moss_blocked_item(bundle: str) -> Dict[str, Any]:
+    """Listed with the reason rather than left out -- a page would otherwise only say "not available"."""
+    from image_serve import bundles
+    info = bundles.BUNDLES[bundle]
+    return {"id": bundle, "label": info["label"], "description": info["description"], "license": info["license"],
+            "size_mb": bundles.size_mb(bundle), "state": "failed", "done_mb": None, "error": _moss_blocked_reason()}
+
+
+def _restart_comfy_if_idle() -> None:
+    """After an upgrade a running ComfyUI still has the old code loaded: stop it when idle (the next image starts the
+    new one); when busy it keeps running and picks up the new version at its next start."""
+    if not (comfy.find_comfyui_process() or (state.comfyui_process and state.comfyui_process.poll() is None)):
+        return
+    try:
+        asyncio.run(comfy.stop_comfyui(force=False))
+    except Exception as e:   # 409 while busy, or anything else: the upgrade still counts
+        logger.info(f"ComfyUI keeps running on the old version until its next start ({e})")
+
+
 def _install_item(bundle: str) -> Dict[str, Any]:
     from image_serve import bundles
     from image_serve.config import COMFYUI_MODELS_ROOT
@@ -316,6 +342,9 @@ def _run_install(bundle: str) -> None:
     try:
         if not comfy_ready():                      # the engine first (a model alone can't run)
             _setup_comfy()
+        elif bundle in MOSS_BUNDLES and config.moss_needs_upgrade():   # our own ComfyUI, older than MOSS needs
+            _setup_comfy()                         # setup.sh brings it to the pinned release
+            _restart_comfy_if_idle()
         needs = bundles.BUNDLES[bundle].get("needs")
         if needs and not bundles.present(needs, COMFYUI_MODELS_ROOT):   # e.g. MOSS bf16 on top of MOSS's shared files
             bundles.download(needs, COMFYUI_MODELS_ROOT, progress)
@@ -339,7 +368,8 @@ def _run_comfy_setup() -> None:
 @app.get("/plugin/install")
 async def install_list():
     from image_serve import bundles
-    return {"items": [_comfy_item()] + [_install_item(b) for b in bundles.BUNDLES if _offered(b)]}
+    return {"items": [_comfy_item()] + [_install_item(b) if _offered(b) else _moss_blocked_item(b)
+                                        for b in bundles.BUNDLES]}
 
 
 @app.post("/plugin/install", status_code=202)
@@ -356,7 +386,7 @@ async def install_start(body: Any = Body(...)):
     if not isinstance(bundle, str) or bundle not in bundles.BUNDLES:
         raise HTTPException(status_code=404, detail=f"nothing to download under that id (one of {', '.join(bundles.BUNDLES)})")
     if not _offered(bundle):
-        raise HTTPException(status_code=409, detail="MOSS-Image needs ComfyUI v0.42 or newer; the ComfyUI configured here is older")
+        raise HTTPException(status_code=409, detail=_moss_blocked_reason())
     with _install_lock:
         if not (bundles.present(bundle, COMFYUI_MODELS_ROOT) and comfy_ready()) \
                 and _install.get(bundle, {}).get("state") != "downloading":

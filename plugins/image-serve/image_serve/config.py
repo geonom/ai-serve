@@ -50,13 +50,28 @@ def comfy_version():
     return tuple(int(x) for x in m.groups()) if m else None
 
 
-def moss_possible() -> bool:
-    """MOSS-Image can run here: the ComfyUI here is new enough -- or there is none yet, and setup.sh will clone its
-    pinned release (new enough). An older ComfyUI configured in .env (e.g. one the owner runs) hides MOSS."""
-    if not os.path.isfile(os.path.join(COMFYUI_DIR, "main.py")):
-        return True
+def own_comfy() -> bool:
+    """COMFYUI_DIR is image-serve's own ComfyUI (./ComfyUI, cloned by setup.sh) -- setup.sh may bring it to the
+    pinned release. A ComfyUI configured elsewhere in .env belongs to someone else and is never changed."""
+    return os.path.realpath(COMFYUI_DIR) == os.path.realpath(os.path.join(str(HERE), "ComfyUI"))
+
+
+def _new_enough() -> bool:
     v = comfy_version()
     return v is not None and v >= MOSS_MIN_COMFYUI
+
+
+def moss_needs_upgrade() -> bool:
+    """Our own ComfyUI is there but older than MOSS needs (e.g. set up before setup.sh pinned v0.42)."""
+    return own_comfy() and os.path.isfile(os.path.join(COMFYUI_DIR, "main.py")) and not _new_enough()
+
+
+def moss_possible() -> bool:
+    """MOSS-Image can run here: the ComfyUI here is new enough -- or it's none yet / our own, which setup.sh brings to
+    its pinned release (new enough). An older ComfyUI configured elsewhere in .env hides MOSS from the catalog."""
+    if not os.path.isfile(os.path.join(COMFYUI_DIR, "main.py")) or own_comfy():
+        return True
+    return _new_enough()
 
 
 def comfy_ready() -> bool:

@@ -78,7 +78,15 @@ const Downloads = (() => {
     function render(box, { capability, hint, only }) {
         const missing = capability === false ? [] : DownloadRules.missing(items, capability, only);
         box.replaceChildren();
-        if (hint) box.append(el('div', 'dl-hint', hint));
+        if (hint) {   // a string, or {text, href, link}: the text plus a link to how to get it
+            const h = el('div', 'dl-hint', typeof hint === 'string' ? hint : hint.text);
+            if (hint.href) {
+                const a = el('a', null, hint.link || hint.href);
+                a.href = hint.href; a.target = '_blank'; a.rel = 'noopener';
+                h.append(' ', a);
+            }
+            box.append(h);
+        }
         for (const i of missing) {
             const row = el('div', 'dl-row' + (i.state === 'failed' ? ' failed' : ''));
             const text = el('div', 'dl-text');

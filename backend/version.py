@@ -11,9 +11,18 @@ Do NOT bump for UI-only, ComfyUI, documentation, or other changes that
 don't touch the llama.cpp/model-serving path.
 """
 
-BACKEND_VERSION = 9
+BACKEND_VERSION = 10
 
 VERSION_LOG = [
+    {
+        "version": 10,
+        "date": "2026-10-22",
+        "change": (
+            "Apple Silicon: the GPU manager sees who uses the memory -- without nvidia-smi it measures each known "
+            "consumer's processes (physical footprint, at least RSS) instead of seeing nobody (Iris rendering showed "
+            "'nothing loaded', so nothing could be unloaded to make room either)."
+        ),
+    },
     {
         "version": 9,
         "date": "2026-10-22",

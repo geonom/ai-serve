@@ -148,8 +148,11 @@ def gpu_view(gpus: Sequence[Mapping[str, Any]], consumers: Sequence[Consumer],
                          "busy": c.busy, "pinned": c.pin in pinned, "last_used": c.last_used or None,
                          "evictable": c.evictable_kind and not c.busy and c.pin not in pinned,
                          "plugin": c.plugin or None})
-        out.append({"index": idx, "name": g.get("name"), "total_mb": int(g["total"]),
-                    "free_mb": int(g.get("free") or 0), "consumers": rows})
+        view = {"index": idx, "name": g.get("name"), "total_mb": int(g["total"]),
+                "free_mb": int(g.get("free") or 0), "consumers": rows}
+        if g.get("gpu_limit_mb"):          # unified memory (Apple): how much of the RAM the GPU may use
+            view["gpu_limit_mb"] = int(g["gpu_limit_mb"])
+        out.append(view)
     return out
 
 

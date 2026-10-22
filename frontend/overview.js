@@ -165,7 +165,7 @@ function overviewAccelerators() {
     const out = [];
     for (const g of d.consumers) {
         out.push({ where: 'local', machine: tx('this machine'), name: g.name || `GPU ${g.index}`, total: g.total_mb,
-                   free: Math.max(0, g.free_mb - (g.reserved_mb || 0)),
+                   limit: g.gpu_limit_mb || null, free: Math.max(0, g.free_mb - (g.reserved_mb || 0)),
                    parts: g.consumers.map((c, i) => ({ label: consumerLabel(c), mb: c.mb, color: consumerColor(c, i),
                        state: consumerState(c)[0] })) });
     }
@@ -220,7 +220,8 @@ function widgetCompute() {
                 el('div', { class: 'ov-accel-head' },
                     el('span', { class: 'strong' }, el('span', { text: a.name }),
                        el('span', { class: `where-tag ${a.where === 'local' ? 'where-local' : ''}`, text: a.where === 'local' ? tx('this machine') : `${a.machine} · ${tx('remote')}` })),
-                    el('span', { class: 'mono small muted', text: `${fmtGb(a.total - a.free)} / ${fmtGb(a.total)} GB${a.budget ? ' ' + tx('budget') : ''}` })),
+                    el('span', { class: 'mono small muted', text: a.budget ? tx('{free} GB free · budget {total} GB', { free: fmtGb(a.free), total: fmtGb(a.total) })
+                                                                  : freeMemText(a.free, a.total, a.limit) })),
                 bar,
                 el('div', { class: 'legend' }, ...(a.parts.length ? a.parts.map(p => el('span', {},
                     el('span', { class: 'swatch', style: `background:${p.color}` }),

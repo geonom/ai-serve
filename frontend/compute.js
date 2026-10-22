@@ -58,6 +58,14 @@ function applyComputeFilter() {
     if (remote) remote.hidden = computeShow === 'local';
 }
 
+// "How much is free" for one accelerator. Unified memory (Apple): the GPU may use only part of the RAM (Metal's
+// limit), and `free` is counted against that limit -- say so, or "13.8 of 24 GB free" reads like the whole RAM.
+function freeMemText(freeMb, totalMb, limitMb) {
+    return limitMb
+        ? tx('{free} GB free for models · GPU may use {limit} of {total} GB RAM', { free: fmtGb(freeMb), limit: fmtGb(limitMb), total: fmtGb(totalMb) })
+        : tx('{free} of {total} GB free', { free: fmtGb(freeMb), total: fmtGb(totalMb) });
+}
+
 // One accelerator: bar + consumer rows. rows: [{label, sub, mb, color, state, tone, actions[]}]
 function renderAccel({ name, kind, totalMb, freeText, rows, reservedMb = 0, reservations = [] }) {
     const bar = el('div', { class: 'usage-bar', role: 'img',
@@ -160,7 +168,7 @@ async function fetchCompute() {
     if (box.contains(document.activeElement) && document.activeElement !== document.body) return;
     const accels = data.gpus.map(g => renderAccel({
         name: g.name || `GPU ${g.index}`, kind: `GPU ${g.index}`, totalMb: g.total_mb,
-        freeText: tx('{free} of {total} GB free', { free: fmtGb(g.free_mb), total: fmtGb(g.total_mb) }),
+        freeText: freeMemText(g.free_mb, g.total_mb, g.gpu_limit_mb),
         rows: consumerRows(g), reservedMb: g.reserved_mb || 0, reservations: g.reservations || [],
     }));
     const side = document.getElementById('side-host');

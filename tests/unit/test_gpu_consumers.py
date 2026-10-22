@@ -255,3 +255,10 @@ def test_not_running_yet_starts_where_most_is_free():
 
 def test_moving_prefers_the_gpu_with_most_room():
     assert choose_gpu({0: 9000, 1: 1000, 2: 15000}, need_mb=8000, current=1, movable=True) == (2, "move")
+
+
+def test_gpu_view_keeps_the_apple_gpu_limit():
+    """Unified memory: the GPU may use only part of the RAM (Metal's limit) -- the UI shows it next to the total."""
+    view = gpu_view([{"index": 0, "total": 24576, "free": 13000, "gpu_limit_mb": 16384}], [], {})
+    assert view[0]["gpu_limit_mb"] == 16384
+    assert "gpu_limit_mb" not in gpu_view([{"index": 0, "total": 24576, "free": 2000}], [], {})[0]

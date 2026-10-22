@@ -334,6 +334,8 @@ I18N.add({
     "{a} accelerators on {m} machines": "{a} Beschleuniger auf {m} Rechnern",
     "{free} GB free · budget {budget} of {total} GB": "{free} GB frei · Budget {budget} von {total} GB",
     "{free} of {total} GB free": "{free} von {total} GB frei",
+    "{free} GB free for models · GPU may use {limit} of {total} GB RAM": "{free} GB frei für Modelle · die GPU darf {limit} der {total} GB RAM nutzen",
+    "{free} GB free · budget {total} GB": "{free} GB frei · Budget {total} GB",
     "{gb} GB · deleted only by hand": "{gb} GB · löschen nur von Hand",
     "{id} not removed: {err}": "{id} nicht entfernt: {err}",
     "{id}: budget for {kind} {index} set to {mb}": "{id}: Budget für {kind} {index} auf {mb} gesetzt",

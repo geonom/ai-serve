@@ -188,7 +188,11 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0)); req = json.loads(self.rfile.read(n))
         self._send({"choices": [{"message": {"content": "echo " + req["messages"][0]["content"]}}],
                     "args": args})
-HTTPServer(("127.0.0.1", port), H).serve_forever()
+import socketserver
+class S(HTTPServer):   # no getfqdn(): it can take ~35 s on a Mac (CI)
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self); self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
+S(("127.0.0.1", port), H).serve_forever()
 '''
 
 
@@ -924,3 +928,12 @@ def test_embedding_instance_end_to_end(setup, monkeypatch):
         assert "--embedding" in args and args[args.index("--pooling") + 1] == "mean"
     finally:
         agent.stop_all(a)
+
+
+def test_the_agent_server_does_not_resolve_its_own_name(monkeypatch, setup):
+    """http.server calls socket.getfqdn() while binding -- ~35 s on a Mac whose name resolution hangs (CI macOS)."""
+    import socket
+    cfg, _ = setup
+    monkeypatch.setattr(socket, "getfqdn", lambda *a: pytest.fail("getfqdn called"))
+    server = agent.make_server(conf(cfg))
+    server.server_close()

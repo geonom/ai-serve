@@ -19,8 +19,10 @@ def _free_port():
 
 def test_listening_ports_without_permission_for_all_connections(monkeypatch):
     port = _free_port()
-    proc = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # a plain listening socket -- http.server would first spend ~35 s in getfqdn() on a Mac CI runner
+    code = ("import socket,sys,time; s=socket.socket(); s.bind(('127.0.0.1', int(sys.argv[1]))); s.listen(); "
+            "time.sleep(120)")
+    proc = subprocess.Popen([sys.executable, "-c", code, str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(50):
             try:

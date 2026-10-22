@@ -14,6 +14,15 @@ import json
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
+
+
+class QuickHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the socket.getfqdn() in server_bind: on a Mac whose name resolution hangs it took
+    ~35 s before the server accepted connections (found in CI on macOS, 2026-10-22). server_name isn't used here."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
 
 _lock = threading.Lock()
 _state = {"model": None, "device": None}
@@ -98,7 +107,7 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
     print(f"OmniVoice worker listening on 127.0.0.1:{args.port}", file=sys.stderr, flush=True)
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    QuickHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

@@ -40,7 +40,16 @@ import uuid
 from dataclasses import dataclass
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
 from typing import Any, Dict, List, Optional
+
+
+class QuickHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the socket.getfqdn() in server_bind: on a Mac whose name resolution hangs it took
+    ~35 s before the server accepted connections (found in CI on macOS, 2026-10-22). server_name isn't used here."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
 
 VERSION = "0.1.0"
 MIN_TOKEN = 32
@@ -1200,7 +1209,7 @@ class Handler(BaseHTTPRequestHandler):
 def make_server(cfg: AgentConfig, config_path: Optional[str] = None) -> ThreadingHTTPServer:
     agent = Agent(cfg, config_path)
     handler = type("BoundHandler", (Handler,), {"agent": agent})
-    server = ThreadingHTTPServer((cfg.listen, cfg.port), handler)
+    server = QuickHTTPServer((cfg.listen, cfg.port), handler)
     server.daemon_threads = True
     server.agent = agent
     return server

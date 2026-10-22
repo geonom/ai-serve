@@ -20,6 +20,7 @@ import os
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlsplit
 
@@ -31,6 +32,14 @@ from spielwiese import quota
 from spielwiese.gallery import Gallery, GalleryError, decode_image
 from spielwiese.llama_serve_identity import Unauthenticated, identify as sdk_identify
 from spielwiese.policy import MAX_BODY_BYTES, Refused, forward_headers, route
+
+
+class QuickHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the socket.getfqdn() in server_bind: on a Mac whose name resolution hangs it took
+    ~35 s before the server accepted connections (found in CI on macOS, 2026-10-22). server_name isn't used here."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
 
 STATIC_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "static"))
 DATA_DIR = os.environ.get("SPIELWIESE_DATA") or os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "data"))
@@ -409,7 +418,7 @@ def make_server(port: int, gateway: str = "http://127.0.0.1:8030", host: str = "
     if identify is not None:
         attrs["identify"] = staticmethod(identify)
     handler = type("BoundHandler", (Handler,), attrs)
-    srv = ThreadingHTTPServer((host, port), handler)
+    srv = QuickHTTPServer((host, port), handler)
     srv.daemon_threads = True
     return srv
 

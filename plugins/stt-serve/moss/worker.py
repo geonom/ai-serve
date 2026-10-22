@@ -12,12 +12,21 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
 
 import torch
 from transformers import AutoModelForCausalLM, AutoProcessor
 
 from moss_transcribe_diarize import parse_transcript
 from moss_transcribe_diarize.inference_utils import build_transcription_messages, generate_transcription
+
+
+class QuickHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the socket.getfqdn() in server_bind: on a Mac whose name resolution hangs it took
+    ~35 s before the server accepted connections (found in CI on macOS, 2026-10-22). server_name isn't used here."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
 
 _MODEL_ID = "OpenMOSS-Team/MOSS-Transcribe-Diarize"
 _lock = threading.Lock()
@@ -85,7 +94,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = QuickHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"MOSS-Transcribe-Diarize worker listening on 127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
 

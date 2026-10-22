@@ -23,9 +23,12 @@ def _free_port():
 
 
 SERVER = """#!{python}
-import http.server, os, sys
+import http.server, os, socketserver, sys
+class S(http.server.HTTPServer):   # no getfqdn(): it can take ~35 s on a Mac (CI)
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self); self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
 port = int(os.environ["DEMO_PORT"])
-http.server.HTTPServer(("127.0.0.1", port), http.server.SimpleHTTPRequestHandler).serve_forever()
+S(("127.0.0.1", port), http.server.SimpleHTTPRequestHandler).serve_forever()
 """
 
 

@@ -112,3 +112,12 @@ class TestServer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_the_server_does_not_resolve_its_own_name(monkeypatch, tmp_path):
+    """http.server calls socket.getfqdn() while binding -- ~35 s on a Mac whose name resolution hangs (CI macOS):
+    the Spielwiese would answer only after that."""
+    import socket
+    monkeypatch.setattr(socket, "getfqdn", lambda *a: (_ for _ in ()).throw(AssertionError("getfqdn called")))
+    srv = make_server(0, "http://127.0.0.1:9", data_dir=str(tmp_path))
+    srv.server_close()

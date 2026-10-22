@@ -23,6 +23,15 @@ import os
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
+
+
+class QuickHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the socket.getfqdn() in server_bind: on a Mac whose name resolution hangs it took
+    ~35 s before the server accepted connections (found in CI on macOS, 2026-10-22). server_name isn't used here."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
 
 _REPO_DIR = os.environ.get("COSYVOICE_REPO_DIR", "")
 _MODEL_DIR = os.environ.get("COSYVOICE_MODEL_DIR", "") or (
@@ -179,7 +188,7 @@ def main():
     if not _MODEL_DIR or not os.path.isdir(_MODEL_DIR):
         print(f"CosyVoice model dir not found: {_MODEL_DIR!r} "
               f"(set COSYVOICE_MODEL_DIR or run scripts/setup_cosyvoice.sh)", file=sys.stderr, flush=True)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = QuickHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"CosyVoice worker listening on 127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
 

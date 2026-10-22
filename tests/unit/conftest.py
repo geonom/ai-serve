@@ -71,3 +71,11 @@ def _gpu_manager_never_touches_real_gpus(monkeypatch):
     monkeypatch.setattr(local.MANAGER, "raise_if_exclusive", raise_if_exclusive)
 
 
+
+
+@pytest.fixture(autouse=True)
+def _no_name_lookups(monkeypatch):
+    """Test servers built on http.server call socket.getfqdn() while binding -- ~35 s each on a Mac CI runner whose
+    name resolution hangs. Nothing in the tests needs the answer."""
+    import socket
+    monkeypatch.setattr(socket, "getfqdn", lambda name="": name or "localhost")

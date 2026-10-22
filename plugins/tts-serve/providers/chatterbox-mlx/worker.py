@@ -14,6 +14,15 @@ import os
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socketserver
+
+
+class QuickHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the socket.getfqdn() in server_bind: on a Mac whose name resolution hangs it took
+    ~35 s before the server accepted connections (found in CI on macOS, 2026-10-22). server_name isn't used here."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
 
 MODEL = os.environ.get("CHATTERBOX_MLX_MODEL", "mlx-community/chatterbox-multilingual-v3")
 _lock = threading.Lock()
@@ -92,7 +101,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, required=True)
     a = ap.parse_args()
-    server = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    server = QuickHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"Chatterbox (MLX) worker listening on 127.0.0.1:{a.port}", flush=True)
     server.serve_forever()
 

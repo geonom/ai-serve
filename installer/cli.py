@@ -5,16 +5,21 @@
     ./ai-serve offers                     what setup can install, with sizes
     ./ai-serve plugin add <git-url> [--name N]   another app or plugin from a git repository
     ./ai-serve plugin list
-    ./ai-serve start                      the gateway (http://localhost:8030)
+    ./ai-serve start [-d]                 the gateway (http://localhost:8030); -d: in the background
+    ./ai-serve stop [--all]               stop it (--all: also the apps it started and every loaded model)
+    ./ai-serve restart | status
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
 import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 from typing import List, Optional
 
@@ -25,6 +30,117 @@ from installer import offers as O  # noqa: E402
 from installer import plugins as P  # noqa: E402
 
 ENV_FILE = HERE / "ai-serve.local.env"
+
+
+def gateway_port() -> int:
+    """AI_SERVE_PORT from the environment, else from ai-serve.local.env, else 8030."""
+    v = os.environ.get("AI_SERVE_PORT")
+    if not v and ENV_FILE.exists():
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("AI_SERVE_PORT="):
+                v = line.split("=", 1)[1].strip()
+    return int(v) if v and v.isdigit() else 8030
+
+
+def call(path: str, method: str = "GET", timeout: float = 5.0):
+    """The local gateway's answer as JSON, or None when it doesn't answer (this machine counts as the owner)."""
+    req = urllib.request.Request(f"http://127.0.0.1:{gateway_port()}{path}", method=method,
+                                 data=b"{}" if method == "POST" else None, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except (OSError, ValueError):
+        return None
+
+
+def running() -> bool:
+    return call("/api/version", timeout=2) is not None
+
+
+def wait_for(up: bool, seconds: float) -> bool:
+    end = time.time() + seconds
+    while time.time() < end:
+        if running() == up:
+            return True
+        time.sleep(0.5)
+    return running() == up
+
+
+def start(background: bool) -> int:
+    url = f"http://localhost:{gateway_port()}"
+    if running():
+        print(f"ai-serve is already running -> {url}  (./ai-serve stop | restart)")
+        return 0
+    if not background:
+        os.execv("/bin/bash", ["bash", str(HERE / "launcher.sh")])
+    log = HERE / "logs" / "launcher.log"
+    log.parent.mkdir(exist_ok=True)
+    with open(log, "ab") as out:
+        subprocess.Popen(["bash", str(HERE / "launcher.sh")], cwd=HERE, stdout=out, stderr=subprocess.STDOUT,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+    print("Starting ai-serve in the background (log: logs/launcher.log) …")
+    if wait_for(True, 180):
+        print(f"ai-serve runs -> {url}")
+        return 0
+    print("ai-serve didn't come up within 3 minutes -- see logs/launcher.log", file=sys.stderr)
+    return 1
+
+
+def stop(everything: bool) -> int:
+    if not running():
+        print("ai-serve isn't running.")
+        (HERE / "kill.flag").unlink(missing_ok=True)
+        return 0
+    if everything:
+        services = (call("/api/services") or {}).get("services", [])
+        for svc in services:
+            for inst in svc.get("instances", []):
+                req = urllib.request.Request(f"http://127.0.0.1:{gateway_port()}/api/services/{svc['id']}/stop",
+                                             data=json.dumps({"pid": inst["pid"]}).encode(), method="POST",
+                                             headers={"Content-Type": "application/json"})
+                try:
+                    urllib.request.urlopen(req, timeout=30).close()
+                    print(f"  stopped {svc.get('name') or svc['id']}")
+                except OSError as e:
+                    print(f"  {svc['id']}: not stopped ({e})", file=sys.stderr)
+        r = call("/api/models/unload_all", "POST", timeout=60)
+        if r is not None:
+            print(f"  models: {r.get('message') or 'unloaded'}")
+    (HERE / "kill.flag").touch()            # launcher.sh stops the gateway and ends
+    if wait_for(False, 30):
+        print("ai-serve stopped." + ("" if everything else
+              "  (Apps and loaded models keep running; the next start takes them over. --all stops them too.)"))
+        return 0
+    print("ai-serve is still answering -- was it started without ./ai-serve start (launcher.sh)? "
+          "Then stop that process yourself.", file=sys.stderr)
+    return 1
+
+
+def restart() -> int:
+    if not running():
+        print("ai-serve isn't running -- starting it in the background.")
+        return start(True)
+    (HERE / "restart.flag").touch()         # launcher.sh restarts the gateway
+    wait_for(False, 20)
+    if wait_for(True, 180):
+        print(f"ai-serve restarted -> http://localhost:{gateway_port()}")
+        return 0
+    print("ai-serve didn't come back -- see logs/launcher.log or the terminal it runs in", file=sys.stderr)
+    return 1
+
+
+def status() -> int:
+    v = call("/api/version", timeout=2)
+    if v is None:
+        print(f"ai-serve isn't running (port {gateway_port()}).")
+        return 1
+    svcs = (call("/api/services") or {}).get("services", [])
+    up = [s.get("name") or s["id"] for s in svcs if s.get("instances")]
+    loaded = [i.get("model") for i in (call("/api/status") or {}).get("instances", []) if i.get("model")]
+    print(f"ai-serve runs -> http://localhost:{gateway_port()}  (backend {v.get('version', '?')})")
+    print(f"  apps running: {', '.join(up) or 'none'}")
+    print(f"  models loaded: {', '.join(loaded) or 'none'}")
+    return 0
 
 
 def machine() -> O.Machine:
@@ -128,7 +244,12 @@ def main(argv=None) -> int:
     pa.add_argument("--name")
     pa.add_argument("--yes", action="store_true", help="also run its setup.sh without asking")
     psub.add_parser("list")
-    sub.add_parser("start")
+    st = sub.add_parser("start")
+    st.add_argument("-d", "--background", action="store_true", help="run in the background (log: logs/launcher.log)")
+    sp = sub.add_parser("stop")
+    sp.add_argument("--all", action="store_true", help="also stop the apps it started and unload every model")
+    sub.add_parser("restart")
+    sub.add_parser("status")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "setup":
@@ -142,7 +263,13 @@ def main(argv=None) -> int:
             for r in P.listing(HERE / "apps", HERE / "plugins"):
                 print(f"{r.get('id', '?'):20} {r['dir']}" + (f"  ({r['error']})" if "error" in r else f"  {', '.join(r['provides'])}"))
         elif a.cmd == "start":
-            os.execv("/bin/bash", ["bash", str(HERE / "launcher.sh")])
+            return start(a.background)
+        elif a.cmd == "stop":
+            return stop(a.all)
+        elif a.cmd == "restart":
+            return restart()
+        elif a.cmd == "status":
+            return status()
     except (P.PluginError, ValueError) as e:
         print(f"ai-serve: {e}", file=sys.stderr)
         return 2

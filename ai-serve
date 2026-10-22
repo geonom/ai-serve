@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ai-serve's command: ./ai-serve setup | offers | plugin add <git-url> | plugin list | start   (see installer/cli.py)
+# ai-serve's command: ./ai-serve setup | offers | plugin add <git-url> | plugin list | start [-d] | stop [--all] | restart | status
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 [ -x "$DIR/venv/bin/python" ] || { echo "Run ./install.sh first." >&2; exit 1; }

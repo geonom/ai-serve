@@ -1,0 +1,1 @@
+This is a synthetic default voice for the text-to-speech system. It was generated from a written description, not cloned from any real person, and is used only when a request provides no reference clip of its own.

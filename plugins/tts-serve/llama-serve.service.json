@@ -1,0 +1,34 @@
+{
+  "id": "tts-serve",
+  "name": "tts-serve",
+  "description": "TTS engines (OmniVoice, CosyVoice 3, Chatterbox, VoxCPM2, Qwen3-TTS) behind one API; workers start on demand.",
+  "command": [
+    "./run.sh"
+  ],
+  "env": {
+    "TTS_SERVE_PORT": "{port}"
+  },
+  "port": 8050,
+  "bind": "127.0.0.1",
+  "match": [
+    "tts_serve.app:app"
+  ],
+  "open_path": "/docs",
+  "health_path": "/health",
+  "category": "ai",
+  "icon": "speaker",
+  "ui": false,
+  "status_path": "/v1/status",
+  "identity": "none",
+  "maturity": "beta",
+  "provides": {
+    "tts": {
+      "catalog": "/v1/engines",
+      "generate": "/v1/generate",
+      "status": "/v1/status",
+      "release": "/v1/release",
+      "logs": "/v1/logs",
+      "gpu": "shared"
+    }
+  }
+}

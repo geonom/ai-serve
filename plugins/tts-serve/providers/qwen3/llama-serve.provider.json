@@ -1,0 +1,97 @@
+{
+  "id": "qwen3",
+  "name": "Qwen3-TTS",
+  "description": "Three checkpoints: base (clone, needs ref_text), voice_design (voice from a description), custom_voice (9 preset speakers). One held at a time.",
+  "capability": "tts",
+  "command": [
+    "./venv/bin/python",
+    "worker.py",
+    "--port",
+    "{port}"
+  ],
+  "gpu": 0,
+  "vram_mb": 8000,
+  "startup_timeout_s": 60,
+  "keep_alive_s": 60,
+  "aliases": [
+    "qwen3tts",
+    "qwen3-tts",
+    "qwen"
+  ],
+  "variants": [
+    "base",
+    "voice_design",
+    "custom_voice"
+  ],
+  "variant_swaps": true,
+  "default_reference": false,
+  "license": "Apache-2.0",
+  "setup": "./setup.sh",
+  "languages": [
+    "en",
+    "zh",
+    "ja",
+    "ko",
+    "de",
+    "fr",
+    "ru",
+    "pt",
+    "es",
+    "it"
+  ],
+  "modes": [
+    {
+      "variant": "base",
+      "label": "Stimme klonen",
+      "description": "Klont die Stimme aus Aufnahme und Transkript.",
+      "inputs": {
+        "reference": "required",
+        "ref_text": "required"
+      }
+    },
+    {
+      "variant": "voice_design",
+      "label": "Stimme beschreiben",
+      "description": "Baut eine Stimme aus einer Beschreibung, ohne Aufnahme.",
+      "inputs": {
+        "instruct": "required"
+      },
+      "instruct": {
+        "kind": "text",
+        "hint": "Klang, Alter, Gefühl, Sprechweise",
+        "examples": [
+          "A warm, calm female voice in her forties, speaking slowly.",
+          "Ein aufgeregter Junge, etwa zehn Jahre alt, spricht schnell."
+        ]
+      }
+    },
+    {
+      "variant": "custom_voice",
+      "label": "Fertige Sprecher",
+      "description": "Einer von neun eingebauten Sprechern, optional mit Stilangabe.",
+      "inputs": {
+        "speaker": "required",
+        "instruct": "optional"
+      },
+      "speakers": [
+        "Vivian",
+        "Serena",
+        "Uncle_Fu",
+        "Dylan",
+        "Eric",
+        "Ryan",
+        "Aiden",
+        "Ono_Anna",
+        "Sohee"
+      ],
+      "instruct": {
+        "kind": "text",
+        "hint": "Stil (optional)",
+        "examples": [
+          "Sprich traurig.",
+          "Speak with excitement."
+        ]
+      }
+    }
+  ]
+}

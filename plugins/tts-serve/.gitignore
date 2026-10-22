@@ -1,0 +1,6 @@
+.venv/
+logs/
+__pycache__/
+.pytest_cache/
+providers/*/venv
+providers/*/repo

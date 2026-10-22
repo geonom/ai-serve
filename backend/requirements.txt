@@ -1,0 +1,10 @@
+fastapi
+python-multipart   # FastAPI needs it for File/Form uploads but doesn't declare it
+uvicorn[standard]
+psutil
+httpx
+pydantic
+aiohttp
+jsonschema
+pymupdf
+PyJWT[crypto]>=2.10  # sdk/identity tests (tests/unit/test_identity_sdk.py)

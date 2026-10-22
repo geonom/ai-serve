@@ -1,0 +1,73 @@
+{
+  "id": "omnivoice",
+  "name": "OmniVoice",
+  "description": "Clone a reference clip, or (without one) a voice from 23 instruct-design tags. Weights CC-BY-NC: non-commercial only.",
+  "capability": "tts",
+  "command": [
+    "./venv/bin/python",
+    "worker.py",
+    "--port",
+    "{port}"
+  ],
+  "gpu": 0,
+  "vram_mb": 2500,
+  "startup_timeout_s": 60,
+  "keep_alive_s": 60,
+  "aliases": [
+    "omni"
+  ],
+  "default_reference": false,
+  "license": "CC-BY-NC-4.0",
+  "setup": "./setup.sh",
+  "modes": [
+    {
+      "variant": null,
+      "label": "Klonen oder Stimme beschreiben",
+      "description": "Mit Aufnahme wird die Stimme geklont, ohne Aufnahme aus Stichworten gebaut – nie beides zugleich.",
+      "inputs": {
+        "reference": "optional",
+        "ref_text": "optional",
+        "instruct": "optional"
+      },
+      "instruct": {
+        "kind": "tags",
+        "hint": "Höchstens ein Stichwort je Gruppe; nur ohne Aufnahme.",
+        "groups": [
+          [
+            "male",
+            "female"
+          ],
+          [
+            "child",
+            "teenager",
+            "young adult",
+            "middle-aged",
+            "elderly"
+          ],
+          [
+            "very low pitch",
+            "low pitch",
+            "moderate pitch",
+            "high pitch",
+            "very high pitch"
+          ],
+          [
+            "whisper"
+          ],
+          [
+            "american accent",
+            "british accent",
+            "australian accent",
+            "canadian accent",
+            "indian accent",
+            "chinese accent",
+            "korean accent",
+            "japanese accent",
+            "portuguese accent",
+            "russian accent"
+          ]
+        ]
+      }
+    }
+  ]
+}

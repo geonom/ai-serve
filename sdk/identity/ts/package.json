@@ -1,0 +1,10 @@
+{
+  "name": "llama-serve-identity",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reference 'who is this?' for ai-serve-ui apps (docs/identity.md). Copy llamaServeIdentity.ts into an app; needs jose.",
+  "scripts": { "test": "vitest run" },
+  "dependencies": { "jose": "^6.2.0" },
+  "devDependencies": { "vitest": "^3.2.0", "typescript": "^5.6.0" }
+}

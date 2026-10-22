@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ai-serve</title>
+    <link rel="stylesheet" href="style.css?v=1.4">
+    <link rel="stylesheet" href="redesign.css?v=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="side-nav" aria-label="Hauptnavigation">
+        <div class="side-brand">
+            <div class="side-brand-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></div>
+            <div class="side-brand-text"><span class="side-brand-name">ai-serve</span><span id="side-host" class="side-brand-host">Koordinator</span></div>
+        </div>
+        <nav class="tabs side-tabs">
+            <button class="tab-link active" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>Übersicht</button>
+            <span class="side-group">Ressourcen</span>
+            <button class="tab-link" data-tab="compute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>Rechner &amp; Modelle<span id="side-count-compute" class="side-count"></span></button>
+            <span class="side-group">Apps</span>
+            <button class="tab-link" data-tab="services"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Apps &amp; Services<span id="side-count-services" class="side-count"></span></button>
+            <span class="side-group">System</span>
+            <button class="tab-link" data-tab="api-doc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg>Zugang &amp; API</button>
+            <button class="tab-link" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>Protokolle</button>
+        </nav>
+        <div class="side-footer">
+            <div class="status-indicators-container">
+                <div id="status-backend" class="status-indicator offline" title="Backend"><span class="dot"></span><span class="status-label">Gateway</span></div>
+                <div id="status-comfyui" class="status-indicator offline" title="ComfyUI"><span class="dot"></span><span class="status-label">ComfyUI</span></div>
+            </div>
+            <button id="theme-toggle" class="side-theme" title="Hell/Dunkel umschalten">Hell / Dunkel</button>
+        </div>
+    </aside>
+    <main class="container">
+
+        <section id="overview-tab" class="tab-content active">
+            <header class="page-head">
+                <div>
+                    <h1>Übersicht</h1>
+                    <p class="page-sub" id="overview-sub">Alles, was gerade läuft &mdash; auf einen Blick.</p>
+                </div>
+                <div class="page-actions">
+                    <button id="overview-arrange-btn" class="btn btn-secondary" aria-pressed="false">Anordnen</button>
+                    <button class="btn btn-secondary" data-goto="services">Zur App-Übersicht</button>
+                    <button class="btn btn-primary" data-goto="compute">Modell laden</button>
+                </div>
+            </header>
+            <div id="overview-arrange-bar" class="arrange-bar" hidden></div>
+            <div id="overview-widgets" class="widget-flow"><div class="empty-state">Lade…</div></div>
+        </section>
+
+        <section id="compute-tab" class="tab-content">
+            <header class="page-head">
+                <div>
+                    <h1>Rechner &amp; Modelle</h1>
+                    <p class="page-sub">Alle Beschleuniger an einem Ort: dieser Rechner und die anderen Geräte im privaten Netz. Eine Anfrage läuft hier, wenn Platz ist, sonst auf einem anderen Gerät. Braucht etwas Platz, wird der am längsten untätige Verbraucher entladen &mdash; festgehaltene und beschäftigte nie, Dateien nie.</p>
+                </div>
+                <div class="page-actions">
+                    <button id="devices-add-btn" class="btn btn-secondary">Rechner hinzufügen</button>
+                    <button id="compute-launch-btn" class="btn btn-primary">Modell laden</button>
+                </div>
+            </header>
+            <div id="compute-filters" class="chip-row" role="group" aria-label="Anzeigen"></div>
+            <div id="devices-messages"></div>
+            <div id="devices-enroll"></div>
+            <div id="compute-local"></div>
+            <div id="devices-list" class="machine-list"></div>
+            <div id="devices-copies"></div>
+            <section class="r-card" aria-label="Modelle">
+                <div class="r-card-head"><h2>Modelle <span class="muted">auf allen Rechnern</span></h2>
+                    <input id="compute-model-search" type="search" class="r-input" placeholder="Modell suchen" aria-label="Modell suchen"></div>
+                <div id="compute-models"><div class="empty-state">Lade…</div></div>
+                <div id="devices-place"></div>
+            </section>
+            <section class="r-card" aria-label="Weitere Modellserver">
+                <div class="r-card-head"><h2>Weitere Modellserver <span class="muted">Ollama, LM Studio, llama-server …</span></h2></div>
+                <p class="muted">Läuft auf diesem Rechner schon ein OpenAI-kompatibler Server, kann ai-serve seine Modelle mitbenutzen: Sie erscheinen in den Modelllisten aller Apps, Anfragen gehen direkt dorthin. Der Server bleibt deiner &mdash; ai-serve startet, stoppt und entlädt ihn nie.</p>
+                <div id="model-servers"><div class="empty-state">Lade…</div></div>
+            </section>
+            <details id="compute-launch" class="r-details">
+                <summary>Modell manuell starten (Port, GPU, Kontext, Vision, MTP)</summary>
+                <div class="card add-card">
+                        <div class="card-header">
+                            <h2>Launch Model Server</h2>
+                        </div>
+                        <div class="controls">
+                            <div class="input-group">
+                                <label for="model-select">Select GGUF Model</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: stretch;">
+                                    <select id="model-select" style="flex: 1;">
+                                        <option value="" disabled selected>Loading models...</option>
+                                    </select>
+                                    <button type="button" id="inspect-header-btn" class="btn" title="Inspect this model's raw GGUF metadata header">🔍 Header</button>
+                                </div>
+                            </div>
+                            <div id="vision-group" class="vision-config" style="display: none;">
+                                <div class="toggle-group">
+                                    <input type="checkbox" id="enable-vision">
+                                    <label for="enable-vision">Multimodal / Vision</label>
+                                </div>
+                                <div id="mmproj-container" class="input-group" style="display: none; margin-top: 0.5rem;">
+                                    <label for="mmproj-select">Vision Module (mmproj)</label>
+                                    <select id="mmproj-select">
+                                        <option value="" disabled selected>Select module...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="mtp-group" class="vision-config" style="display: none;">
+                                <div class="toggle-group">
+                                    <input type="checkbox" id="enable-mtp">
+                                    <label for="enable-mtp">MTP Speculative Decoding</label>
+                                </div>
+                                <div id="mtp-container" class="input-group" style="display: none; margin-top: 0.5rem;">
+                                    <label for="mtp-select">Draft Head (MTP)</label>
+                                    <select id="mtp-select">
+                                        <option value="" disabled selected>Select draft head...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="config-grid">
+                                <div class="input-group">
+                                    <label for="server-port">Port</label>
+                                    <input type="number" id="server-port" value="8031">
+                                </div>
+                                <div class="input-group">
+                                    <label for="gpu-select">Target GPU</label>
+                                    <select id="gpu-select">
+                                        <option value="">Auto (All)</option>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label for="ctx-size">Context</label>
+                                    <input type="number" id="ctx-size" value="16384" step="4096">
+                                </div>
+                                <div class="input-group">
+                                    <label for="threads">Threads</label>
+                                    <input type="number" id="threads" value="8">
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label for="gpu-layers">GPU Layers (-1 = all)</label>
+                                <input type="number" id="gpu-layers" value="-1">
+                            </div>
+                            <button id="start-btn" class="btn btn-primary">Launch Instance</button>
+                        </div>
+                    </div>
+            </details>
+            <details class="r-details">
+                <summary>Laufende Modell-Server im Detail</summary>
+                <div class="card gpu-status-card">
+                        <div class="card-header">
+                            <h2>GPU Resources</h2>
+                        </div>
+                        <div id="gpu-container" class="gpu-list">
+                            <div class="empty-state">Detecting GPUs...</div>
+                        </div>
+                    </div>
+                <div class="card instances-card" style="margin-top: 1.5rem;">
+                        <div class="card-header">
+                            <h2>Active Model Servers</h2>
+                        </div>
+                        <div id="instances-list" class="instances-grid">
+                            <div class="empty-state">No active instances. Managed ports will appear here.</div>
+                        </div>
+                    </div>
+            </details>
+            <details class="r-details">
+                <summary>Funktioniert alles? (Selbsttest)</summary>
+                <div class="card" style="margin-top: 1.5rem;">
+                <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2>Does It Work?</h2>
+                        <p class="subtitle">Optional sanity check — loads every model in turn, asks a simple factual question, and confirms the answer is correct. Not a performance benchmark.</p>
+                    </div>
+                    <div style="display: flex; align-items: flex-end; gap: 0.75rem;">
+                        <div class="input-group" style="margin: 0; min-width: 200px;">
+                            <label for="smoketest-gpu-select">Target GPU</label>
+                            <select id="smoketest-gpu-select">
+                                <!-- Dynamic -->
+                            </select>
+                        </div>
+                        <button id="run-smoketest-btn" class="btn btn-primary">Run Check</button>
+                    </div>
+                </div>
+
+                <div id="smoketest-progress-panel" class="card benchmark-progress" style="display: none; margin-top: 1rem; background: var(--primary-light); border-color: var(--primary);">
+                    <div class="progress-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <h3 id="smoketest-model-title" style="margin: 0; font-size: 1rem; color: var(--primary);">Model Name</h3>
+                        <span id="smoketest-percentage" style="font-weight: 700; color: var(--primary);">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="smoketest-progress-bar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-status" id="smoketest-status-text" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">Idle.</div>
+                </div>
+
+                <div id="smoketest-results-list" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;"></div>
+            </div>
+            </details>
+            <div hidden><div class="card comfyui-control-card">
+                        <div class="card-header">
+                            <h2>ComfyUI Server</h2>
+                        </div>
+                        <div class="controls">
+                            <div class="status-indicator offline" id="comfyui-status-indicator" style="margin-bottom: 1rem;">
+                                <span class="dot"></span>
+                                <span class="status-text">Stopped</span>
+                            </div>
+                            <div class="input-group">
+                                <label for="comfyui-gpu-select">Target GPU</label>
+                                <select id="comfyui-gpu-select">
+                                    <option value="">Auto (All)</option>
+                                </select>
+                            </div>
+                            <button id="start-comfyui-btn" class="btn btn-primary">Start ComfyUI</button>
+                            <button id="stop-comfyui-btn" class="btn btn-danger" style="display: none;">Stop ComfyUI</button>
+                            <a id="open-comfyui-link" class="btn btn-primary" target="_blank" style="display: none; margin-top: 0.5rem; text-align: center; text-decoration: none;">Open Native UI</a>
+                        </div>
+                    </div></div>
+        </section>
+
+        <!-- Services Tab -->
+        <section id="services-tab" class="tab-content">
+            <header class="page-head">
+                <div>
+                    <h1>Apps &amp; Services</h1>
+                    <p class="page-sub">Alle Projekte, die den Gateway nutzen &mdash; gefunden über ihr <code>llama-serve.service.json</code> in <span id="services-roots">den Service-Ordnern</span> (<a href="/api/services/manifest-schema" target="_blank">Schema</a>, Anleitung in <code>docs/service-manifest.md</code>). Auch im Terminal gestartete Kopien werden erkannt. Erreichbarkeit über Tailscale nur privat, nie öffentlich.</p>
+                </div>
+                <div class="page-actions">
+                    <input id="services-search" type="search" class="r-input" placeholder="App suchen" aria-label="App suchen">
+                    <button id="services-refresh-btn" class="btn btn-secondary">Aktualisieren</button>
+                </div>
+            </header>
+            <div id="services-filters" class="chip-row" role="group" aria-label="Kategorie"></div>
+            <div id="services-errors"></div>
+            <div id="services-list"><div class="empty-state">Lade…</div></div>
+        </section>
+
+
+        <!-- API Explorer & Docs Tab -->
+        <section id="api-doc-tab" class="tab-content">
+            <div class="card" id="door-security-card">
+                <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                    <div>
+                        <h2>Tür: Zugriffe und Abweisungen</h2>
+                        <p class="subtitle">Was apps.example.org pro Tag durchgelassen und abgewiesen hat – aus dem Log des Türstehers.</p>
+                    </div>
+                    <button type="button" id="door-sec-reload" class="btn btn-secondary btn-sm">Aktualisieren</button>
+                </div>
+                <div id="door-sec-alarm" class="door-sec-alarm" role="status"></div>
+                <div id="door-sec-table" style="overflow-x:auto;"></div>
+                <div id="door-sec-probes" class="door-sec-probes"></div>
+                <p id="door-sec-note" class="subtitle" style="margin-top:8px;"></p>
+            </div>
+            <div class="card api-card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <h2>Developer API & Integration</h2>
+                        <p class="subtitle">Direct integration snippets and live API specifications.</p>
+                    </div>
+                    <div>
+                        <button type="button" id="copy-full-api-docs-btn" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">📋 Copy Full API Docs (Markdown)</button>
+                    </div>
+                </div>
+                <div id="api-explorer-list" class="api-grid">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+        </section>
+
+        <section id="logs-tab" class="tab-content">
+            <header class="page-head"><div><h1>Protokolle</h1><p class="page-sub">Was dieses Dashboard getan hat. Die vollständigen Logs liegen in <code>logs/</code>.</p></div></header>
+            <div class="logs-section">
+            <div class="card-header" style="padding: 0 0.5rem 0.5rem 0.5rem;">
+                <h3 style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Konsole</h3>
+            </div>
+            <div id="logs-viewport" class="logs-viewport">
+                <!-- System logs will stream here -->
+            </div>
+        </div>
+        </section>
+    </main>
+</div>
+
+    <!-- GGUF Header Inspector Modal -->
+    <div id="gguf-header-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2 id="gguf-header-title">GGUF Header</h2>
+                <button id="close-gguf-header-btn" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                    Raw KV metadata read directly from the GGUF header — architecture, context length, quantization, rope, vision/MTP config, chat template, etc. Large arrays (e.g. the tokenizer vocab) are truncated to a short preview.
+                </p>
+                <div class="api-live-data" style="height: 60vh;">
+                    <pre id="gguf-header-content">Loading...</pre>
+                </div>
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.75rem;">
+                    <button type="button" id="copy-gguf-header-btn" class="btn-copy">Copy JSON</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=3.16"></script>
+    <script src="services.js?v=10"></script>
+    <script src="devices.js?v=8"></script>
+    <script src="icons.js?v=2"></script>
+    <script src="compute.js?v=2"></script>
+    <script src="modelservers.js?v=2"></script>
+    <script src="overview.js?v=3"></script>
+    <script src="doorsec.js?v=1"></script>
+</body>
+</html>

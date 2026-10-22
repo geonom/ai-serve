@@ -1,0 +1,109 @@
+{
+  "id": "cosyvoice",
+  "name": "CosyVoice 3",
+  "description": "Clone a reference voice, optionally with a free-form style instruction (variant instruct).",
+  "capability": "tts",
+  "command": [
+    "./venv/bin/python",
+    "worker.py",
+    "--port",
+    "{port}"
+  ],
+  "env": {
+    "COSYVOICE_REPO_DIR": "{dir}/repo"
+  },
+  "gpu": 0,
+  "vram_mb": 3700,
+  "startup_timeout_s": 90,
+  "keep_alive_s": 60,
+  "aliases": [
+    "cosy",
+    "cosyvoice3"
+  ],
+  "variants": [
+    "zero_shot",
+    "instruct",
+    "cross_lingual"
+  ],
+  "default_reference": true,
+  "license": "Apache-2.0",
+  "setup": "./setup.sh",
+  "languages": [
+    "zh",
+    "en",
+    "ja",
+    "ko",
+    "de",
+    "es",
+    "fr",
+    "it",
+    "ru"
+  ],
+  "modes": [
+    {
+      "variant": "zero_shot",
+      "label": "Stimme klonen",
+      "description": "Klont die Stimme aus der Aufnahme; mit Transkript am genauesten (ohne: wie 'Sprachübergreifend').",
+      "inputs": {
+        "reference": "required",
+        "ref_text": "optional"
+      },
+      "params": [
+        {
+          "name": "speed",
+          "label": "Tempo",
+          "min": 0.5,
+          "max": 2.0,
+          "step": 0.05,
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "variant": "instruct",
+      "label": "Klonen mit Stil",
+      "description": "Klont die Stimme und spricht im beschriebenen Stil.",
+      "inputs": {
+        "reference": "required",
+        "instruct": "required"
+      },
+      "instruct": {
+        "kind": "text",
+        "hint": "Wie soll gesprochen werden?",
+        "examples": [
+          "Sprich langsam und ruhig.",
+          "Sprich fröhlich und aufgeregt.",
+          "Sprich wie ein ärgerlicher alter Mann."
+        ]
+      },
+      "params": [
+        {
+          "name": "speed",
+          "label": "Tempo",
+          "min": 0.5,
+          "max": 2.0,
+          "step": 0.05,
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "variant": "cross_lingual",
+      "label": "Sprachübergreifend",
+      "description": "Klont nur den Klang der Stimme, ohne Transkript; gut, wenn Aufnahme und Text verschiedene Sprachen haben.",
+      "inputs": {
+        "reference": "required"
+      },
+      "params": [
+        {
+          "name": "speed",
+          "label": "Tempo",
+          "min": 0.5,
+          "max": 2.0,
+          "step": 0.05,
+          "default": 1.0
+        }
+      ]
+    }
+  ]
+}

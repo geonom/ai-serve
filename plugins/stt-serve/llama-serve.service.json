@@ -1,0 +1,35 @@
+{
+  "id": "stt-serve",
+  "name": "stt-serve",
+  "description": "Speech-to-text: WhisperX transcription, word alignment, speaker diarization (pyannote / Nemotron), live sessions.",
+  "command": [
+    "./run.sh"
+  ],
+  "env": {
+    "STT_SERVE_PORT": "{port}"
+  },
+  "port": 8060,
+  "bind": "127.0.0.1",
+  "match": [
+    "stt_serve.app:app"
+  ],
+  "open_path": "/docs",
+  "health_path": "/health",
+  "category": "ai",
+  "icon": "mic",
+  "ui": false,
+  "status_path": "/v1/status",
+  "identity": "none",
+  "maturity": "beta",
+  "provides": {
+    "stt": {
+      "catalog": "/v1/engines",
+      "transcribe": "/v1/transcribe",
+      "live": "/v1/live",
+      "status": "/v1/status",
+      "release": "/v1/release",
+      "logs": "/v1/logs",
+      "gpu": "shared"
+    }
+  }
+}

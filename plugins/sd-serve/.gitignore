@@ -1,0 +1,10 @@
+bin/
+build.log
+.env
+logs/
+models/
+output/
+__pycache__/
+.pytest_cache/
+sdcpp/
+.venv/

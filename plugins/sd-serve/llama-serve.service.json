@@ -1,0 +1,33 @@
+{
+  "id": "sd-serve",
+  "name": "Iris-3B Turbo (stable-diffusion.cpp)",
+  "description": "Iris-3B Turbo (schnelles Text-zu-Bild-Modell, 4 Schritte, rechnet direkt in Pixeln) in stable-diffusion.cpp – Bild-Plugin für ai-serve: startet sd-server erst beim ersten Bild, nach 5 Minuten ohne Anfrage wieder aus.",
+  "command": [
+    "./run.sh"
+  ],
+  "env": {
+    "PORT": "{port}"
+  },
+  "port": 8065,
+  "bind": "127.0.0.1",
+  "match": [
+    "sd_plugin.app"
+  ],
+  "health_path": "/health",
+  "ui": false,
+  "category": "ai",
+  "icon": "image",
+  "identity": "none",
+  "maturity": "alpha",
+  "status_path": "/plugin/status",
+  "provides": {
+    "image": {
+      "catalog": "/v1/images/models",
+      "generate": "/v1/images/generations",
+      "status": "/plugin/status",
+      "release": "/plugin/release",
+      "logs": "/plugin/logs",
+      "gpu": "shared"
+    }
+  }
+}

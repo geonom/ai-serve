@@ -42,7 +42,11 @@ class H(BaseHTTPRequestHandler):
         req["env"] = os.environ.get("FAKE_ENV")
         self._send(200, {"audio_base64": base64.b64encode(json.dumps(req).encode()).decode(), "device": "cuda:0"})
     def log_message(self, *a): pass
-ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+import socketserver
+class S(ThreadingHTTPServer):   # no getfqdn(): it can take ~35 s on a Mac (CI)
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self); self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
+S(("127.0.0.1", port), H).serve_forever()
 '''
 
 ADAPTER = '''

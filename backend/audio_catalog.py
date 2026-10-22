@@ -31,16 +31,18 @@ def _tts_modes(e: Dict[str, Any], default_voice: str) -> List[Dict[str, Any]]:
 def audio_catalog(tts_view: Optional[Dict[str, Any]], stt_view: Optional[Dict[str, Any]],
                   default_voice: str) -> Dict[str, Any]:
     if tts_view is None:
-        tts = _down("tts-serve", "Sprachausgabe")
+        tts = _down("tts-serve", "speech output")
     else:
         tts = {"available": True, "default_engine": tts_view.get("default_engine"), "engines": [
             {"id": e["id"], "label": e.get("name") or e["id"], "description": e.get("description", ""),
              "license": e.get("license", ""), "aliases": list(e.get("aliases") or []),
              "languages": list(e.get("languages") or []), "params": list(e.get("params") or []),
-             "loaded": bool(e.get("loaded")), "modes": _tts_modes(e, default_voice)}
+             "loaded": bool(e.get("loaded")), "modes": _tts_modes(e, default_voice),
+             # not set up on this machine yet: listed so the owner can download it (GET /api/plugins/installs)
+             "installed": e.get("installed") is not False}
             for e in tts_view.get("engines") or []]}
     if stt_view is None:
-        stt = _down("stt-serve", "Transkription")
+        stt = _down("stt-serve", "transcription")
     else:
         stt = {"available": True, "default_engine": stt_view.get("default_engine"),
                "engines": list(stt_view.get("engines") or [])}

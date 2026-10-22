@@ -43,7 +43,9 @@ _FORBIDDEN_ENV = frozenset({
 })
 _FIELDS = ("id", "name", "description", "capability", "command", "env", "gpu", "vram_mb", "vram_fraction",
            "startup_timeout_s", "keep_alive_s", "concurrent", "aliases", "variants", "variant_swaps",
-           "default_reference", "license", "setup", "modes", "languages")
+           "default_reference", "license", "setup", "modes", "languages", "requires", "install_mb")
+# what a provider needs to run at all; one it can't use here isn't offered for download
+REQUIREMENTS = ("cuda", "darwin-arm64")
 _SEVERITY = ["error", "starting", "loading", "generating", "idle", "unloaded"]
 
 
@@ -204,6 +206,8 @@ class ProviderManifest:
     setup: str = ""
     modes: Tuple[Dict[str, Any], ...] = ()
     languages: Tuple[str, ...] = ()
+    requires: Tuple[str, ...] = ()
+    install_mb: Optional[int] = None               # rough download + install size, shown before downloading
 
     @property
     def installed(self) -> bool:
@@ -248,9 +252,16 @@ class ProviderManifest:
         exe_path = provider_dir / exe[2:]
         if not _inside(exe_path, provider_dir):
             raise ProviderError(f"command[0] {exe} is not an executable inside the provider")
-        if not exe_path.exists() or not os.access(exe_path, os.X_OK):
-            # the usual case on a fresh machine: the provider's environment hasn't been built
-            raise ProviderError(f"not set up yet: {exe} is missing -- run this provider's setup.sh")
+        if exe_path.exists() and not os.access(exe_path, os.X_OK):
+            raise ProviderError(f"command[0] {exe} is not executable")
+        # missing = not set up yet (the usual case on a fresh machine): listed with installed=False, offered for
+        # download (setup.sh), refused for generating
+        requires = d.get("requires") or []
+        if not isinstance(requires, list) or not all(r in REQUIREMENTS for r in requires):
+            raise ProviderError(f"requires must be a list of {', '.join(REQUIREMENTS)}")
+        install_mb = d.get("install_mb")
+        if install_mb is not None and (type(install_mb) is not int or not 0 < install_mb < 1_000_000):
+            raise ProviderError("install_mb must be a positive whole number of MB")
 
         env = d.get("env") or {}
         if not isinstance(env, dict):
@@ -300,7 +311,7 @@ class ProviderManifest:
             startup_timeout_s=startup, keep_alive_s=keep_alive, aliases=tuple(aliases), variants=tuple(variants),
             description=str(d.get("description") or ""), license=str(d.get("license") or ""),
             setup=str(d.get("setup") or ""), modes=_parse_modes(d.get("modes"), variants),
-            languages=_parse_languages(d.get("languages")), **flags,
+            languages=_parse_languages(d.get("languages")), requires=tuple(requires), install_mb=install_mb, **flags,
         )
 
     def _fill(self, value: str, port: int) -> str:
@@ -325,6 +336,16 @@ def vram_need_mb(m: ProviderManifest, gpu_total_mb: int) -> int:
 
 
 # --------------------------------------------------------------------------- registry
+
+def supported(m: "ProviderManifest", has_cuda: bool, system: str, machine: str) -> bool:
+    """Can this provider run on this machine at all (its `requires`)?"""
+    for r in m.requires:
+        if r == "cuda" and not has_cuda:
+            return False
+        if r == "darwin-arm64" and not (system == "Darwin" and machine in ("arm64", "aarch64")):
+            return False
+    return True
+
 
 class ProviderRegistry:
     def __init__(self, providers: List[ProviderManifest], errors: List[Dict[str, str]]):

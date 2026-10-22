@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, FastAPI, HTTPException
 
 from stt_serve.facts import status_facts
+from stt_serve.install import Installer, has_cuda as install_has_cuda
 from stt_serve import engine
 from stt_serve.state import state
 
@@ -57,6 +58,22 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="stt-serve", lifespan=lifespan)
     app.include_router(engine.router)
+
+    # plugin contract: install -- set up MOSS-Transcribe or Nemotron (their own setup.sh), owner-only at the gateway
+    bins = {"moss": lambda: engine.MOSS_TRANSCRIBE_PYTHON_BIN, "nemotron": lambda: engine.NEMOTRON_DIARIZE_PYTHON_BIN}
+    installer = Installer(engine.ROOT, lambda k: os.path.exists(bins[k]()), install_has_cuda, engine.LOGS_DIR)
+    app.state.installer = installer
+
+    @app.get("/v1/install")
+    async def install_list():
+        return {"items": app.state.installer.items()}
+
+    @app.post("/v1/install", status_code=202)
+    async def install_start(body: Any = Body(...)):
+        try:
+            return app.state.installer.start(body.get("id") if isinstance(body, dict) else None)
+        except LookupError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
     def _workers():
         """The processes holding models (plugin contract): this process for WhisperX/pyannote, the Nemotron and

@@ -1,6 +1,22 @@
 /* German for the dashboard (i18n.js): English source text -> German. Keep {placeholders} as they are.
  * A missing entry simply shows the English text. Loaded right after i18n.js, before the page's scripts. */
 I18N.add({
+    "Downloads <span class=\"muted\">models and engines the plugins offer</span>": "Downloads <span class=\"muted\">Modelle und Engines, die die Plugins anbieten</span>",
+    "Downloads": "Downloads",
+    "What the plugins can still download for this machine. Each plugin picks its files itself and checks them before use.": "Was die Plugins für diesen Rechner noch herunterladen können. Jedes Plugin wählt seine Dateien selbst und prüft sie vor der Nutzung.",
+    "Downloading … {done} of {total}": "Lädt … {done} von {total}",
+    "Downloading and setting up … this can take a while": "Lädt und richtet ein … das kann eine Weile dauern",
+    "Failed: {err}": "Fehlgeschlagen: {err}",
+    "Try again": "Erneut versuchen",
+    "Download": "Herunterladen",
+    "{label}: download started ({size}).": "{label}: Download gestartet ({size}).",
+    "{label}: download not started: {err}": "{label}: Download nicht gestartet: {err}",
+    "Everything the plugins offer for this machine is installed.": "Alles, was die Plugins für diesen Rechner anbieten, ist installiert.",
+    "No plugin offers downloads here.": "Kein Plugin bietet hier Downloads an.",
+    "Installed: {list}": "Installiert: {list}",
+    "Images from text descriptions (stable-diffusion.cpp)": "Bilder aus Beschreibungen (stable-diffusion.cpp)",
+    "Text, speakers and times in one pass, up to 90 minutes": "Text, Sprecher und Zeiten in einem Durchgang, bis 90 Minuten",
+    "Speaker separation with NVIDIA's Nemotron model (an alternative to pyannote)": "Sprechertrennung mit NVIDIAs Nemotron-Modell (eine Alternative zu pyannote)",
     "(empty)": "(leer)",
     "1 model": "1 Modell",
     "A service for other apps, without a page of its own -- stays on this machine (no Tailscale sharing).": "Ein Dienst für andere Apps, ohne eigene Seite -- bleibt auf diesem Rechner (keine Tailscale-Freigabe).",

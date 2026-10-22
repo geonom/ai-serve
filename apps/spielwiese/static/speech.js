@@ -149,10 +149,13 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         const noteEl = document.getElementById('tts-engine-note');
         form.replaceChildren();
         const t = catalog && catalog.tts;
+        Downloads.panel(document.getElementById('dl-tts'), 'tts',
+            t && t.available && !t.engines.some(e => e.installed !== false) ? tx('No speech engine is set up yet.') : '');
         if (!t || !t.available) { noteEl.textContent = (t && t.reason) || tx('Speech output unreachable.'); return; }
         noteEl.textContent = tx('{n} engines', { n: t.engines.length });
         if (!tts.engine || !t.engines.some(e => e.id === tts.engine.id)) {
-            tts.engine = t.engines.find(e => e.id === t.default_engine) || t.engines[0];
+            const ok = t.engines.filter(e => e.installed !== false);
+            tts.engine = ok.find(e => e.id === t.default_engine) || ok[0] || t.engines[0];
             tts.mode = null;
         }
         const e = tts.engine;
@@ -161,7 +164,8 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
 
         const engSel = h('select', { on: { change: () => {
             tts.engine = t.engines.find(x => x.id === engSel.value); tts.mode = null; tts.params = {}; tts.tags = []; renderTts();
-        } } }, t.engines.map(x => h('option', { value: x.id, text: x.label + (x.loaded ? ' · ' + tx('loaded') : '') })));
+        } } }, t.engines.map(x => h('option', { value: x.id, disabled: x.installed === false,
+            text: x.installed === false ? tx('{label} (not installed)', { label: x.label }) : x.label + (x.loaded ? ' · ' + tx('loaded') : '') })));
         engSel.value = e.id;
         form.append(group('Engine', engSel, h('div', { class: 'muted small', text: [e.description && tx(e.description), e.license ? tx('License: {l}', { l: e.license }) : ''].filter(Boolean).join(' · ') })));
 
@@ -270,6 +274,7 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         const noteEl = document.getElementById('stt-engine-note');
         form.replaceChildren();
         const s = catalog && catalog.stt;
+        Downloads.panel(document.getElementById('dl-stt'), 'stt');
         if (!s || !s.available) { noteEl.textContent = (s && s.reason) || tx('Transcription unreachable.'); return; }
         noteEl.textContent = tx('File or saved recording');
         if (!stt.engine || !s.engines.some(e => e.id === stt.engine.id)) {
@@ -371,6 +376,7 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         catch (err) { catalog = null; addLog(tx('Couldn\'t load speech engines: {err}', { err: err.message }), 'error'); }
         renderTts(); renderStt();
     }
+    window.addEventListener('sw-installed', (e) => { if (['tts', 'stt'].includes(e.detail.capability)) load(); });
     // Loaded when the tab is first opened: asking starts tts-serve/stt-serve if they're down.
     let loaded = false;
     const tabLink = document.querySelector('.tab-link[data-tab="speech"]');

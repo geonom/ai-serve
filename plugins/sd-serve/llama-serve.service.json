@@ -27,6 +27,7 @@
       "status": "/plugin/status",
       "release": "/plugin/release",
       "logs": "/plugin/logs",
+      "install": "/plugin/install",
       "gpu": "shared"
     }
   }

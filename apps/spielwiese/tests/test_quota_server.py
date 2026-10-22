@@ -107,6 +107,13 @@ class TestQuotaServer(unittest.TestCase):
         self.assertEqual(self.req("POST", "/api/comfyui/batch", "alex", {"items": []})[0], 200)
         self.assertEqual(HITS, ["/api/comfyui/batch"])
 
+    def test_downloads_are_the_owners(self):
+        # owner, 2026-10-22: missing models can be downloaded from the Spielwiese -- by the owner only
+        self.assertEqual(self.req("POST", "/api/plugins/sd-serve/install", "anna", {"id": "iris-turbo"})[0], 403)
+        self.assertEqual(self.req("POST", "/api/plugins/sd-serve/install", "alex", {"id": "iris-turbo"})[0], 200)
+        self.assertEqual(HITS, ["/api/plugins/sd-serve/install"])
+        self.assertEqual(self.req("GET", "/api/plugins/installs", "anna")[0], 200)   # seeing what's missing: anyone
+
     def test_chat_is_counted_in_seconds_not_images(self):
         self.assertEqual(self.req("POST", "/v1/chat/completions", "anna", {"messages": []})[0], 200)
         u = self.req("GET", "/sw/quota", "anna")[1]["usage"]

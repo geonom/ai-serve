@@ -222,5 +222,29 @@ document.addEventListener('keydown', (ev) => {
     }
 });
 
+// The variants come from the gateway's catalog (models with `layout`); without one the page says what's missing.
+async function layLoadVariants() {
+    const sel = document.getElementById('lay-variant'), btn = document.getElementById('lay-run-btn');
+    let rows = [];
+    try { rows = ((await api('/v1/images/models')).data || []).filter(m => m.layout); } catch (err) { rows = []; }
+    const keep = sel.value;
+    sel.replaceChildren(...rows.map(m => {
+        const o = document.createElement('option');
+        o.value = m.id; o.disabled = !m.available;
+        o.textContent = m.available ? m.label : tx('{label} (not installed)', { label: m.label });
+        return o;
+    }));
+    const usable = rows.filter(m => m.available);
+    const pick = usable.find(m => m.id === keep) || usable.find(m => m.id === 'moss-turbo-4-bf16') || usable[0];
+    if (pick) sel.value = pick.id;
+    btn.disabled = !usable.length;
+    // only the hint: the image downloads on offer (Iris) can't place things either
+    Downloads.panel(document.getElementById('dl-layout'), false, usable.length ? '' :
+        tx('No model on this gateway can place things by position. That needs MOSS-Image (the comfyui-moss plugin) – it isn\'t part of this installation (docs/plugins.md).'));
+    layRender();
+}
+window.addEventListener('sw-installed', (e) => { if (e.detail.capability === 'image') layLoadVariants(); });
+
 layApplyAspect();
 layRender();
+layLoadVariants();

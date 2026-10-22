@@ -105,3 +105,30 @@ def test_status_and_release(world):
     assert st["workers"][0]["id"] == "iris" and st["workers"][0]["gpu"] == 0 and st["workers"][0]["pid"] == 4242
     assert world["client"].post("/plugin/release", json={}).json() == {"released": ["iris"]}
     assert world["client"].get("/plugin/status").json()["workers"] == []
+
+
+# ------------------------------------------------------------------ downloads (plugin contract: install)
+
+def test_install_offers_iris_and_starts_only_that(monkeypatch):
+    from fastapi.testclient import TestClient
+    from sd_plugin import app as plugin
+    started = []
+    monkeypatch.setattr(plugin, "installed", lambda: False)
+    monkeypatch.setattr(plugin, "_run_install", lambda: started.append(True))
+    monkeypatch.setattr(plugin, "_install", {"state": None, "done": 0, "error": ""})
+    c = TestClient(plugin.app)
+    item = c.get("/plugin/install").json()["items"][0]
+    assert (item["id"], item["state"], item["size_mb"]) == ("iris-turbo", "missing", plugin.INSTALL_MB)
+    assert c.post("/plugin/install", json={"id": "something-else"}).status_code == 404
+    r = c.post("/plugin/install", json={"id": "iris-turbo"})
+    assert r.status_code == 202 and r.json()["state"] == "downloading"
+    c.post("/plugin/install", json={"id": "iris-turbo"})       # already running: no second download
+    import time; time.sleep(0.1)
+    assert started == [True]
+
+
+def test_install_reports_installed(monkeypatch):
+    from fastapi.testclient import TestClient
+    from sd_plugin import app as plugin
+    monkeypatch.setattr(plugin, "installed", lambda: True)
+    assert TestClient(plugin.app).get("/plugin/install").json()["items"][0]["state"] == "installed"

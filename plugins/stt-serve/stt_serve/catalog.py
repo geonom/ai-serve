@@ -32,7 +32,7 @@ def engine_catalog(*, nemotron_ready: bool, moss_ready: bool, loaded: Iterable[s
     moss = {
         "id": "moss", "label": "MOSS-Transcribe-Diarize",
         "description": "Text, speakers and times in one pass, up to 90 minutes; no word timestamps."
-                       + ("" if moss_ready else " Not set up yet (setup: moss/setup.sh)."),
+                       + ("" if moss_ready else " Not set up yet -- it can be downloaded (dashboard or Spielwiese) on a machine with an NVIDIA GPU."),
         "available": bool(moss_ready), "loaded": "moss" in loaded,
         "outputs": ["text", "segments", "speakers"],
         "fields": [

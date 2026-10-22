@@ -1490,7 +1490,9 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
     }
     const def = rows.find(m => m.default && m.available);
     const options = [...select.options];
-    select.value = options.some(o => o.value === keep && !o.disabled) ? keep : (def ? valueOf(def) : (options.find(o => !o.disabled) || {}).value);
+    // nothing usable: still show what exists (greyed, "not installed") instead of an empty field
+    select.value = options.some(o => o.value === keep && !o.disabled) ? keep
+        : (def ? valueOf(def) : (options.find(o => !o.disabled) || options[0] || {}).value);
     const showNote = () => { if (noteEl) noteEl.textContent = (select.selectedOptions[0] || {}).dataset?.description || ''; };
     select.onchange = showNote;
     showNote();
@@ -1504,6 +1506,14 @@ async function loadImageModels() {
         fillImageModelSelect(UI.comfyEditModel, edit.data || [], m => m.id, document.getElementById('comfy-edit-model-note'));
         fillImageModelSelect(UI.comfyStyleModel, style.data || [], m => m.id, document.getElementById('comfy-style-model-note'));
         UI.comfyModel.dispatchEvent(new Event('change'));
+        // missing models: what can be downloaded, and a plain word when an ability isn't there at all
+        const usable = rows => (rows || []).some(m => m.available);
+        Downloads.panel(document.getElementById('dl-image-gen'), 'image',
+            usable(gen.data) ? '' : tx('No image model is installed yet.'));
+        Downloads.panel(document.getElementById('dl-image-edit'), false, usable(edit.data) ? '' :
+            tx('No model on this gateway can edit images. That needs an image plugin with editing (e.g. ComfyUI with Qwen-Image-Edit) – it isn\'t part of this installation (docs/plugins.md).'));
+        Downloads.panel(document.getElementById('dl-image-style'), false, usable(style.data) ? '' :
+            tx('No model on this gateway can transfer a style. That needs an image plugin with style transfer (e.g. ComfyUI with Qwen-Image-Edit 2511) – it isn\'t part of this installation (docs/plugins.md).'));
     } catch (err) {
         addLog(tx('Couldn\'t load image models: {err}', { err: err.message }), 'warn');
     }
@@ -1535,6 +1545,7 @@ async function generateViaGateway(prompt, model, label) {
 }
 
 loadImageModels();
+window.addEventListener('sw-installed', (e) => { if (e.detail.capability === 'image') loadImageModels(); });
 
 let pendingGalleryMeta = null;   // set by a Bild "Generate", consumed when its task completes
 

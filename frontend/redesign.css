@@ -341,3 +341,4 @@ body { padding: 0; font-family: 'IBM Plex Sans', sans-serif; background: var(--b
 .lang-switch button + button { border-left: 1px solid var(--border-strong); }
 .lang-switch button[aria-pressed="true"] { background: var(--text-main); color: var(--bg-dark); cursor: default; }
 .lang-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.tone-bad { color: #c0392b; }

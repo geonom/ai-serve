@@ -94,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else None
         kind = quota.classify(self.command, urlsplit(self.path).path)
         if kind == "owner_only" and not person.is_owner:
-            return self._error(403, "Batch runs are for the owner only.")
+            return self._error(403, "Only the owner can do this (batch runs, downloads).")
         ticket, images = None, 0
         if kind and kind != "owner_only":
             images = self._images_requested(body) if kind == "image" else 0

@@ -18,6 +18,7 @@ class TestClassify(unittest.TestCase):
                            ("POST", "/api/comfyui/edit", "image"), ("POST", "/api/comfyui/style-transfer", "image"),
                            ("POST", "/api/tts/generate", "speech"), ("POST", "/api/stt/transcribe", "speech"),
                            ("POST", "/api/ocr", "ocr"), ("POST", "/api/comfyui/batch", "owner_only"),
+                           ("POST", "/api/plugins/sd-serve/install", "owner_only"),
                            ("POST", "/v1/embeddings", "text"), ("POST", "/v1/rerank", "text"),   # load models too
                            ("POST", "/api/comfyui/batch/pause", "owner_only"),
                            ("GET", "/api/models", None), ("GET", "/v1/images/models", None),

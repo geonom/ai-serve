@@ -33,7 +33,7 @@ def test_whisperx_diarize_backends_say_whether_they_are_set_up():
 
 def test_moss_not_set_up_is_listed_but_unavailable():
     moss = next(e for e in _cat(moss=False)["engines"] if e["id"] == "moss")
-    assert moss["available"] is False and "setup" in moss["description"].lower()
+    assert moss["available"] is False and "not set up yet" in moss["description"].lower()
     assert {f["name"] for f in moss["fields"]} >= {"hotwords", "diarize"}
 
 

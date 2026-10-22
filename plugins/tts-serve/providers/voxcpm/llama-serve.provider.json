@@ -27,6 +27,8 @@
   ],
   "default_reference": true,
   "license": "Apache-2.0",
+  "requires": ["cuda"],
+  "install_mb": 12000,
   "setup": "./setup.sh",
   "modes": [
     {

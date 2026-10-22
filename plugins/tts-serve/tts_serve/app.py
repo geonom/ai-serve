@@ -13,6 +13,7 @@ import time
 import base64
 import logging
 import os
+import platform
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -22,6 +23,7 @@ from fastapi.responses import JSONResponse, Response
 
 from tts_serve.domain import RequestError, TtsRequest, overall_status, status_facts
 from tts_serve.providers import PROVIDERS_DIR
+from tts_serve.install import Installer
 from tts_serve.workers import CoordinationRefused, HttpCoordinator, WorkerError, WorkerPool, nvidia_smi_probe
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +43,8 @@ def create_app(providers_dir: Optional[Path] = None, logs_dir: Optional[Path] = 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.pool = WorkerPool(**pool_args)
+        app.state.installer = Installer(app.state.pool.registry, app.state.pool.logs_dir,
+                                        lambda: bool(app.state.pool.gpu_probe()), platform.system(), platform.machine())
         yield
         await app.state.pool.shutdown()  # workers have no adoption -- don't orphan their VRAM
 
@@ -115,6 +119,18 @@ def create_app(providers_dir: Optional[Path] = None, logs_dir: Optional[Path] = 
     @app.post("/v1/unload_idle")
     async def unload_idle(request: Request, gpu: Optional[int] = None):
         return {"unloaded": await request.app.state.pool.unload_idle(gpu)}
+
+    # plugin contract: install -- set up an engine that isn't yet (its own setup.sh), owner-only at the gateway
+    @app.get("/v1/install")
+    async def install_list(request: Request):
+        return {"items": request.app.state.installer.items()}
+
+    @app.post("/v1/install", status_code=202)
+    async def install_start(request: Request, body: Any = Body(...)):
+        try:
+            return request.app.state.installer.start(body.get("id") if isinstance(body, dict) else None)
+        except LookupError as e:
+            return JSONResponse({"detail": str(e)}, status_code=404)
 
     @app.get("/v1/logs")
     async def logs(request: Request, engine: Optional[str] = None, tail: int = 200):

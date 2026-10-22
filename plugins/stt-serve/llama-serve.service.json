@@ -29,6 +29,7 @@
       "status": "/v1/status",
       "release": "/v1/release",
       "logs": "/v1/logs",
+      "install": "/v1/install",
       "gpu": "shared"
     }
   }

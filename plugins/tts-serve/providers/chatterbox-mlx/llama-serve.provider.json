@@ -18,6 +18,8 @@
   ],
   "default_reference": false,
   "license": "MIT",
+  "requires": ["darwin-arm64"],
+  "install_mb": 2800,
   "setup": "./setup.sh",
   "languages": [
     "ar",

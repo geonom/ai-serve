@@ -56,9 +56,11 @@ CAPABILITIES: Dict[str, Dict[str, Any]] = {
     "access": {"required": ("shares",), "optional": ("status", "security", "people"), "list": None, "no_gpu": True},
 }
 GPU_MODES = ("none", "shared", "exclusive")
-# every capability may have these: status (what it holds, which processes), release (free idle GPU memory), logs.
-# GPU plugins must: shared -> status + release, exclusive -> status (it owns all GPUs while it runs).
-COMMON_ENDPOINTS = ("status", "release", "logs")
+# every capability may have these: status (what it holds, which processes), release (free idle GPU memory), logs,
+# install (GET: what it can download -- models, engines; POST {"id"}: start one; the plugin picks the files and
+# checks them -- normalize_install). GPU plugins must: shared -> status + release, exclusive -> status.
+COMMON_ENDPOINTS = ("status", "release", "logs", "install")
+INSTALL_STATES = ("missing", "downloading", "installed", "failed")
 MAX_ENTRIES = 500
 JOB_STATUSES = ("queued", "running", "done", "failed", "cancelled")
 
@@ -357,6 +359,28 @@ def normalize_status(raw: Any) -> Dict[str, Any]:
     return {"busy": raw.get("busy") is True, "ready": raw.get("ready") is not False, "facts": facts[:6],
             "workers": workers[:50], "domain": domain,
             "overview": overview}
+
+
+# ------------------------------------------------------------------ downloads a plugin offers
+
+def normalize_install(raw: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """A plugin's install list (GET {install}) -> (checked items, errors). Never raises. Only what's shown and the
+    item id the owner may ask for -- no URLs or paths: which files, from where and with which checksum is the
+    plugin's own business (it ships that list)."""
+    items = raw.get("items") if isinstance(raw, dict) else None
+    if not isinstance(items, list):
+        return [], ["install list must be an object with an 'items' list"]
+    out, errors = [], []
+    for i, item in enumerate(items[:MAX_ENTRIES]):
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not _ENTRY_ID.match(item["id"]):
+            errors.append(f"item {i}: invalid id {item.get('id') if isinstance(item, dict) else item!r}")
+            continue
+        state = item.get("state") if item.get("state") in INSTALL_STATES else "missing"
+        out.append({"id": item["id"], "label": _text(item.get("label"), 120) or item["id"],
+                    "description": _text(item.get("description"), 300), "size_mb": _int(item.get("size_mb"), 0, 10_000_000),
+                    "done_mb": _int(item.get("done_mb"), 0, 10_000_000), "state": state,
+                    "error": _text(item.get("error"), 300), "license": _text(item.get("license"), 60)})
+    return out, errors
 
 
 # ------------------------------------------------------------------ long jobs (one pattern for all)

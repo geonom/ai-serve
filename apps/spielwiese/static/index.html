@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=1">
     <link rel="stylesheet" href="redesign.css?v=1">
-    <link rel="stylesheet" href="spielwiese.css?v=17">
+    <link rel="stylesheet" href="spielwiese.css?v=118">
 </head>
 <body>
     <header class="sw-bar">
@@ -237,6 +237,7 @@
                                     <select id="comfy-model">
                                         <option value="z_image_turbo-Q6_K.gguf">Z-Image Turbo</option>
                                     </select>
+                                    <div id="dl-image-gen" class="dl-panel" hidden></div>
                                 </div>
                                 <div class="input-group">
                                     <label for="comfy-aspect-ratio">Aspect ratio</label>
@@ -268,6 +269,7 @@
                                     <label for="comfy-edit-model">Model</label>
                                     <select id="comfy-edit-model"><option value="qwen-edit-2511">Qwen-Image-Edit 2511 (Q2_K)</option></select>
                                     <div id="comfy-edit-model-note" class="muted small"></div>
+                                    <div id="dl-image-edit" class="dl-panel" hidden></div>
                                 </div>
                                 <div class="input-group">
                                     <label>Image to edit</label>
@@ -288,6 +290,7 @@
                                     <label for="comfy-style-model">Model</label>
                                     <select id="comfy-style-model"><option value="qwen-edit-2511">Qwen-Image-Edit 2511 (Q2_K)</option></select>
                                     <div id="comfy-style-model-note" class="muted small"></div>
+                                    <div id="dl-image-style" class="dl-panel" hidden></div>
                                 </div>
                                 <div class="input-group">
                                     <label>Content image</label>
@@ -461,6 +464,7 @@
                     <div class="card">
                         <div class="card-header"><h2>Voice</h2><p class="subtitle" id="tts-engine-note">Loading engines…</p></div>
                         <div class="controls" id="tts-form"></div>
+                        <div id="dl-tts" class="dl-panel dl-pad" hidden></div>
                     </div>
                 </div>
                 <div class="main-content">
@@ -483,6 +487,7 @@
                     <div class="card">
                         <div class="card-header"><h2>Recording</h2><p class="subtitle" id="stt-engine-note">Loading engines…</p></div>
                         <div class="controls" id="stt-form"></div>
+                        <div id="dl-stt" class="dl-panel dl-pad" hidden></div>
                     </div>
                 </div>
                 <div class="main-content">
@@ -626,6 +631,7 @@ France is known for its cheese.</textarea></div>
                                     <option value="moss-turbo-4">Turbo 4 v2.0 int8 (akhaliq)</option>
                                     <option value="moss-turbo-4-bf16">Turbo 4 v2.0 bf16 (akhaliq, recommended)</option>
                                 </select>
+                                <div id="dl-layout" class="dl-panel" hidden></div>
                             </div>
                             <div class="input-group lay-row">
                                 <label for="lay-steps">Steps</label>
@@ -674,6 +680,7 @@ France is known for its cheese.</textarea></div>
                             <div class="input-group">
                                 <label>Models</label>
                                 <div id="cmp-models" class="cmp-models"><span class="muted small">Loading models …</span></div>
+                                <div id="dl-compare" class="dl-panel" hidden></div>
                             </div>
                             <div class="input-group">
                                 <label for="cmp-aspect">Aspect ratio</label>
@@ -857,17 +864,18 @@ France is known for its cheese.</textarea></div>
 
 
     <script src="i18n.js?v=1"></script>
-    <script src="i18n.de.js?v=2"></script>
+    <script src="i18n.de.js?v=3"></script>
     <script src="door-session.js?v=1"></script>
     <script src="models.js?v=3"></script>
-    <script src="app.js?v=16"></script>
+    <script src="app.js?v=117"></script>
+    <script src="downloads.js?v=2"></script>
     <script src="docs.js?v=2"></script>
-    <script src="layout.js?v=5"></script>
-    <script src="compare.js?v=14"></script>
+    <script src="layout.js?v=16"></script>
+    <script src="compare.js?v=15"></script>
     <script src="quota.js?v=2"></script>
-    <script src="speech.js?v=2"></script>
+    <script src="speech.js?v=3"></script>
     <script src="texts.js?v=2"></script>
-    <script src="overview.js?v=3"></script>
+    <script src="overview.js?v=4"></script>
     <script src="help.js?v=5"></script>
     <script>document.getElementById('lang-slot').replaceWith(I18N.switcher());</script>
 </body>

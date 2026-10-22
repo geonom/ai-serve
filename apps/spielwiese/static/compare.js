@@ -105,7 +105,11 @@ async function cmpLoadCatalog() {
                el('span', { class: 'muted', text: note })));
     }));
     cmpCount();
+    const usable = cmp.catalog.filter(m => m.available).length;
+    Downloads.panel(document.getElementById('dl-compare'), 'image',
+        usable >= 2 ? '' : usable === 1 ? tx('Comparing needs at least two image models.') : tx('No image model is installed yet.'));
 }
+window.addEventListener('sw-installed', (e) => { if (e.detail.capability === 'image') cmpLoadCatalog(); });
 
 function cmpChosen() {
     return [...document.querySelectorAll('#cmp-models input:checked')].map(i => i.value);

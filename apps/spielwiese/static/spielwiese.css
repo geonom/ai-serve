@@ -203,3 +203,13 @@
 #sw-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; max-width: min(460px, calc(100vw - 32px)); }
 .sw-toast { padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.4; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.18); background: var(--card-bg); color: var(--text-main); border: 1px solid var(--border-strong); border-left: 4px solid #c0392b; overflow-wrap: anywhere; }
 .sw-toast.warn { border-left-color: #d68910; }
+
+/* Missing models and engines (downloads.js) */
+.dl-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.dl-pad { padding: 0 1.25rem 1rem; }
+.dl-hint { font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim); }
+.dl-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--border-strong); }
+.dl-row.failed { border-color: #c0392b; }
+.dl-text { min-width: 0; overflow-wrap: anywhere; }
+.dl-state { margin-top: 2px; }
+.sw-toast.success { border-left-color: #1e8449; }

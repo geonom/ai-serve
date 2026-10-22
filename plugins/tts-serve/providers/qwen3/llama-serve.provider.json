@@ -26,6 +26,8 @@
   "variant_swaps": true,
   "default_reference": false,
   "license": "Apache-2.0",
+  "requires": ["cuda"],
+  "install_mb": 10000,
   "setup": "./setup.sh",
   "languages": [
     "en",

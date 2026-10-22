@@ -18,6 +18,7 @@
   ],
   "default_reference": false,
   "license": "MIT",
+  "install_mb": 6500,
   "setup": "./setup.sh",
   "languages": [
     "ar",

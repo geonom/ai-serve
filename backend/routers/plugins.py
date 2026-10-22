@@ -6,7 +6,8 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException
 
 from backend.plugins import external, llm, registry
-from backend.plugins.contracts import ContractError
+from backend.plugins.contracts import ContractError, normalize_install
+import re
 
 router = APIRouter(tags=["plugins"])
 
@@ -38,6 +39,65 @@ async def release_plugin(plugin_id: str, worker: Optional[str] = None, force: bo
         raise HTTPException(status_code=409, detail=f"{e} -- retry later or pass force=true")
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# ------------------------------------------------------------------ downloads plugins offer (models, engines)
+# Owner only: the dashboard access policy lets only this machine and the owner's devices reach /api/ (the Spielwiese
+# passes these on only for its owner). The request names an item id; the plugin decides which files.
+
+_ITEM_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+
+def _installers():
+    seen, out = set(), []
+    for m in registry._manifests():
+        for cap, prov in sorted((getattr(m, "provides", None) or {}).items()):
+            if "install" in prov.endpoints and m.id not in seen:
+                seen.add(m.id)
+                out.append(registry.Plugin(m.id, m.name, m.port, prov, m))
+    return out
+
+
+@router.get("/api/plugins/installs", summary="What the plugins can download (models, engines) and how far it got")
+async def list_installs():
+    items, errors = [], []
+    for p in _installers():
+        if not await registry.ensure_running(p):
+            errors.append(f"{p.id}: not running")
+            continue
+        try:
+            r = await registry.call(p, "install", timeout=15.0)
+            got, errs = normalize_install(r.json() if r.status_code == 200 else None)
+        except (httpx.HTTPError, ValueError) as e:
+            got, errs = [], [f"unreachable ({type(e).__name__})"]
+        cap = next((c for c, prov in (getattr(p.manifest, "provides", None) or {}).items() if prov is p.provision), None)
+        items += [{**i, "plugin": p.id, "plugin_name": p.name, "capability": cap} for i in got]
+        errors += [f"{p.id}: {e}" for e in errs]
+    return {"items": items, "errors": errors}
+
+
+@router.post("/api/plugins/{plugin_id}/install", status_code=202, summary="Start downloading one item a plugin offers")
+async def start_install(plugin_id: str, body: Any = Body(...)):
+    if not isinstance(body, dict) or set(body) != {"id"} or not isinstance(body["id"], str) or not _ITEM_ID.match(body["id"]):
+        raise HTTPException(status_code=400, detail='send {"id": "<item id from GET /api/plugins/installs>"} and nothing else')
+    p = next((x for x in _installers() if x.id == plugin_id), None)
+    if p is None:
+        raise HTTPException(status_code=404, detail=f"no plugin {plugin_id!r} that offers downloads")
+    if not await registry.ensure_running(p):
+        raise HTTPException(status_code=503, detail=f"{p.name} isn't running")
+    try:
+        r = await registry.call(p, "install", "POST", timeout=30.0, json={"id": body["id"]})
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"{p.name} unreachable ({type(e).__name__})")
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail")
+        except ValueError:
+            detail = None
+        raise HTTPException(status_code=r.status_code if r.status_code in (400, 404, 409, 507) else 502,
+                            detail=str(detail or f"{p.name} answered {r.status_code}")[:300])
+    got, _ = normalize_install({"items": [r.json()]} if r.headers.get("content-type", "").startswith("application/json") else None)
+    return got[0] if got else {"id": body["id"], "state": "downloading"}
 
 
 # ------------------------------------------------------------------ external model servers (Ollama, LM Studio ...)

@@ -12,6 +12,7 @@ import logging
 import os
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -227,6 +228,55 @@ class Server:
 
 SERVER = Server()
 app = FastAPI(title="sd-serve plugin for ai-serve")
+
+
+# ------------------------------------------------------------------ downloads (plugin contract: install)
+# One item: Iris-3B Turbo -- the prebuilt stable-diffusion.cpp if missing, then the two model files, each checked
+# against the sha256 GitHub / Hugging Face publish (install.py). The request can only name this item.
+INSTALL_ID = rules.MODEL_ID
+INSTALL_MB = 5300                                    # iris-3b-turbo-Q4_K (2.7 GB) + Qwen3-VL-4B Q4_K_M (2.5 GB)
+_install = {"state": None, "done": 0, "error": ""}
+_install_lock = threading.Lock()
+
+
+def install_item() -> Dict[str, Any]:
+    state = "installed" if installed() else (_install["state"] or "missing")
+    return {"id": INSTALL_ID, "label": "Iris-3B Turbo", "description": "Images from text descriptions (stable-diffusion.cpp)",
+            "size_mb": INSTALL_MB, "state": state, "license": "Apache-2.0",
+            "done_mb": _install["done"] >> 20 if state == "downloading" else None,
+            "error": _install["error"] if state == "failed" else ""}
+
+
+def _run_install() -> None:
+    from sd_plugin import install
+
+    def progress(n: int) -> None:
+        _install["done"] += n
+    try:
+        if not ((HERE / "sdcpp/build/bin/sd-server").is_file() or (HERE / "bin/sd-server").is_file()):
+            install.install_binary()
+        install.install_models(Path(MODELS), progress)
+        _install.update(state=None if installed() else "failed",
+                        error="" if installed() else "files missing after the download")
+    except BaseException as e:   # SystemExit from install.py on a checksum mismatch, network errors ...
+        _install.update(state="failed", error=f"{type(e).__name__}: {e}"[:300])
+        logger.error(f"Iris install failed: {e}")
+
+
+@app.get("/plugin/install")
+async def install_list():
+    return {"items": [install_item()]}
+
+
+@app.post("/plugin/install", status_code=202)
+async def install_start(body: Any = Body(...)):
+    if not isinstance(body, dict) or body.get("id") != INSTALL_ID:
+        raise HTTPException(status_code=404, detail=f"nothing to install under that id (only {INSTALL_ID})")
+    with _install_lock:
+        if not installed() and _install["state"] != "downloading":
+            _install.update(state="downloading", done=0, error="")
+            threading.Thread(target=_run_install, daemon=True).start()
+    return install_item()
 
 
 def installed() -> bool:

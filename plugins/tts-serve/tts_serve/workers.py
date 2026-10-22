@@ -202,6 +202,9 @@ class WorkerPool:
             return -1
 
     async def ensure(self, m: ProviderManifest) -> int:
+        if not m.installed:
+            raise WorkerError(409, f"{m.name} isn't set up on this machine yet -- download it in the Spielwiese or the "
+                                   f"dashboard, or run providers/{m.id}/setup.sh")
         slot = self.slot(m.id)
         async with slot.lock:
             if slot.running:
@@ -359,6 +362,7 @@ class WorkerPool:
                 "loaded": s.running, "status": s.status if s.running or s.status == "error" else "unloaded",
                 "pid": s.proc.pid if s.running else None, "device": s.device, "variant": s.variant,
                 "inflight": s.inflight, "last_used": s.last_used or None, "installed": m.installed,
+                "install_mb": m.install_mb,
             })
         return {"engines": out, "errors": reg.errors, "default_engine": self._default_id(reg)}
 

@@ -37,8 +37,9 @@ def _json(url: str):
         return json.load(r)
 
 
-def _download(url: str, dest: Path, sha256: str, label: str) -> None:
-    """Stream to a temp file, hash while writing, move into place only if the hash matches."""
+def _download(url: str, dest: Path, sha256: str, label: str, progress=None) -> None:
+    """Stream to a temp file, hash while writing, move into place only if the hash matches. `progress(n)` is told
+    every chunk's size (the plugin's install endpoint shows how far it got)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
     req = urllib.request.Request(url, headers={"User-Agent": "sd-serve-setup"})
@@ -49,6 +50,8 @@ def _download(url: str, dest: Path, sha256: str, label: str) -> None:
             f.write(chunk)
             h.update(chunk)
             done += len(chunk)
+            if progress:
+                progress(len(chunk))
             pct = done * 100 // total if total else 0
             if total and (tty or pct // 10 > shown):   # a terminal: live; a log: every 10 %
                 shown = pct // 10
@@ -98,7 +101,7 @@ def install_binary() -> None:
     print(f"sd-server: {rel.get('tag_name')} ({name}) in bin/")
 
 
-def install_models(models_dir: Path) -> None:
+def install_models(models_dir: Path, progress=None) -> None:
     for repo, path, rel in MODELS:
         dest = models_dir / rel
         if dest.exists():
@@ -112,7 +115,7 @@ def install_models(models_dir: Path) -> None:
         sha = (info[0].get("lfs") or {}).get("oid") if isinstance(info, list) and info else None
         if not sha:
             raise SystemExit(f"{repo}/{path}: no checksum from Hugging Face -- not downloading it unchecked")
-        _download(f"https://huggingface.co/{repo}/resolve/main/{path}", dest, sha, rel)
+        _download(f"https://huggingface.co/{repo}/resolve/main/{path}", dest, sha, rel, progress)
 
 
 def main() -> None:

@@ -6,8 +6,19 @@ const OverviewRules = (() => {
     const reachable = m => (m.where || []).some(p => p.place !== 'device' || p.online);
     const plural = (n, one, many) => tx(n === 1 ? one : many, { n });   // one/many: '{n} …' templates
 
-    // One card per page: {tab, group, title, text, facts[], ok}. `ok` false = the gateway can't do this now.
-    function cards(llm, images, audio) {
+    // One card per page: {tab, group, title, text, facts[], ok}. `ok` false = the gateway can't do this now; then
+    // the card names what could be downloaded for it (`downloads`: GET /api/plugins/installs items).
+    function cards(llm, images, audio, downloads) {
+        const out = baseCards(llm, images, audio);
+        const CAPS = { 'image-gen': ['image'], layout: ['image'], compare: ['image'], speech: ['tts', 'stt'] };
+        for (const c of out) {
+            const can = (downloads || []).filter(d => d.state !== 'installed' && (CAPS[c.tab] || []).includes(d.capability));
+            if (!c.ok && can.length) c.facts.push(tx('Can be downloaded: {list}', { list: can.map(d => d.label).join(', ') }));
+        }
+        return out;
+    }
+
+    function baseCards(llm, images, audio) {
         const llmOk = Array.isArray(llm), imgOk = Array.isArray(images);
         const models = llmOk ? llm.filter(reachable) : [];
         const chat = models.filter(m => m.kind === 'chat');
@@ -87,7 +98,8 @@ if (typeof document !== 'undefined' && document.getElementById('overview-tab')) 
         const get = path => api(path).catch(() => null);
         const [llm, img, audio, backend] = await Promise.all([get('/v1/llm/models'), get('/v1/images/models?task=all'),
                                                               get('/v1/audio/models'), get('/sw/backend')]);
-        render(OverviewRules.cards(llm && llm.models, img && img.data, audio));
+        const downloads = await Downloads.ready().then(() => Downloads.items()).catch(() => []);
+        render(OverviewRules.cards(llm && llm.models, img && img.data, audio, downloads));
         const ok = llm || img || audio;
         status.textContent = !ok ? tx('The gateway isn\'t answering right now – the pages work again once it runs.')
             : backend && backend.kind === 'openai'

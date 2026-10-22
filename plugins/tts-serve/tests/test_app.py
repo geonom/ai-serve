@@ -344,6 +344,7 @@ def test_default_engine_falls_back_to_an_installed_one(tmp_path):
     (providers / "alpha" / "venv" / "bin" / "python").unlink()      # alpha: only the folder
     pool = WorkerPool(providers, tmp_path / "logs", FakeGpu(), FakeCoordinator(), default_engine="alpha")
     view = pool.engines()
-    assert {e["id"]: e["installed"] for e in view["engines"]} == {"beta": True}   # alpha: not set up -> errors
-    assert any(err["dir"].endswith("alpha") and "setup" in err["error"] for err in view["errors"])
+    # alpha: not set up -- listed (it can be downloaded), but not the default
+    assert {e["id"]: e["installed"] for e in view["engines"]} == {"alpha": False, "beta": True}
+    assert view["errors"] == []
     assert view["default_engine"] == "beta"

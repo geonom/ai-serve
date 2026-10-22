@@ -218,6 +218,23 @@ dashboard, `/api/stop` on its port, `unload_all`).
   (on that GPU). **409** while busy unless `force` -- the GPU manager never forces.
 - `logs`: `GET ?tail=N` → `{"logs": "text"}`.
 
+## Downloads: `install` (every capability, optional)
+
+What a plugin can still download for this machine -- models, engines, their environments. Owner, 2026-10-22: a
+missing model should be downloadable from the Spielwiese and the dashboard instead of leaving an empty list.
+
+- `GET {install}` → `{"items": [{"id", "label", "description", "size_mb", "state", "done_mb", "error", "license"}]}`;
+  `state` is `missing | downloading | installed | failed`; `size_mb`/`done_mb` may be null (unknown). List only what
+  can run here (tts-serve leaves out engines whose `requires` this machine lacks, e.g. `cuda`, `darwin-arm64`).
+- `POST {install} {"id"}` → `202` with the item; starts the work in the background, once (a second request while it
+  runs changes nothing). `404` for an id it doesn't offer.
+- The request carries **only the id** -- which files, from where and with which checksum is the plugin's own
+  (shipped) business: sd-serve checks each file against GitHub's / Hugging Face's sha256, tts-serve and stt-serve
+  run the provider's own `setup.sh`. Never take URLs, paths or arguments from the request.
+- The gateway: `GET /api/plugins/installs` (every plugin's items, tagged `plugin`, `plugin_name`, `capability`;
+  fields checked by `normalize_install`), `POST /api/plugins/{plugin}/install {"id"}` (only `{"id"}`; dashboard
+  access = this machine and the owner's devices). The Spielwiese forwards the start only for its owner.
+
 ## Migration status
 
 Fixed 2026-10-21 (contracts, manifest field, jobs pattern; the capability list chosen by the owner). Moved behind

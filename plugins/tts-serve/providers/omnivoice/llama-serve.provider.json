@@ -18,6 +18,8 @@
   ],
   "default_reference": false,
   "license": "CC-BY-NC-4.0",
+  "requires": ["cuda"],
+  "install_mb": 8000,
   "setup": "./setup.sh",
   "modes": [
     {

@@ -69,9 +69,16 @@ class TestManifest:
         py.symlink_to(real)
         ProviderManifest.from_dict(json.loads((d / "llama-serve.provider.json").read_text()), d)
 
+    def test_a_missing_program_means_not_set_up_yet(self, tmp_path):
+        # a fresh checkout: setup.sh hasn't built ./venv yet -- listed, not installed (offered for download)
+        d = _provider(tmp_path)
+        (d / "venv" / "bin" / "python").unlink()
+        m = ProviderManifest.from_dict(json.loads((d / "llama-serve.provider.json").read_text()), d)
+        assert m.installed is False
+
     @pytest.mark.parametrize("command", [
         [], "./venv/bin/python", ["python3", "worker.py"], ["/usr/bin/python3", "worker.py"],
-        ["./../x/python", "w.py"], ["./venv/bin/missing"], ["./venv/bin/python", 5],
+        ["./../x/python", "w.py"], ["./venv/bin/python", 5],
     ])
     def test_command_must_start_with_an_executable_inside_the_provider(self, tmp_path, command):
         with pytest.raises(ProviderError):
@@ -201,16 +208,16 @@ class TestOverallStatus:
 
 
 def test_bundled_providers_are_valid():
-    """Every provider shipped in providers/ loads, or (fresh checkout, setup.sh not run) says it isn't set up yet --
-    never a broken manifest."""
+    """Every provider shipped in providers/ loads -- also on a fresh checkout (setup.sh not run): then it's listed as
+    not installed, to be downloaded."""
     from tts_serve.providers import PROVIDERS_DIR
     reg = ProviderRegistry.load(PROVIDERS_DIR)
     ids = {p.id for p in reg.providers}
-    for e in reg.errors:
-        assert "not set up yet" in e["error"] or "not an executable" in e["error"], e
+    assert reg.errors == []                       # set up or not, every shipped provider loads (not set up = offered)
     shipped = {d.name for d in PROVIDERS_DIR.iterdir() if (d / "llama-serve.provider.json").is_file()}
     assert {"cosyvoice", "chatterbox", "chatterbox-mlx", "voxcpm", "qwen3", "omnivoice"} <= shipped
-    assert len(ids) + len(reg.errors) == len(shipped)
+    assert ids == shipped
+    assert all(p.install_mb for p in reg.providers)   # a size to show before downloading
 
 
 class TestStatusFacts:

@@ -16,19 +16,30 @@ def snapshot() -> List[ObservedProcess]:
     may not inspect are skipped -- the domain can't attribute them anyway."""
     listening: Dict[int, set] = {}
     addresses: Dict[int, set] = {}
+    per_process = False
     try:
         for c in psutil.net_connections(kind="inet"):
             if c.status == psutil.CONN_LISTEN and c.pid and c.laddr:
                 listening.setdefault(c.pid, set()).add(c.laddr.port)
                 addresses.setdefault(c.pid, set()).add((c.laddr.ip, c.laddr.port))
     except psutil.Error:
-        pass
+        # macOS: the system-wide list needs root. One `lsof` call lists this user's listening sockets without it;
+        # without lsof, ask each of this user's processes (allowed there, but slow with many processes).
+        found = _lsof_listening()
+        if found is None:
+            per_process = True
+        else:
+            for pid, ip, port in found:
+                listening.setdefault(pid, set()).add(port)
+                addresses.setdefault(pid, set()).add((ip, port))
     me = os.getuid()
     out: List[ObservedProcess] = []
     for p, pinfo in processes(["pid", "ppid", "uids", "cmdline", "create_time"]):
         try:
             if pinfo["uids"] is None or pinfo["uids"].real != me:
                 continue
+            if per_process:
+                _own_listening(p, listening, addresses)
             out.append(ObservedProcess(
                 pid=pinfo["pid"], ppid=pinfo["ppid"] or 0, cwd=p.cwd(),
                 cmdline=tuple(pinfo["cmdline"] or ()),
@@ -39,6 +50,43 @@ def snapshot() -> List[ObservedProcess]:
         except (psutil.Error, OSError):
             continue
     return out
+
+
+def parse_lsof(text: str) -> List[tuple]:
+    """`lsof -Fpn` output -> [(pid, ip, port)]: 'p<pid>' starts a process, 'n<addr>:<port>' is one of its
+    sockets ('*' = all interfaces, IPv6 in brackets)."""
+    out, pid = [], None
+    for line in text.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            pid = int(line[1:])
+        elif line.startswith("n") and pid is not None and ":" in line:
+            host, _, port = line[1:].rpartition(":")
+            if not port.isdigit():
+                continue
+            host = host.strip("[]")
+            out.append((pid, {"*": "0.0.0.0"}.get(host, host), int(port)))
+    return out
+
+
+def _lsof_listening():
+    try:
+        r = subprocess.run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-u", str(os.getuid()), "-Fpn"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # exit 1 with no output just means "nothing listens"
+    return parse_lsof(r.stdout) if r.returncode in (0, 1) else None
+
+
+def _own_listening(p: psutil.Process, listening: Dict[int, set], addresses: Dict[int, set]) -> None:
+    conns = getattr(p, "net_connections", None) or p.connections   # psutil >= 6 / older
+    try:
+        for c in conns(kind="inet"):
+            if c.status == psutil.CONN_LISTEN and c.laddr:
+                listening.setdefault(p.pid, set()).add(c.laddr.port)
+                addresses.setdefault(p.pid, set()).add((c.laddr.ip, c.laddr.port))
+    except (psutil.Error, OSError):
+        pass
 
 
 def launch(plan: LaunchPlan, log_path: str) -> subprocess.Popen:

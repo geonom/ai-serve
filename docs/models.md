@@ -88,7 +88,9 @@ and MOSS-Transcribe (both NVIDIA only, set up from *Downloads*).
 - **Another Whisper size:** `STT_WHISPER_MODEL=large-v3` (or `medium`, `turbo`, … – also a Hugging Face repo of a
   CTranslate2 conversion, or a local folder) in `ai-serve.local.env`. Bigger is more accurate and slower. Default:
   `small`.
-- **Speakers:** needs `HF_TOKEN` once pyannote's terms are accepted (see the README).
+- **Speakers:** with Whisper, pyannote's gated model – needs `HF_TOKEN` once its terms are accepted (see the README);
+  recognising a speaker across recordings uses it as well. MOSS-Transcribe (one pass: text, speakers, timestamps) and
+  Nemotron diarization are not gated, but need an NVIDIA GPU.
 - **Another engine** (e.g. Parakeet, Canary): that is code in stt-serve today (`stt_serve/engine.py`) – there is no
   provider folder for STT yet.
 

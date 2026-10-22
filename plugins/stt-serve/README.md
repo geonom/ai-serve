@@ -13,4 +13,6 @@ Details: `CLAUDE.md`, API docs at `/docs`.
 **Status:** runs on the developer's Linux machine with NVIDIA (WhisperX, pyannote, Nemotron, MOSS-Transcribe, live
 sessions). Not tried: a clean setup through ai-serve's installer, a Mac, CPU only. Nemotron and MOSS-Transcribe need
 an NVIDIA GPU; pyannote's diarization model is gated: accept its terms on Hugging Face
-(pyannote/speaker-diarization-community-1) and set `HF_TOKEN` (with ai-serve: in `ai-serve.local.env`).
+(pyannote/speaker-diarization-community-1) and set `HF_TOKEN` (with ai-serve: in `ai-serve.local.env`); speaker
+matching across recordings (`return_embeddings`/`known_speakers`) uses it too, also with MOSS. MOSS-Transcribe and
+Nemotron diarize without a token (NVIDIA only).

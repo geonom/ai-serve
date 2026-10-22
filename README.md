@@ -34,13 +34,15 @@ their own libraries from Hugging Face (current version, not pinned). Sizes are e
 |---|---|---|
 | Gemma 4 E4B or E2B | Language model that also understands images | 5.5 / 3.8 GB |
 | Chatterbox Multilingual | Text-to-speech with voice cloning (through MLX on a Mac) | 3–7 GB |
-| Whisper (WhisperX small) | Speech-to-text; telling speakers apart needs a free Hugging Face token (below) | 2–8 GB |
+| Whisper (WhisperX small) | Speech-to-text; telling speakers apart with pyannote needs a free Hugging Face token (below) | 2–8 GB |
 | Iris-3B Turbo | Images from text descriptions (stable-diffusion.cpp) | 5.5 GB |
 | ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo; MOSS-Image (text in images, placing things in boxes) as a later download | ~30 GB |
 
-Speaker diarization uses pyannote's model, which is gated on Hugging Face: accept its terms on
+Telling speakers apart: with Whisper it uses pyannote's model, which is gated on Hugging Face – accept its terms on
 <https://huggingface.co/pyannote/speaker-diarization-community-1> and put `HF_TOKEN=<your token>` into
-`ai-serve.local.env`. Transcription works without it.
+`ai-serve.local.env`; recognising the same speaker across recordings uses it too. On an NVIDIA GPU, MOSS-Transcribe
+(`engine: "moss"`) and Nemotron diarization – both downloadable from *Downloads* – need no token. Transcription itself
+works without one.
 
 Then: `./ai-serve start` → <http://localhost:8030> (another port: `AI_SERVE_PORT=8031 ./ai-serve start`;
 in the background: `./ai-serve start -d`; also `./ai-serve stop`, `restart`, `status`). The

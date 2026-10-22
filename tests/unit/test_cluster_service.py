@@ -193,3 +193,54 @@ def test_chat_start_body_stays_compatible_with_older_agents(svc, monkeypatch):
     monkeypatch.setattr(service, "agent_call", spy)
     run(svc.upstream_for("m.gguf", local_path=None, ctx_size=8192, keep_alive=300))
     assert "mode" not in sent[0] and "pooling" not in sent[0]
+
+
+# --------------------------------------------------------------------------- snapshots without waiting
+# Found 2026-10-22: with an enrolled Mac asleep, every expired snapshot cache made the next /v1/llm/models wait the
+# full 5 s connect timeout (every other call took 5.3 s; the Spielwiese stalled loading).
+
+class SlowOffline:
+    """mac: unreachable (counts the attempts); pi: answers."""
+    def __init__(self):
+        self.tries = {"mac": 0, "pi": 0}
+
+    async def __call__(self, rec, method, path, body=None, timeout=10.0):
+        self.tries[rec.id] += 1
+        if rec.id == "mac":
+            raise service.NodeUnreachable("asleep")
+        if path == "/v1/node":
+            return {"accelerators": GPU, "instances": [], "runtime_kinds": ["metal"]}
+        return {"models": []}
+
+
+def test_an_unreachable_device_is_not_asked_again_for_a_while(svc, monkeypatch):
+    agent = SlowOffline()
+    monkeypatch.setattr(service, "agent_call", agent)
+    clock = [1000.0]
+    monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
+    s = service.ClusterService(snapshot_ttl_s=0, offline_backoff_s=30)
+    for _ in range(3):
+        snaps = {n.id: n for n in run(s.snapshots())}
+        assert snaps["mac"].online is False and snaps["pi"].online is True
+    assert agent.tries["mac"] == 1                      # asked once, then left alone
+    clock[0] += 31
+    run(s.snapshots())
+    assert agent.tries["mac"] == 2                      # after the pause: asked again
+
+
+def test_an_expired_but_recent_snapshot_is_answered_at_once_and_refreshed_behind(svc, monkeypatch):
+    agent = SlowOffline()
+    monkeypatch.setattr(service, "agent_call", agent)
+    clock = [1000.0]
+    monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
+    s = service.ClusterService(snapshot_ttl_s=5, offline_backoff_s=0)
+
+    async def scenario():
+        first = await s.snapshots()                     # nothing cached yet: waits
+        clock[0] += 6                                   # expired, but not old
+        again = await s.snapshots()                     # answered from the cache ...
+        assert again is first
+        await asyncio.sleep(0)                          # ... while the refresh runs behind it
+        await asyncio.sleep(0)
+        return agent.tries["pi"]
+    assert run(scenario()) == 4                          # 2 calls first, 2 for the background refresh

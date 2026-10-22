@@ -137,6 +137,7 @@ CLUSTER_NODES_FILE = os.getenv("CLUSTER_NODES_FILE", os.path.join(_PROJECT_DIR, 
 # its weights are Apache-2.0 (OmniVoice's are CC-BY-NC -- non-commercial). Every
 # engine runs in tts-serve.
 DEFAULT_TTS_ENGINE = os.getenv("DEFAULT_TTS_ENGINE", "")   # empty: the TTS plugin's own default (its first installed engine)
+DEFAULT_STT_ENGINE = os.getenv("DEFAULT_STT_ENGINE", "")   # empty: the first available default among the STT plugins
 # Reference voice a clone-based engine (cosyvoice/chatterbox) uses when the caller
 # supplies none: a filename under voices/ (its .txt sidecar is the transcript, which
 # CosyVoice zero_shot needs). Default is "synth-default.wav" -- a SYNTHETIC voice

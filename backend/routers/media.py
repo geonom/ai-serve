@@ -172,9 +172,11 @@ class KnownSpeaker(BaseModel):
 
 
 class STTTranscribeRequest(BaseModel):
-    engine: str = Field(
-        "whisperx", pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$",
-        description="'whisperx' (default: WhisperX + word alignment, diarization via diarize_backend) or 'moss' "
+    engine: Optional[str] = Field(
+        None, pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$",
+        description="Omitted: DEFAULT_STT_ENGINE, else the transcription plugins' default (stt-serve: whisperx). "
+                    "Any engine id from GET /v1/audio/models; stt-serve's: "
+                    "'whisperx' (WhisperX + word alignment, diarization via diarize_backend) or 'moss' "
                     "(MOSS-Transcribe-Diarize 0.9B in stt-serve: text, speakers and timestamps in one pass, up to "
                     "90 minutes, no word timestamps; return_embeddings/known_speakers work with diarize=true and "
                     "use the same voice-embedding model as 'whisperx', so embeddings match across engines).",
@@ -777,6 +779,22 @@ async def _engine_speaker(engine: Optional[str], voice: Optional[str]):
     return None, None
 
 
+async def _transcription_engine(model: Optional[str]) -> Optional[str]:
+    """/v1/audio/transcriptions' `model` -> an engine id of the transcription plugins, or None (= the default; e.g.
+    OpenAI's "whisper-1"). Exact id/alias first, then the first engine whose id or alias the name contains
+    ("moss-transcribe" -> moss)."""
+    ml = (model or "").strip().lower()
+    view = await stt_client.engines() if ml and await stt_client.ensure_running() else None
+    engines = (view or {}).get("engines", [])
+    for e in engines:
+        if ml == e["id"] or ml in (e.get("aliases") or []):
+            return e["id"]
+    for e in engines:
+        if any(n and n in ml for n in [e["id"], *(e.get("aliases") or [])]):
+            return e["id"]
+    return None
+
+
 async def _speech_engine(model: Optional[str]) -> Optional[str]:
     """/v1/audio/speech's `model` -> an engine id of the TTS plugin, or None (= its default). Exact id/alias first,
     then the first engine whose id or alias the name contains (e.g. "qwen-tts" -> qwen3 via alias "qwen")."""
@@ -849,14 +867,14 @@ async def openai_audio_transcriptions(
     response_format: str = Form("json"),
 ):
     """Same transcription as POST /api/stt/transcribe, wrapped in the OpenAI
-    multipart-upload shape. A `model` containing "moss" (e.g. `moss-transcribe`) uses
-    MOSS-Transcribe-Diarize, anything else WhisperX. `file` accepts video too, not just audio -- delegates to
+    multipart-upload shape. `model` picks a transcription engine by id or alias (e.g. `moss-transcribe` ->
+    moss); anything else (OpenAI's `whisper-1`) uses the default. `file` accepts video too, not just audio -- delegates to
     transcribe_stt(), whose ffmpeg-backed decoding content-sniffs regardless of container.
     `language` is forwarded (auto-detect is known-unreliable, see CLAUDE.md's STT notes).
     """
     content = await file.read()
     audio_base64 = base64.b64encode(content).decode("utf-8")
-    engine = "moss" if "moss" in model.lower() else "whisperx"
+    engine = await _transcription_engine(model)
     stt_req = STTTranscribeRequest(audio_base64=audio_base64, language=language or None, engine=engine)
     result = await transcribe_stt(stt_req)
     return openai_transcription_response(result, response_format, language)

@@ -150,29 +150,29 @@ def machine() -> O.Machine:
 
 
 def ask(question: str, default: bool = False) -> bool:
-    hint = "[J/n]" if default else "[j/N]"
+    hint = "[Y/n]" if default else "[y/N]"
     try:
         a = input(f"{question} {hint} ").strip().lower()
     except EOFError:
         return default
-    return default if not a else a in ("j", "ja", "y", "yes")
+    return default if not a else a in ("y", "yes", "j", "ja")
 
 
 def choose(m: O.Machine) -> List[str]:
     by_id = {o.id: o for o in O.offers(m)}
-    print("\nGrundausstattung -- alles optional, später jederzeit nachholbar (./ai-serve setup):\n")
+    print("\nBasic set -- all optional, can be added any time later (./ai-serve setup):\n")
     picked: List[str] = []
     e4b, e2b = by_id["llm-gemma-e4b"], by_id["llm-gemma-e2b"]
-    print(f"  Sprachmodell, liest auch Bilder: Gemma 4 E4B (~{e4b.size_gb} GB) oder E2B, besonders klein (~{e2b.size_gb} GB)")
+    print(f"  Language model, also reads images: Gemma 4 E4B (~{e4b.size_gb} GB) or E2B, extra small (~{e2b.size_gb} GB)")
     try:
-        a = input("  [4] E4B  [2] E2B  [n] keins  (Standard 4): ").strip().lower() or "4"
+        a = input("  [4] E4B  [2] E2B  [n] none  (default 4): ").strip().lower() or "4"
     except EOFError:
         a = "4"
     picked += ["llm-gemma-e4b"] if a == "4" else ["llm-gemma-e2b"] if a == "2" else []
     for oid in ("tts-chatterbox", "stt-whisper", "image-iris", "image-comfyui"):
         o = by_id[oid]
-        print(f"\n  {o.label}: {o.what}\n  ~{o.size_gb} GB, Lizenz {o.license}")
-        if ask("  Einrichten?", default=oid != "image-comfyui"):   # ~30 GB: only when asked for
+        print(f"\n  {o.label}: {o.what}\n  ~{o.size_gb} GB, license {o.license}")
+        if ask("  Set it up?", default=oid != "image-comfyui"):   # ~30 GB: only when asked for
             picked.append(oid)
     return picked
 
@@ -195,12 +195,12 @@ def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool) -> None:
     ids = O.validate_choice(chosen, m) if chosen is not None else choose(m)
     picked = [o for o in O.offers(m) if o.id in ids]
     total = sum(o.size_gb for o in picked)
-    print(f"\nGewählt: {', '.join(o.label for o in picked) or 'nur ai-serve selbst'} -- zusammen ~{total:.1f} GB")
-    if not yes and not ask("Los?", default=True):
-        raise SystemExit("abgebrochen")
+    print(f"\nChosen: {', '.join(o.label for o in picked) or 'only ai-serve itself'} -- together ~{total:.1f} GB")
+    if not yes and not ask("Go?", default=True):
+        raise SystemExit("cancelled")
     llama_server = None
     if not skip_llamacpp:
-        print("\n== llama.cpp für diesen Rechner")
+        print("\n== llama.cpp for this machine")
         from installer import llamacpp
         binary = llamacpp.install(HERE / "runtimes")
         llama_server = "./" + str(binary.relative_to(HERE))
@@ -215,19 +215,19 @@ def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool) -> None:
     text = ENV_FILE.read_text(encoding="utf-8") if ENV_FILE.exists() else "# this machine's settings (ai-serve.example.env lists them all)\n"
     ENV_FILE.write_text(O.merge_env(text, O.env_updates(picked, llama_server)), encoding="utf-8")
     port = os.environ.get("AI_SERVE_PORT") or "8030"
-    print(f"\nFertig. Einstellungen: {ENV_FILE.name}. Starten: ./ai-serve start  -> http://localhost:{port}"
+    print(f"\nDone. Settings: {ENV_FILE.name}. Start: ./ai-serve start  -> http://localhost:{port}"
           + ("  (Spielwiese: Apps & Services)" if (HERE / "apps" / "spielwiese").is_dir() else ""))
 
 
 def plugin_add(url: str, name: Optional[str], yes: bool) -> None:
     info = P.add(url, HERE / "plugins", name)
-    print(f"\n{info['name']} ({info['id']}) in {info['dir']}\n  Port {info['port']}, startet mit {' '.join(info['command'])}"
-          f"\n  Stellt bereit: {', '.join(info['provides']) or '-- (eine App)'}")
+    print(f"\n{info['name']} ({info['id']}) in {info['dir']}\n  Port {info['port']}, started with {' '.join(info['command'])}"
+          f"\n  Provides: {', '.join(info['provides']) or '-- (an app)'}")
     if info["setup"]:
-        print("\n  setup.sh richtet seine Umgebung ein -- das ist Code aus dem Internet; vorher ansehen ist eine gute Idee.")
-        if yes or ask("  setup.sh jetzt ausführen?"):
+        print("\n  setup.sh sets up its environment -- that is code from the internet; looking at it first is a good idea.")
+        if yes or ask("  Run setup.sh now?"):
             subprocess.run(["bash", "setup.sh"], cwd=info["dir"], check=True)
-    print("\nErscheint in Apps & Services; ai-serve startet es, wenn es gebraucht wird.")
+    print("\nShows up in Apps & Services; ai-serve starts it when it is needed.")
 
 
 def model_add(url: str, file: Optional[str], mmproj: str, yes: bool) -> None:

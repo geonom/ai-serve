@@ -51,7 +51,8 @@ class FakeSttServe:
         if path == "/v1/engines":
             return httpx.Response(200, json={"engines": [{"id": "whisperx", "fields": [{"name": "diarize_backend",
                 "type": "choice", "choices": [{"value": "whisperx", "label": "pyannote", "available": True},
-                                              {"value": "nemotron", "label": "Nemotron", "available": False}]}]}]})
+                                              {"value": "nemotron", "label": "Nemotron", "available": False}]}]},
+                {"id": "moss", "fields": []}], "default_engine": "whisperx"})   # as stt-serve answers
         self.calls.append((request.method, path, body, dict(request.url.params) or None))
         if self.error:
             return httpx.Response(self.error[0], json={"detail": self.error[1]})
@@ -201,4 +202,5 @@ def test_engine_names_are_stt_serves_business(stt):
 def test_openai_transcriptions_pick_engine_by_model(stt, model, engine):
     r = client.post("/v1/audio/transcriptions", files={"file": ("a.wav", b"RIFF")}, data={"model": model})
     assert r.status_code == 200
-    assert stt.calls[0][2]["engine"] == engine
+    transcribed = [c for c in stt.calls if c[1] == "/v1/transcribe"]
+    assert transcribed[0][2]["engine"] == engine

@@ -153,6 +153,9 @@ result files are videos (`video/mp4`).
 
 - `catalog` → `{"engines": [entry]}` with `outputs` and `fields` -- the options as plain form fields (`name`,
   `type` bool | choice | int | language | list, `show_if` …).
+- Several `stt` plugins at once, like `tts`: engines merged (a duplicate id stays with the plugin that sorts first), a
+  transcription goes to the plugin that lists its `engine`, a live session stays with the plugin that started it
+  (`live/start` answers its `session_id`). Default: `DEFAULT_STT_ENGINE`, else the first available plugin default.
 - `transcribe`: stt-serve's request (audio as base64, the fields above); answers transcript + segments. Optional
   `live` (`{live}/start|chunk|poll|stop|settings|sessions`, stt-serve's live sessions), `jobs` (long recordings).
 

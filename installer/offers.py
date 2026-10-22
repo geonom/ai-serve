@@ -45,9 +45,9 @@ def _gemma(size: str, model_gb: float) -> Offer:
     repo = f"unsloth/gemma-4-{size}-it-GGUF"
     main = f"gemma-4-{size}-it-Q4_K_M.gguf"
     return Offer(
-        id=f"llm-gemma-{size.lower()}", label=f"Sprachmodell Gemma 4 {size} (liest auch Bilder)",
-        what=f"Chat, Texte, Bilder beschreiben -- {size}, 4-bit; läuft mit llama.cpp auf GPU, Mac oder CPU",
-        size_gb=round(model_gb + 0.9, 1), license="Gemma Terms of Use (kommerziell erlaubt)",
+        id=f"llm-gemma-{size.lower()}", label=f"Language model Gemma 4 {size} (also reads images)",
+        what=f"Chat, texts, describing images -- {size}, 4-bit; runs with llama.cpp on a GPU, a Mac or the CPU",
+        size_gb=round(model_gb + 0.9, 1), license="Gemma Terms of Use (commercial use allowed)",
         # the vision module is saved as <model stem>-mmproj-F16.gguf so ai-serve pairs it with the model by name
         files=(HfFile(repo, main, main), HfFile(repo, "mmproj-F16.gguf", f"gemma-4-{size}-it-mmproj-F16.gguf")),
         chat_model=main)
@@ -60,22 +60,22 @@ def offers(m: Machine) -> List[Offer]:
     return [
         _gemma("E4B", 4.6),
         _gemma("E2B", 2.9),
-        Offer(id="tts-chatterbox", label="Sprachausgabe (Chatterbox Multilingual)",
-              what="Text vorlesen, auch Deutsch, mit geklonter Stimme" + (" -- über MLX" if m.apple_silicon else ""),
+        Offer(id="tts-chatterbox", label="Speech output (Chatterbox Multilingual)",
+              what="Reads text aloud in many languages, with a cloned voice" + (" -- through MLX" if m.apple_silicon else ""),
               size_gb=tts_size, license="MIT", plugin="tts-serve",
               setup=(f"providers/{tts_provider}/setup.sh", "--download")),
-        Offer(id="stt-whisper", label="Spracherkennung (Whisper, mit Sprechertrennung)",
-              what="Aufnahmen abschreiben (WhisperX small)" + ("" if m.nvidia else " -- auf der CPU")
-                   + "; Sprechertrennung mit pyannote braucht einen Hugging-Face-Token (HF_TOKEN, siehe README)"
-                   + ("; ohne Token: MOSS-Transcribe oder Nemotron über Downloads" if m.nvidia else ""),
+        Offer(id="stt-whisper", label="Speech recognition (Whisper, with speaker diarization)",
+              what="Transcribes recordings (WhisperX small)" + ("" if m.nvidia else " -- on the CPU")
+                   + "; telling speakers apart with pyannote needs a Hugging Face token (HF_TOKEN, see the README)"
+                   + ("; without a token: MOSS-Transcribe or Nemotron from Downloads" if m.nvidia else ""),
               size_gb=stt_size, license="BSD-2 / MIT", plugin="stt-serve", setup=("setup.sh", "--download")),
-        Offer(id="image-iris", label="Bilder erzeugen (Iris-3B Turbo)",
-              what="Bilder aus Beschreibungen in ~5-15 s; englische Schrift im Bild gelingt, deutsche nicht",
+        Offer(id="image-iris", label="Images from text (Iris-3B Turbo)",
+              what="Images from descriptions in ~5-15 s; English lettering in images comes out clean, German does not",
               size_gb=5.5, license="Apache-2.0", plugin="sd-serve", setup=("setup.sh", "--models")),
-        Offer(id="image-comfyui", label="Bilder bearbeiten + mehr Bildmodelle (ComfyUI)",
-              what="Bearbeiten per Anweisung, Stil übertragen (Qwen-Image-Edit 2511), Z-Image Turbo; "
-                   "MOSS-Image (Text im Bild, Positionen) später per Download"
-                   + (" -- auf dem Mac langsam, Bearbeiten dort noch ungetestet" if m.apple_silicon else ""),
+        Offer(id="image-comfyui", label="Image editing + more image models (ComfyUI)",
+              what="Editing by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo; "
+                   "MOSS-Image (text in images, positions) as a later download"
+                   + (" -- slow on a Mac, editing untried there" if m.apple_silicon else ""),
               size_gb=31.0 if m.nvidia else 28.0, license="Apache-2.0 (Modelle), GPL-3.0 (ComfyUI)",
               plugin="image-serve", setup=("setup.sh", "--models", "z-image-turbo,qwen-edit-2511")),
     ]

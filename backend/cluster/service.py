@@ -90,35 +90,57 @@ class Upstream:
 
 
 class ClusterService:
-    def __init__(self, snapshot_ttl_s: float = 5.0):
+    def __init__(self, snapshot_ttl_s: float = 5.0, offline_backoff_s: float = 30.0, stale_ok_s: float = 60.0):
         self.sessions: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.copies: Dict[str, Dict[str, Any]] = {}
         self._ttl = snapshot_ttl_s
         self._cache: Tuple[float, List[NodeSnapshot]] = (0.0, [])
+        # A device that didn't answer isn't asked again for a while: with a Mac asleep, every expired cache made the
+        # next caller wait the whole connect timeout (/v1/llm/models: 5.3 s every other call, 2026-10-22).
+        self._backoff = offline_backoff_s
+        self._offline_until: Dict[str, float] = {}
+        # An expired cache younger than this is answered at once and refreshed in the background.
+        self._stale_ok = stale_ok_s
+        self._refreshing: Optional["asyncio.Task"] = None
 
     def has_nodes(self) -> bool:
         return bool(registry().all())
 
-    async def snapshots(self) -> List[NodeSnapshot]:
-        if self._ttl and time.monotonic() - self._cache[0] < self._ttl:
-            return self._cache[1]
+    async def _probe(self, rec) -> NodeSnapshot:
+        now = time.monotonic()
+        offline = NodeSnapshot(id=rec.id, online=False, priority=0, runtime_kinds=frozenset(),
+                               accelerators=[], models={}, instances=[])
+        if self._offline_until.get(rec.id, 0) > now:
+            return offline
+        try:
+            node = await agent_call(rec, "GET", "/v1/node", timeout=5.0)
+            models = await agent_call(rec, "GET", "/v1/models", timeout=5.0)
+        except NodeUnreachable:
+            if self._backoff:
+                self._offline_until[rec.id] = time.monotonic() + self._backoff
+            return offline
+        self._offline_until.pop(rec.id, None)
+        return NodeSnapshot(
+            id=rec.id, online=True, priority=0,
+            runtime_kinds=frozenset(node.get("runtime_kinds") or []),
+            accelerators=node.get("accelerators") or [],
+            models={m["name"]: int(m.get("size_mb") or 0) for m in models.get("models") or []},
+            instances=node.get("instances") or [])
 
-        async def one(rec):
-            try:
-                node = await agent_call(rec, "GET", "/v1/node", timeout=5.0)
-                models = await agent_call(rec, "GET", "/v1/models", timeout=5.0)
-            except NodeUnreachable:
-                return NodeSnapshot(id=rec.id, online=False, priority=0, runtime_kinds=frozenset(),
-                                    accelerators=[], models={}, instances=[])
-            return NodeSnapshot(
-                id=rec.id, online=True, priority=0,
-                runtime_kinds=frozenset(node.get("runtime_kinds") or []),
-                accelerators=node.get("accelerators") or [],
-                models={m["name"]: int(m.get("size_mb") or 0) for m in models.get("models") or []},
-                instances=node.get("instances") or [])
-        snaps = list(await asyncio.gather(*(one(r) for r in registry().all())))
+    async def _refresh(self) -> List[NodeSnapshot]:
+        snaps = list(await asyncio.gather(*(self._probe(r) for r in registry().all())))
         self._cache = (time.monotonic(), snaps)
         return snaps
+
+    async def snapshots(self) -> List[NodeSnapshot]:
+        age = time.monotonic() - self._cache[0]
+        if self._ttl and age < self._ttl:
+            return self._cache[1]
+        if self._ttl and self._cache[0] and age < self._stale_ok:
+            if self._refreshing is None or self._refreshing.done():
+                self._refreshing = asyncio.ensure_future(self._refresh())
+            return self._cache[1]
+        return await self._refresh()
 
     def _upstream(self, rec, iid: str, model: str, keep_alive: int, owned: bool) -> Upstream:
         key = (rec.id, iid)

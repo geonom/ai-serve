@@ -108,7 +108,8 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | ComfyUI (image-serve): Z-Image, Qwen-Image-Edit, style transfer, MOSS | ✅ clean setup | not tried (int8/fp8 weights are made for CUDA; may be slow or fail) | – |
 | Downloads from the Spielwiese / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
 | More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |
-| `./ai-serve plugin add <git-url>` | ✅ with [ai-serve-strata](https://github.com/geonom/ai-serve-strata) (cloned, manifest checked, setup.sh) | – | – |
+| `./ai-serve plugin add <git-url>` | ✅ with [ai-serve-strata](https://github.com/geonom/ai-serve-strata) and [ai-serve-piper](https://github.com/geonom/ai-serve-piper) (cloned, manifest checked, setup.sh) | – | – |
+| Piper (CPU speech) through ai-serve-piper | ✅ fresh copy: plugin add, voice downloaded from the dashboard API, speech via `/v1/audio/speech` | not tried | Raspberry Pi: not tried |
 | Strata through the ai-serve-strata plugin | ✅ (two NVIDIA cards, 96 GB RAM) | not tried | – |
 
 Everything else listed in the docs (other TTS engines, diarization, OCR, the GPU manager …) runs daily on the

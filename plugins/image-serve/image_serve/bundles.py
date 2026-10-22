@@ -4,7 +4,8 @@ A catalog model needs several files: the diffusion model, its text encoder, its 
 Lightning LoRA its workflow uses). Each file is pinned here by Hugging Face repo, path, size and sha256 -- the same
 files this plugin was tested with (2026-10-22, sha256 compared with the files on the owner's machine). A download
 streams to a temp file next to its target, hashes while writing, and is moved into place only when the hash matches;
-nothing from the request but the bundle id is used. All models here: Apache-2.0.
+nothing from the request but the bundle id is used. All models here: Apache-2.0. A bundle with `needs` only makes
+sense on top of that one (and only where ComfyUI supports MOSS -- see app.py).
 """
 from __future__ import annotations
 
@@ -56,6 +57,20 @@ FILES: Tuple[BundleFile, ...] = (
                "ministral-3-3b.safetensors", 7717637511, "49a750a128863854eac7d85e1a277a7b44bf6ec3646405b84686dfeeca3708ca"),
     BundleFile("ernie-turbo", "baidu/ERNIE-Image-Turbo", "vae/diffusion_pytorch_model.safetensors", "vae",
                "vae_ernie_turbo.safetensors", 168120878, "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"),
+    # MOSS-Image (OpenMOSS, Apache-2.0; ComfyUI >= v0.42): main model int8 (bf16 optional), Qwen3.5 text encoder,
+    # FLUX.2's VAE (Apache-2.0 per black-forest-labs/FLUX.2-VAE; ComfyUI's single-file copy), the two turbo LoRAs
+    BundleFile("moss", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_int8_convrot.safetensors", "diffusion_models",
+               "moss_image_sft_int8_convrot.safetensors", 5413698958, "b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f"),
+    BundleFile("moss", "Comfy-Org/MOSS-Image", "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors", "text_encoders",
+               "qwen3.5_9b_w4a8_gptq.safetensors", 7343591088, "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c"),
+    BundleFile("moss", "Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors", "vae",
+               "flux2-vae.safetensors", 336213556, "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"),
+    BundleFile("moss", "akhaliq/MOSS-Image-SFT-4-steps", "moss_image_sft_4step_v2.0.safetensors", "loras/MOSS",
+               "moss_image_sft_4step_v2.0.safetensors", 1189176752, "154c7f1455c3bf9925945c2f1ea2e4f09d0d0c67256081384a094b2b585f913f"),
+    BundleFile("moss", "lodestones/MOSS-Image-SFT-8-steps-dmd", "lora.safetensors", "loras/MOSS",
+               "moss-sft-8step-dmd-lodestones.safetensors", 1189176800, "4abb14e39c1a59018907581e609f43616ec6810126144ec2b1d2e6f8969628fe"),
+    BundleFile("moss-bf16", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_bf16.safetensors", "diffusion_models",
+               "moss_image_sft_bf16.safetensors", 10164655808, "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f"),
 )
 
 BUNDLES: Dict[str, Dict[str, str]] = {
@@ -65,6 +80,10 @@ BUNDLES: Dict[str, Dict[str, str]] = {
                        "description": "Edit images by instruction and transfer a style (with the 4-step Lightning LoRA)"},
     "ernie-turbo": {"label": "ERNIE-Image Turbo", "license": "Apache-2.0",
                     "description": "Fast images from text, a bit more illustrative"},
+    "moss": {"label": "MOSS-Image", "license": "Apache-2.0", "needs": "moss",
+             "description": "Text in images, long prompts, things placed where you draw them; with the 4- and 8-step turbo LoRAs"},
+    "moss-bf16": {"label": "MOSS-Image bf16 main model", "license": "Apache-2.0", "needs": "moss",
+                  "description": "The full-precision main model (10 GB) for the bf16 MOSS variants; needs MOSS-Image"},
 }
 
 

@@ -20,6 +20,13 @@ test('a page sees only its own missing items', () => {
     assert.equal(D.missing(ITEMS, 'stt').length, 0);
 });
 
+test('a page can narrow its offer to certain items (the layout page: only MOSS)', () => {
+    const items = [...ITEMS, { plugin: 'image-serve', id: 'moss', capability: 'image', state: 'missing' },
+                   { plugin: 'image-serve', id: 'z-image-turbo', capability: 'image', state: 'missing' }];
+    assert.deepEqual(D.missing(items, 'image', ['moss', 'moss-bf16']).map(i => i.id), ['moss']);
+    assert.deepEqual(D.missing(items, 'image').map(i => i.id), ['iris-turbo', 'moss', 'z-image-turbo']);
+});
+
 test('sizes and states read plainly', () => {
     assert.equal(D.sizeText(5300), '~5.2 GB');
     assert.equal(D.sizeText(700), '~700 MB');

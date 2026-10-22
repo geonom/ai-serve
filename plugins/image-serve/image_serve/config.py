@@ -36,6 +36,29 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 os.makedirs(GENERATED_IMAGES_DIR, exist_ok=True)
 
 
+MOSS_MIN_COMFYUI = (0, 42, 0)     # MOSS-Image support landed in ComfyUI v0.42.0
+
+
+def comfy_version():
+    """(major, minor, patch) of the ComfyUI in COMFYUI_DIR (its comfyui_version.py), None if unreadable."""
+    import re
+    try:
+        with open(os.path.join(COMFYUI_DIR, "comfyui_version.py"), encoding="utf-8") as f:
+            m = re.search(r'__version__\s*=\s*["\'](\d+)\.(\d+)\.(\d+)', f.read())
+    except OSError:
+        return None
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def moss_possible() -> bool:
+    """MOSS-Image can run here: the ComfyUI here is new enough -- or there is none yet, and setup.sh will clone its
+    pinned release (new enough). An older ComfyUI configured in .env (e.g. one the owner runs) hides MOSS."""
+    if not os.path.isfile(os.path.join(COMFYUI_DIR, "main.py")):
+        return True
+    v = comfy_version()
+    return v is not None and v >= MOSS_MIN_COMFYUI
+
+
 def comfy_ready() -> bool:
     """ComfyUI and its Python are there (setup.sh ran, or an existing ComfyUI is configured in .env)."""
     return os.path.isfile(os.path.join(COMFYUI_DIR, "main.py")) and os.access(COMFYUI_PYTHON, os.X_OK)

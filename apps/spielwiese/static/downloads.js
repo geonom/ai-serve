@@ -5,9 +5,10 @@
 // Spielwiese forwards the start only for its owner. Pure part first (tests: node --test tests/downloads.test.mjs).
 
 const DownloadRules = (() => {
-    // what a page can still download: items of its capability that aren't installed
-    function missing(items, capability) {
-        return (items || []).filter(i => (!capability || i.capability === capability) && i.state !== 'installed');
+    // what a page can still download: items of its capability that aren't installed (`only`: just these item ids)
+    function missing(items, capability, only = null) {
+        return (items || []).filter(i => (!capability || i.capability === capability) && i.state !== 'installed'
+            && (!only || only.includes(i.id)));
     }
     function sizeText(mb) {
         if (mb === null || mb === undefined) return '';
@@ -74,8 +75,8 @@ const Downloads = (() => {
         refresh();
     }
 
-    function render(box, { capability, hint }) {
-        const missing = capability === false ? [] : DownloadRules.missing(items, capability);
+    function render(box, { capability, hint, only }) {
+        const missing = capability === false ? [] : DownloadRules.missing(items, capability, only);
         box.replaceChildren();
         if (hint) box.append(el('div', 'dl-hint', hint));
         for (const i of missing) {
@@ -105,11 +106,12 @@ const Downloads = (() => {
         for (const [box, opts] of panels) if (box.isConnected) render(box, opts);
     }
 
-    // Show what `capability` could still download in `box`; `hint` (optional) explains a missing ability.
-    function panel(box, capability, hint = '') {
+    // Show what `capability` could still download in `box`; `hint` (optional) explains a missing ability;
+    // `only` (optional) narrows the offer to these item ids.
+    function panel(box, capability, hint = '', only = null) {
         if (!box) return;
-        panels.set(box, { capability, hint });
-        ready().then(() => render(box, { capability, hint }));
+        panels.set(box, { capability, hint, only });
+        ready().then(() => render(box, { capability, hint, only }));
     }
 
     return { panel, ready, refresh, items: () => items, isOwner: () => isOwner };

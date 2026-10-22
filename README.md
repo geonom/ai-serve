@@ -29,7 +29,7 @@ every download is verified by sha256:
 | Chatterbox Multilingual | Text-to-speech with voice cloning (through MLX on a Mac) | 3–7 GB |
 | Whisper (WhisperX small) | Speech-to-text with speaker diarization | 2–8 GB |
 | Iris-3B Turbo | Images from text descriptions (stable-diffusion.cpp) | 5.5 GB |
-| ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo | ~30 GB |
+| ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo; MOSS-Image (text in images, placing things in boxes) as a later download | ~30 GB |
 
 Then: `./ai-serve start` → <http://localhost:8030> (another port: `AI_SERVE_PORT=8031 ./ai-serve start`;
 in the background: `./ai-serve start -d`; also `./ai-serve stop`, `restart`, `status`). The

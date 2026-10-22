@@ -39,3 +39,20 @@ def test_slow_jobs_are_awaited_not_cut_off(monkeypatch):
     state.comfyui_tasks.pop("slow", None)
     assert asyncio.run(media._await_comfyui_task("slow")) == "UE5H"
     state.comfyui_tasks.pop("slow", None)
+
+
+def test_a_models_root_outside_comfyui_is_handed_to_it(tmp_path):
+    """COMFYUI_MODELS_ROOT elsewhere (downloads land there) must reach ComfyUI too -- found 2026-10-22: a fresh setup
+    with its own models root listed every model as available, but ComfyUI saw none of them ("not in []")."""
+    from image_serve import comfy
+    comfy_dir, root = tmp_path / "ComfyUI", tmp_path / "my models: 1"
+    (comfy_dir / "models").mkdir(parents=True)
+    root.mkdir()
+    assert comfy.extra_model_paths_args(str(comfy_dir), str(comfy_dir / "models"), str(tmp_path)) == []
+    args = comfy.extra_model_paths_args(str(comfy_dir), str(root), str(tmp_path))
+    assert args[0] == "--extra-model-paths-config"
+    text = open(args[1]).read()
+    assert f'    base_path: "{root}"' in text                       # quoted: the path has a colon and spaces
+    assert "    diffusion_models: |\n        diffusion_models/\n        unet/\n" in text
+    assert "    text_encoders: |\n        text_encoders/\n        clip/\n" in text
+    assert "    loras: |\n        loras/\n" in text and "    vae: |\n        vae/\n" in text

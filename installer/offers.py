@@ -71,7 +71,8 @@ def offers(m: Machine) -> List[Offer]:
               what="Bilder aus Beschreibungen in ~5-15 s; englische Schrift im Bild gelingt, deutsche nicht",
               size_gb=5.5, license="Apache-2.0", plugin="sd-serve", setup=("setup.sh", "--models")),
         Offer(id="image-comfyui", label="Bilder bearbeiten + mehr Bildmodelle (ComfyUI)",
-              what="Bearbeiten per Anweisung, Stil übertragen (Qwen-Image-Edit 2511), Z-Image Turbo"
+              what="Bearbeiten per Anweisung, Stil übertragen (Qwen-Image-Edit 2511), Z-Image Turbo; "
+                   "MOSS-Image (Text im Bild, Positionen) später per Download"
                    + (" -- auf dem Mac langsam, Bearbeiten dort noch ungetestet" if m.apple_silicon else ""),
               size_gb=31.0 if m.nvidia else 28.0, license="Apache-2.0 (Modelle), GPL-3.0 (ComfyUI)",
               plugin="image-serve", setup=("setup.sh", "--models", "z-image-turbo,qwen-edit-2511")),

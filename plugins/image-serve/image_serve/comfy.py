@@ -35,6 +35,28 @@ logger = logging.getLogger("image-serve.comfy")
 router = APIRouter()
 
 
+# ComfyUI's folder name -> sub dirs of a models root (the layout ComfyUI's own models/ dir has)
+_MODEL_PATHS = {"checkpoints": ["checkpoints/"], "diffusion_models": ["diffusion_models/", "unet/"],
+                "text_encoders": ["text_encoders/", "clip/"], "vae": ["vae/"], "loras": ["loras/"],
+                "clip_vision": ["clip_vision/"], "controlnet": ["controlnet/"], "upscale_models": ["upscale_models/"],
+                "embeddings": ["embeddings/"], "model_patches": ["model_patches/"]}
+
+
+def extra_model_paths_args(comfy_dir: str, models_root: str, state_dir: str) -> List[str]:
+    """A models root outside ComfyUI's own models/ (COMFYUI_MODELS_ROOT -- where downloads land) is handed to ComfyUI
+    as an extra model paths file; ComfyUI otherwise never looks there. Nothing extra when they're the same dir."""
+    if os.path.realpath(models_root) == os.path.realpath(os.path.join(comfy_dir, "models")):
+        return []
+    lines = ["image_serve:", f"    base_path: {json.dumps(models_root)}"]   # a JSON string is a valid YAML scalar
+    for name, subs in _MODEL_PATHS.items():
+        lines.append(f"    {name}: |")
+        lines += [f"        {s}" for s in subs]
+    path = os.path.join(state_dir, "comfyui-model-paths.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# written by image-serve at each ComfyUI start (COMFYUI_MODELS_ROOT)\n" + "\n".join(lines) + "\n")
+    return ["--extra-model-paths-config", path]
+
+
 def find_comfyui_process() -> Optional[psutil.Process]:
     """ComfyUI on our port, whoever started it (cwd = COMFYUI_DIR, main.py --port <ours>)."""
     root = os.path.realpath(COMFYUI_DIR)
@@ -261,7 +283,7 @@ class ImageGenerationRequest(BaseModel):
     size: Optional[str] = "1024x1024"
     response_format: Optional[str] = "url"
     # extensions: layout = elements with a relative box [left, top, right, bottom] in 0..1 (models with `layout`,
-    # e.g. MOSS-Image in the comfyui-moss plugin);
+    # e.g. MOSS-Image, image_serve/moss.py);
     # other models come from image plugins (backend/plugins/images.py; e.g. Iris in sd-serve)
     model: Optional[str] = None
     layout: Optional[List[Dict[str, Any]]] = None
@@ -538,6 +560,7 @@ async def start_comfyui(req: ComfyUIStartRequest):
     # Loopback only: who else reaches ComfyUI's UI is chosen in the dashboard's
     # Services tab (Tailscale levels), not by listening on every interface.
     cmd = [COMFYUI_PYTHON, "main.py", "--port", str(state.comfyui_port), "--listen", "127.0.0.1"]
+    cmd += extra_model_paths_args(COMFYUI_DIR, COMFYUI_MODELS_ROOT, LOGS_DIR)
     if gpu_id is not None:
         cmd += ["--cuda-device", str(gpu_id)]
     try:
@@ -1149,6 +1172,30 @@ async def _queue_comfyui_generate(req: ComfyUIGenerateRequest) -> tuple:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to queue prompt: {e}")
     return client_id, prompt_id, start_time
+
+
+async def queue_workflow(workflow: Dict[str, Any], label: str) -> Dict[str, str]:
+    """Queue a workflow built elsewhere (MOSS-Image builds its own, image_serve/moss.py): ComfyUI started if needed,
+    GPU room asked for its models, then tracked like any job -- the caller awaits it with _await_comfyui_task."""
+    start_time = time.time()
+    state.comfyui_active_model = label
+    state.comfyui_last_used = start_time
+    await _ensure_comfyui_running()
+    _reset_comfyui_idle_timer(state.comfyui_port)
+    await _comfyui_gpu_preflight(workflow, label)
+    client_id = str(uuid.uuid4())
+    state.comfyui_progress = {"step": 0, "max_steps": 0, "node": "", "value": 0}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"http://127.0.0.1:{state.comfyui_port}/prompt",
+                                     json={"prompt": workflow, "client_id": client_id})
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=503, detail=f"ComfyUI unreachable: {type(e).__name__}")
+    if resp.status_code != 200:   # ComfyUI's validation message names the node/input -- worth passing on
+        raise HTTPException(status_code=500, detail=f"ComfyUI refused the {label} workflow: {resp.text[:300]}")
+    prompt_id = resp.json().get("prompt_id")
+    asyncio.create_task(_track_and_retrieve_comfyui(client_id, prompt_id, state.comfyui_port, start_time, label))
+    return {"status": "queued", "task_id": prompt_id}
 
 
 @router.post("/api/comfyui/generate", summary="Generate image via ComfyUI")

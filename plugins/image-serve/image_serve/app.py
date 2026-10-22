@@ -26,7 +26,7 @@ import httpx
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from image_serve import catalog, comfy, jobs
+from image_serve import catalog, comfy, config, jobs, moss
 from image_serve.config import LOGS_DIR
 from image_serve.state import state
 
@@ -71,7 +71,42 @@ async def models(task: str = "all"):
         rows.append({**{k: r[k] for k in ("id", "label", "description", "available", "aliases", "default", "tasks",
                                           "aspect_ratios", "text_in_image", "layout", "steps")},
                      "license": lic, "commercial_use": commercial})
+    if config.moss_possible() and task in ("all", "generate"):
+        for r in moss.catalog(lambda v: config.comfy_ready() and moss_installed(v))["data"]:
+            rows.append({**r, "default": False, "aliases": []})
     return {"object": "list", "data": rows}
+
+
+# ------------------------------------------------------------------ MOSS-Image (text in images, layout)
+# Moved here from the comfyui-moss plugin (2026-10-22): it needs ComfyUI v0.42+, which setup.sh now pins. Where
+# image-serve runs an older ComfyUI (COMFYUI_DIR in .env), its variants aren't listed at all (config.moss_possible).
+
+def _models_root() -> str:
+    return config.COMFYUI_MODELS_ROOT
+
+
+def moss_installed(variant: str) -> bool:
+    root = _models_root()
+    return all(os.path.isfile(os.path.join(root, rel)) for rel in moss.needed_files(variant))
+
+
+async def _moss_generate(body: Dict[str, Any], rid: Optional[str]) -> Dict[str, Any]:
+    if not config.moss_possible():
+        v = config.comfy_version()
+        raise HTTPException(status_code=400, detail="MOSS-Image needs ComfyUI v0.42 or newer"
+                                                    + (f" (this one is v{'.'.join(map(str, v))})" if v else ""))
+    try:
+        variant, prompt, elements, width, height, n, seed, steps = moss.from_openai(body)
+    except moss.InputError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not (config.comfy_ready() and moss_installed(variant)):
+        raise HTTPException(status_code=400, detail=f"{moss.VARIANTS[variant]['label']} is not installed on this machine")
+    data = []
+    for i in range(n):
+        wf = moss.build_workflow(prompt, elements, width, height, seed=None if seed is None else seed + i,
+                                 steps=steps, variant=variant)
+        data.append({"b64_json": await _run(lambda _r, wf=wf: comfy.queue_workflow(wf, variant), None, rid)})
+    return {"created": int(time.time()), "data": data}
 
 
 @app.post("/v1/images/generations")
@@ -79,6 +114,8 @@ async def generations(req: comfy.ImageGenerationRequest, x_request_id: Optional[
     rid = jobs.valid_request_id(x_request_id)   # lets the caller cancel this one job (POST /v1/images/cancel)
     if jobs.JOBS.cancelled(rid):
         raise HTTPException(status_code=409, detail="Image generation cancelled")
+    if (req.model or "").strip().lower() in moss.VARIANTS:
+        return await _moss_generate(req.model_dump(exclude_unset=True), rid)
     model = catalog.resolve(req.model)
     if model and "generate" not in model.tasks:
         raise HTTPException(status_code=400, detail=f"{model.label} edits images; use /v1/images/edits")
@@ -248,6 +285,13 @@ def _setup_comfy() -> None:
         raise RuntimeError(f"setup.sh exited with {code} -- {tail[:250]}")
 
 
+MOSS_BUNDLES = ("moss", "moss-bf16")
+
+
+def _offered(bundle: str) -> bool:
+    return bundle not in MOSS_BUNDLES or config.moss_possible()
+
+
 def _install_item(bundle: str) -> Dict[str, Any]:
     from image_serve import bundles
     from image_serve.config import COMFYUI_MODELS_ROOT
@@ -256,7 +300,9 @@ def _install_item(bundle: str) -> Dict[str, Any]:
     state = "installed" if there and st.get("state") != "downloading" else (st.get("state") or "missing")
     info = bundles.BUNDLES[bundle]
     return {"id": bundle, "label": info["label"], "description": info["description"], "license": info["license"],
-            "size_mb": bundles.size_mb(bundle), "state": state,
+            "size_mb": bundles.size_mb(bundle) + (bundles.size_mb(info["needs"])
+                                                  if info.get("needs") and not bundles.present(info["needs"], COMFYUI_MODELS_ROOT) else 0),
+            "state": state,
             "done_mb": (st.get("done", 0) >> 20) if state == "downloading" else None,
             "error": st.get("error", "") if state == "failed" else ""}
 
@@ -270,6 +316,9 @@ def _run_install(bundle: str) -> None:
     try:
         if not comfy_ready():                      # the engine first (a model alone can't run)
             _setup_comfy()
+        needs = bundles.BUNDLES[bundle].get("needs")
+        if needs and not bundles.present(needs, COMFYUI_MODELS_ROOT):   # e.g. MOSS bf16 on top of MOSS's shared files
+            bundles.download(needs, COMFYUI_MODELS_ROOT, progress)
         bundles.download(bundle, COMFYUI_MODELS_ROOT, progress)
         _install[bundle] = {"state": "installed"}
         logger.info(f"{bundle}: downloaded")
@@ -290,7 +339,7 @@ def _run_comfy_setup() -> None:
 @app.get("/plugin/install")
 async def install_list():
     from image_serve import bundles
-    return {"items": [_comfy_item()] + [_install_item(b) for b in bundles.BUNDLES]}
+    return {"items": [_comfy_item()] + [_install_item(b) for b in bundles.BUNDLES if _offered(b)]}
 
 
 @app.post("/plugin/install", status_code=202)
@@ -306,6 +355,8 @@ async def install_start(body: Any = Body(...)):
         return _comfy_item()
     if not isinstance(bundle, str) or bundle not in bundles.BUNDLES:
         raise HTTPException(status_code=404, detail=f"nothing to download under that id (one of {', '.join(bundles.BUNDLES)})")
+    if not _offered(bundle):
+        raise HTTPException(status_code=409, detail="MOSS-Image needs ComfyUI v0.42 or newer; the ComfyUI configured here is older")
     with _install_lock:
         if not (bundles.present(bundle, COMFYUI_MODELS_ROOT) and comfy_ready()) \
                 and _install.get(bundle, {}).get("state") != "downloading":

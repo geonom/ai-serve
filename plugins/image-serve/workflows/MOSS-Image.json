@@ -1,0 +1,17 @@
+{
+  "1": {"class_type": "UNETLoader", "_meta": {"title": "MOSS-Image model"},
+        "inputs": {"unet_name": "moss_image_sft_int8_convrot.safetensors", "weight_dtype": "default"}},
+  "2": {"class_type": "CLIPLoader", "_meta": {"title": "Qwen3.5-9B text encoder"},
+        "inputs": {"clip_name": "qwen3.5_9b_w4a8_gptq.safetensors", "type": "moss_image", "device": "default"}},
+  "3": {"class_type": "VAELoader", "_meta": {"title": "Flux2 VAE"}, "inputs": {"vae_name": "flux2-vae.safetensors"}},
+  "4": {"class_type": "CLIPTextEncode", "_meta": {"title": "Prompt (plain or layout JSON)"},
+        "inputs": {"text": "", "clip": ["2", 0]}},
+  "5": {"class_type": "CLIPTextEncode", "_meta": {"title": "Negative"}, "inputs": {"text": "", "clip": ["2", 0]}},
+  "6": {"class_type": "EmptyFlux2LatentImage", "_meta": {"title": "Size"},
+        "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
+  "7": {"class_type": "KSampler", "_meta": {"title": "Sampler"},
+        "inputs": {"model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["6", 0],
+                   "seed": 1, "steps": 30, "cfg": 3.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+  "8": {"class_type": "VAEDecode", "_meta": {"title": "Decode"}, "inputs": {"samples": ["7", 0], "vae": ["3", 0]}},
+  "9": {"class_type": "SaveImage", "_meta": {"title": "Save"}, "inputs": {"images": ["8", 0], "filename_prefix": "moss"}}
+}

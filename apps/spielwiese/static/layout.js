@@ -223,6 +223,7 @@ document.addEventListener('keydown', (ev) => {
 });
 
 // The variants come from the gateway's catalog (models with `layout`); without one the page says what's missing.
+const LAY_DOWNLOADS = ['moss', 'moss-bf16'];   // image-serve's MOSS download bundles
 async function layLoadVariants() {
     const sel = document.getElementById('lay-variant'), btn = document.getElementById('lay-run-btn');
     let rows = [];
@@ -238,9 +239,17 @@ async function layLoadVariants() {
     const pick = usable.find(m => m.id === keep) || usable.find(m => m.id === 'moss-turbo-4-bf16') || usable[0];
     if (pick) sel.value = pick.id;
     btn.disabled = !usable.length;
-    // only the hint: the image downloads on offer (Iris) can't place things either
-    Downloads.panel(document.getElementById('dl-layout'), false, usable.length ? '' :
-        tx('No model on this gateway can place things by position. That needs MOSS-Image (the comfyui-moss plugin) – it isn\'t part of this installation (docs/plugins.md).'));
+    // Only MOSS can place things: offer exactly its downloads (image-serve, where its ComfyUI is new enough)
+    if (usable.length) {
+        Downloads.panel(document.getElementById('dl-layout'), false, '');
+    } else {
+        await Downloads.ready();
+        const offered = Downloads.items().some(i => i.capability === 'image' && LAY_DOWNLOADS.includes(i.id) && i.state !== 'installed');
+        Downloads.panel(document.getElementById('dl-layout'), 'image', offered
+            ? tx('Placing things by position needs MOSS-Image. It can be downloaded here.')
+            : tx('No model on this gateway can place things by position. That needs MOSS-Image (in the image-serve plugin, with ComfyUI v0.42 or newer) – it isn\'t available in this installation.'),
+            LAY_DOWNLOADS);
+    }
     layRender();
 }
 window.addEventListener('sw-installed', (e) => { if (e.detail.capability === 'image') layLoadVariants(); });

@@ -63,6 +63,9 @@ Existing OpenAI-compatible model servers such as **Ollama** or **LM Studio** can
 server directly. Both were tried with a plain llama-server standing in – not yet with Ollama or LM Studio themselves. Writing a plugin: [docs/plugins.md](docs/plugins.md),
 [docs/service-manifest.md](docs/service-manifest.md). API: [docs/API.md](docs/API.md).
 
+**Strata** (a 125B mixture-of-experts model for PCs with a dedicated graphics card and lots of RAM) can be added as
+a language model through `extras/strata-plugin`: [docs/strata.md](docs/strata.md).
+
 ## More machines
 
 Other machines of yours – a MacBook, a second PC, a Raspberry Pi – can lend their GPU or memory: install Tailscale on
@@ -90,6 +93,7 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | Downloads from the Spielwiese / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
 | More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |
 | `./ai-serve plugin add <git-url>` | unit-tested; not yet with a real third-party repo | – | – |
+| Strata through `extras/strata-plugin` | ✅ (two NVIDIA cards, 96 GB RAM) | not tried | – |
 
 Everything else listed in the docs (other TTS engines, diarization, OCR, the GPU manager …) runs daily on the
 developer's NVIDIA machine, but not necessarily from a fresh install. Reports of what works elsewhere are welcome.

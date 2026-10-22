@@ -1,0 +1,23 @@
+{
+  "id": "strata",
+  "name": "Strata",
+  "description": "Strata (one large MoE model across every GPU) as a language-model plugin for ai-serve: starts Strata only when it is needed.",
+  "command": ["./run.sh"],
+  "port": 8075,
+  "match": ["strata_plugin.app"],
+  "health_path": "/health",
+  "status_path": "/plugin/status",
+  "category": "ai",
+  "ui": false,
+  "identity": "none",
+  "provides": {
+    "llm": {
+      "openai": "/v1",
+      "load": "/plugin/load",
+      "status": "/plugin/status",
+      "release": "/plugin/release",
+      "logs": "/plugin/logs",
+      "gpu": "exclusive"
+    }
+  }
+}

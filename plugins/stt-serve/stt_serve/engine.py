@@ -40,6 +40,9 @@ LOGS_DIR = os.getenv("STT_SERVE_LOGS_DIR", os.path.join(ROOT, "logs"))
 MOSS_TRANSCRIBE_PYTHON_BIN = os.getenv("MOSS_TRANSCRIBE_PYTHON_BIN", os.path.join(ROOT, "moss", "venv", "bin", "python"))
 NEMOTRON_DIARIZE_PYTHON_BIN = os.getenv("NEMOTRON_DIARIZE_PYTHON_BIN", os.path.join(ROOT, "nemotron", "venv", "bin", "python"))
 DIARIZE_MODEL = os.getenv("DIARIZE_MODEL", "")
+# WhisperX model: a size (tiny, base, small, medium, large-v3, turbo ...), a Hugging Face repo of a CTranslate2
+# conversion, or a local folder -- whatever whisperx.load_model takes. Was always "small" (until 2026-10-22).
+WHISPER_MODEL = os.getenv("STT_WHISPER_MODEL") or "small"
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 
@@ -467,12 +470,12 @@ def _ensure_whisperx_loaded():
         if sys.platform == "darwin" or not torch.cuda.is_available():
             device = "cpu"
             compute_type = "int8"
-        logger.info(f"Lazy loading WhisperX model (small) onto {device} ({compute_type})...")
+        logger.info(f"Lazy loading WhisperX model ({WHISPER_MODEL}) onto {device} ({compute_type})...")
         try:
-            state.whisperx_model = whisperx.load_model("small", device=device, compute_type=compute_type)
+            state.whisperx_model = whisperx.load_model(WHISPER_MODEL, device=device, compute_type=compute_type)
         except Exception as cuda_err:
             logger.warning(f"WhisperX CUDA load failed, falling back to CPU: {cuda_err}")
-            state.whisperx_model = whisperx.load_model("small", device="cpu", compute_type="int8")
+            state.whisperx_model = whisperx.load_model(WHISPER_MODEL, device="cpu", compute_type="int8")
         logger.info("WhisperX model loaded.")
         state.whisperx_status = "idle"
     except Exception as e:

@@ -1249,6 +1249,7 @@ function setComfyMode(mode) {
     UI.comfyBatchResults.style.display = mode === 'batch' ? 'block' : 'none';
     UI.comfyPromptLabel.textContent = mode === 'generate' ? tx('What should be in the picture?') : mode === 'edit' ? tx('What should change?') : tx('How should the style be transferred?');
     UI.comfyGenerateBtn.textContent = mode === 'generate' ? tx('Generate image') : mode === 'edit' ? tx('Edit image') : tx('Transfer style');
+    if (typeof applyStepsField === 'function') applyStepsField();   // each mode has its own model
 
     // The prompt box is shared across modes — leaving the Generate-mode sample text in
     // place would otherwise get silently submitted as an edit/style instruction.
@@ -1366,7 +1367,7 @@ async function startStyleTransfer() {
             content_image_base64: comfyStyleContentBase64,
             style_image_base64: comfyStyleRefBase64,
             model_name: UI.comfyStyleModel.value,
-            steps: UI.comfySteps.value ? parseInt(UI.comfySteps.value) : null,
+            steps: stepsForRequest(),
             seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
             denoise: UI.comfyDenoise.value ? parseFloat(UI.comfyDenoise.value) : null,
             filename: UI.comfyFilename.value.trim() || null
@@ -1405,7 +1406,7 @@ async function startImageEdit() {
             image_base64: comfyEditImageBase64,
             prompt,
             model_name: UI.comfyEditModel.value,
-            steps: UI.comfySteps.value ? parseInt(UI.comfySteps.value) : null,
+            steps: stepsForRequest(),
             seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
             denoise: UI.comfyDenoise.value ? parseFloat(UI.comfyDenoise.value) : null,
             filename: UI.comfyFilename.value.trim() || null
@@ -1438,7 +1439,7 @@ async function startImageGeneration() {
     if (gatewayOpt && gatewayOpt.dataset.gateway) return generateViaGateway(prompt, gatewayOpt.value, gatewayOpt.textContent);
     // kept in "Meine Bilder" once the ComfyUI task is done (pollComfyTask)
     pendingGalleryMeta = { prompt, model: UI.comfyModel.value, label: (UI.comfyModel.selectedOptions[0] || {}).textContent || UI.comfyModel.value,
-                           steps: UI.comfySteps.value ? parseInt(UI.comfySteps.value) : null,
+                           steps: stepsForRequest(),
                            seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
                            aspect_ratio: UI.comfyAspectRatio.value, source: 'bild' };
     addLog(tx('Generating the image …'), 'system');
@@ -1450,7 +1451,7 @@ async function startImageGeneration() {
             model_name: UI.comfyModel.value,
             aspect_ratio: UI.comfyAspectRatio.value,
             base_resolution: parseInt(UI.comfyResolution.value) || 1024,
-            steps: UI.comfySteps.value ? parseInt(UI.comfySteps.value) : null,
+            steps: stepsForRequest(),
             seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
             lora_name: UI.comfyLora.value || null,
             lora_strength: UI.comfyLora.value ? parseFloat(UI.comfyLoraStrength.value) : null,
@@ -1486,6 +1487,7 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
         o.title = m.description ? tx(m.description) : '';
         o.disabled = !m.available;
         o.dataset.description = m.description ? tx(m.description) : '';
+        if (m.steps) o.dataset.steps = JSON.stringify(m.steps);
         select.append(o);
     }
     const def = rows.find(m => m.default && m.available);
@@ -1493,9 +1495,36 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
     // nothing usable: still show what exists (greyed, "not installed") instead of an empty field
     select.value = options.some(o => o.value === keep && !o.disabled) ? keep
         : (def ? valueOf(def) : (options.find(o => !o.disabled) || options[0] || {}).value);
-    const showNote = () => { if (noteEl) noteEl.textContent = (select.selectedOptions[0] || {}).dataset?.description || ''; };
+    const showNote = () => {
+        if (noteEl) noteEl.textContent = (select.selectedOptions[0] || {}).dataset?.description || '';
+        applyStepsField();
+    };
     select.onchange = showNote;
     showNote();
+}
+
+// The model the current Bild mode uses, and its catalog steps ({default, adjustable, max}) -- static/imagesteps.js
+function currentImageSteps() {
+    const select = comfyMode === 'edit' ? UI.comfyEditModel : comfyMode === 'style' ? UI.comfyStyleModel : UI.comfyModel;
+    const raw = (select && select.selectedOptions[0] || {}).dataset?.steps;
+    try { return raw ? JSON.parse(raw) : undefined; } catch (e) { return undefined; }
+}
+
+function applyStepsField() {
+    const f = ImageSteps.field(currentImageSteps());
+    const input = UI.comfySteps;
+    if (!input) return;
+    if (f.disabled) { input.dataset.kept = input.value; input.value = f.value; }
+    else if (input.disabled) input.value = input.dataset.kept || '';
+    input.disabled = f.disabled;
+    input.placeholder = f.placeholder;
+    input.max = f.max;
+    const note = document.getElementById('comfy-steps-note');
+    if (note) note.textContent = f.note;
+}
+
+function stepsForRequest() {
+    return ImageSteps.request(currentImageSteps(), UI.comfySteps.value);
 }
 
 async function loadImageModels() {
@@ -1525,12 +1554,14 @@ async function generateViaGateway(prompt, model, label) {
     try {
         const body = { model, prompt, aspect_ratio: UI.comfyAspectRatio.value, response_format: 'b64_json' };
         if (UI.comfySeed.value) body.seed = parseInt(UI.comfySeed.value);
+        const steps = stepsForRequest();
+        if (steps) body.steps = steps;   // a fixed schedule (Iris) sends none
         const data = await api('/v1/images/generations', 'POST', body);
         UI.comfyResultImg.src = `data:image/png;base64,${data.data[0].b64_json}`;
         UI.comfyResultImg.style.display = 'inline-block';
         addLog(tx('{label}: done after {s} s.', { label, s: Math.round((Date.now() - t0) / 100) / 10 }), 'success');
         if (typeof saveToGallery === 'function') {
-            saveToGallery(data.data[0].b64_json, { prompt, model, label, seed: body.seed, aspect_ratio: body.aspect_ratio,
+            saveToGallery(data.data[0].b64_json, { prompt, model, label, seed: body.seed, steps: body.steps, aspect_ratio: body.aspect_ratio,
                                                    seconds: (Date.now() - t0) / 1000, source: 'bild' });
         }
     } catch (err) {

@@ -24,6 +24,8 @@ export UV_HTTP_TIMEOUT=600
     fastapi uvicorn httpx pydantic pytest
 if [ "$VENV" != "$DIR/.venv" ] && [ ! -e "$DIR/.venv" ]; then ln -s "$VENV" "$DIR/.venv"; fi
 if [ "${1:-}" = "--download" ]; then
-    "$VENV/bin/python" -c "from huggingface_hub import snapshot_download as s; s('Systran/faster-whisper-small')"
+    # the model STT_WHISPER_MODEL names (default small); a repo id or folder is left to WhisperX's first load
+    W="${STT_WHISPER_MODEL:-small}"
+    case "$W" in */*) ;; *) "$VENV/bin/python" -c "from huggingface_hub import snapshot_download as s; s('Systran/faster-whisper-$W')" ;; esac
 fi
 echo "Done. stt-serve venv at $VENV"

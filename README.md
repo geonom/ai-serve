@@ -47,6 +47,10 @@ Spielwiese are in English, with a switch to German at the top right.
 
 ## Extend
 
+**More models** – language models, embeddings, voices, Whisper sizes, TTS engines, image models: what it takes for
+each kind, in [docs/models.md](docs/models.md).
+
+
 Everything except llama.cpp is a **plugin**: a separate program with a small manifest (`llama-serve.service.json`)
 that ai-serve starts when it's needed. Bundled: `plugins/tts-serve`, `plugins/stt-serve`, `plugins/sd-serve`, `plugins/image-serve`
 (ComfyUI). Models a plugin offers but that aren't installed yet can be downloaded from the Spielwiese or the

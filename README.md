@@ -1,8 +1,10 @@
 # ai-serve
 
 A gateway for local AI on your own machine: language models (llama.cpp), text-to-speech, speech-to-text, image
-generation and document reading – behind **one** OpenAI-compatible API (`/v1/...`) plus a dashboard. Models are
-loaded when they're needed and unloaded when the memory is needed for something else.
+generation and document reading – behind **one** OpenAI-compatible API (`/v1/...`) plus a dashboard. Installed
+models are loaded when a request needs them (the plugin serving them is started too) and unloaded after a while unused
+or when the memory is needed for something else. Apps such as the Spielwiese are started by you, or with ai-serve
+(Autostart).
 
 > **Alpha.** Developed and tested on Linux with NVIDIA GPUs; first runs on one Apple Silicon Mac. AMD, Vulkan-only and
 > CPU-only machines are meant to work (the installer picks the matching llama.cpp build) but haven't been tried.

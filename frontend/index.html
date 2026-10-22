@@ -299,8 +299,9 @@
             <div class="welcome-head"><h2 id="welcome-title">Welcome to ai-serve</h2>
                 <button class="btn-icon-sm" value="close" aria-label="Close">×</button></div>
             <p>ai-serve is a gateway for local AI on this machine: language models, images, speech and documents behind one
-                OpenAI-compatible API. Models load when a request needs them and are unloaded again when the memory is needed
-                elsewhere -- you don't have to start anything by hand.</p>
+                OpenAI-compatible API. Installed models load when a request needs them – the services behind them (speech,
+                transcription, images) are started then too – and are unloaded again after a while unused or when the memory
+                is needed elsewhere. Apps like the Spielwiese you start yourself, or let them start with ai-serve (Autostart).</p>
 
             <h3>1. Use it as an API</h3>
             <p data-i18n>Any program that speaks the OpenAI API can use it -- point it at this base URL. <code>model</code> is a model's
@@ -360,7 +361,7 @@
     </div>
 
     <script src="i18n.js?v=1"></script>
-    <script src="i18n.de.js?v=14"></script>
+    <script src="i18n.de.js?v=15"></script>
     <script src="app.js?v=3.17"></script>
     <script src="services.js?v=11"></script>
     <script src="devices.js?v=9"></script>

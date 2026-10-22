@@ -168,10 +168,10 @@ def choose(m: O.Machine) -> List[str]:
     except EOFError:
         a = "4"
     picked += ["llm-gemma-e4b"] if a == "4" else ["llm-gemma-e2b"] if a == "2" else []
-    for oid in ("tts-chatterbox", "stt-whisper", "image-iris"):
+    for oid in ("tts-chatterbox", "stt-whisper", "image-iris", "image-comfyui"):
         o = by_id[oid]
         print(f"\n  {o.label}: {o.what}\n  ~{o.size_gb} GB, Lizenz {o.license}")
-        if ask("  Einrichten?", default=True):
+        if ask("  Einrichten?", default=oid != "image-comfyui"):   # ~30 GB: only when asked for
             picked.append(oid)
     return picked
 

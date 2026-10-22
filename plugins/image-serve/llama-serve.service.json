@@ -1,0 +1,29 @@
+{
+  "id": "comfyui",
+  "name": "ComfyUI",
+  "description": "Create and edit images and transfer styles with ComfyUI (Z-Image Turbo, ERNIE, Qwen-Image-Edit) -- an image plugin for ai-serve, with ComfyUI's own interface. ComfyUI starts only when it's needed.",
+  "command": ["./run.sh"],
+  "env": {"PORT": "{port}"},
+  "port": 8189,
+  "bind": "127.0.0.1",
+  "match": ["image_serve.app"],
+  "health_path": "/health",
+  "status_path": "/plugin/status",
+  "category": "ai",
+  "icon": "image",
+  "identity": "single",
+  "provides": {
+    "image": {
+      "catalog": "/v1/images/models",
+      "generate": "/v1/images/generations",
+      "edit": "/v1/images/edits",
+      "cancel": "/v1/images/cancel",
+      "comfyui_api": "/api/comfyui",
+      "status": "/plugin/status",
+      "release": "/plugin/release",
+      "logs": "/plugin/logs",
+      "install": "/plugin/install",
+      "gpu": "shared"
+    }
+  }
+}

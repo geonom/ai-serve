@@ -1,0 +1,7 @@
+.venv/
+.env
+logs/
+generated_images/
+__pycache__/
+.pytest_cache/
+comfyui-venv

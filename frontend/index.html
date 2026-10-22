@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ai-serve</title>
     <link rel="stylesheet" href="style.css?v=1.4">
-    <link rel="stylesheet" href="redesign.css?v=3">
+    <link rel="stylesheet" href="redesign.css?v=5">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,6 +32,7 @@
                 <div id="status-backend" class="status-indicator offline" title="Backend"><span class="dot"></span><span class="status-label">Gateway</span></div>
                 <div id="status-comfyui" class="status-indicator offline" title="ComfyUI"><span class="dot"></span><span class="status-label">ComfyUI</span></div>
             </div>
+            <button id="welcome-btn" class="side-theme" type="button">Welcome &amp; help</button>
             <button id="theme-toggle" class="side-theme" title="Switch light/dark">Light / dark</button>
         </div>
     </aside>
@@ -292,6 +293,48 @@
     </main>
 </div>
 
+    <!-- Welcome (welcome.js): first visit, and "Welcome & help" in the sidebar -->
+    <dialog id="welcome-dialog" class="welcome" aria-labelledby="welcome-title">
+        <form method="dialog" class="welcome-inner">
+            <div class="welcome-head"><h2 id="welcome-title">Welcome to ai-serve</h2>
+                <button class="btn-icon-sm" value="close" aria-label="Close">×</button></div>
+            <p>ai-serve is a gateway for local AI on this machine: language models, images, speech and documents behind one
+                OpenAI-compatible API. Models load when a request needs them and are unloaded again when the memory is needed
+                elsewhere -- you don't have to start anything by hand.</p>
+
+            <h3>1. Use it as an API</h3>
+            <p data-i18n>Any program that speaks the OpenAI API can use it -- point it at this base URL. <code>model</code> is a model's
+                name, or <code>default</code> for the standard chat model.</p>
+            <pre class="code-snippet" id="welcome-base"></pre>
+            <details class="welcome-more"><summary>Examples: curl and Python</summary>
+                <pre class="code-snippet" id="welcome-curl"></pre>
+                <pre class="code-snippet" id="welcome-python"></pre>
+            </details>
+            <p data-i18n>Endpoints: <code>/chat/completions</code>, <code>/embeddings</code>, <code>/rerank</code>,
+                <code>/images/generations</code>, <code>/images/edits</code>, <code>/audio/speech</code>,
+                <code>/audio/transcriptions</code>, <code>/models</code> -- plus what is available right now:
+                <code>/llm/models</code>, <code>/images/models</code>, <code>/audio/models</code>. Every endpoint with
+                its fields: <a href="/docs" target="_blank" rel="noopener">/docs</a> (interactive).</p>
+            <p class="muted small" data-i18n>Only this machine (and your own devices in a private network such as Tailscale) may use it.
+                Other devices on your local network need a key: set <code>LLAMA_SERVE_API_KEY</code> (32+ characters) in
+                <code>ai-serve.local.env</code> and send it as <code>Authorization: Bearer …</code>.</p>
+
+            <h3>2. Try everything in the Spielwiese</h3>
+            <p>The Spielwiese ("playground") is an app to try everything the gateway offers: chat, images, speech, comparing
+                texts, reading documents. It runs as its own small app -- start it here and open it in a new tab.</p>
+            <div id="welcome-spielwiese"><p class="muted">Loading…</p></div>
+
+            <h3>3. Next steps</h3>
+            <ul class="welcome-list">
+                <li data-i18n><button type="button" class="link-btn" data-goto="compute">Compute &amp; models</button>: which models
+                    are here and what runs where; <em>Downloads</em> lists models you can still add.</li>
+                <li data-i18n><button type="button" class="link-btn" data-goto="services">Apps &amp; Services</button>: start, stop and
+                    open apps; set them to start automatically.</li>
+            </ul>
+            <div class="welcome-foot"><button class="btn btn-primary" value="close">Got it</button></div>
+        </form>
+    </dialog>
+
     <!-- GGUF Header Inspector Modal -->
     <div id="gguf-header-modal" class="modal-overlay" style="display: none;">
         <div class="modal-container">
@@ -314,7 +357,7 @@
     </div>
 
     <script src="i18n.js?v=1"></script>
-    <script src="i18n.de.js?v=2"></script>
+    <script src="i18n.de.js?v=12"></script>
     <script src="app.js?v=3.17"></script>
     <script src="services.js?v=11"></script>
     <script src="devices.js?v=9"></script>
@@ -324,6 +367,7 @@
     <script src="downloads.js?v=1"></script>
     <script src="overview.js?v=4"></script>
     <script src="doorsec.js?v=2"></script>
+    <script src="welcome.js?v=1"></script>
     <script>document.getElementById('lang-bar').append(I18N.switcher());</script>
 </body>
 </html>

@@ -16,7 +16,7 @@ loaded when they're needed and unloaded when the memory is needed for something 
 Requirements: `git` and [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 ```bash
-git clone https://github.com/owner/ai-serve.git && cd ai-serve
+git clone https://github.com/geonom/ai-serve.git && cd ai-serve
 ./install.sh
 ```
 
@@ -29,6 +29,7 @@ every download is verified by sha256:
 | Chatterbox Multilingual | Text-to-speech with voice cloning (through MLX on a Mac) | 3–7 GB |
 | Whisper (WhisperX small) | Speech-to-text with speaker diarization | 2–8 GB |
 | Iris-3B Turbo | Images from text descriptions (stable-diffusion.cpp) | 5.5 GB |
+| ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo | ~30 GB |
 
 Then: `./ai-serve start` → <http://localhost:8030> (another port: `AI_SERVE_PORT=8031 ./ai-serve start`;
 in the background: `./ai-serve start -d`; also `./ai-serve stop`, `restart`, `status`). The
@@ -38,7 +39,9 @@ Spielwiese are in English, with a switch to German at the top right.
 ## Extend
 
 Everything except llama.cpp is a **plugin**: a separate program with a small manifest (`llama-serve.service.json`)
-that ai-serve starts when it's needed. Bundled: `plugins/tts-serve`, `plugins/stt-serve`, `plugins/sd-serve`. More
+that ai-serve starts when it's needed. Bundled: `plugins/tts-serve`, `plugins/stt-serve`, `plugins/sd-serve`, `plugins/image-serve`
+(ComfyUI). Models a plugin offers but that aren't installed yet can be downloaded from the Spielwiese or the
+dashboard (*Compute & models → Downloads*). More
 from any git repository:
 
 ```bash

@@ -1,0 +1,84 @@
+From 3430880e30fffffab452549d4b8efb84c35cee79 Mon Sep 17 00:00:00 2001
+From: owner <1165081+geonom@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 07:28:37 +0200
+Subject: [PATCH 1/2] Add qwen_image21 arch + generic 1D-tensor dequant
+ (cherry-picked from leejet/ComfyUI-GGUF)
+
+Needed for Qwen-Image-2.1 GGUF files converted via stable-diffusion.cpp.
+Cherry-picked (not merged, due to unrelated CRLF conflicts in this
+checkout) from leejet/ComfyUI-GGUF@cee9bb1 and @edd981b.
+---
+ loader.py | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/loader.py b/loader.py
+index 7cefb11..0abeace 100644
+--- a/loader.py
++++ b/loader.py
+@@ -9,7 +9,7 @@ import os
+ from .ops import GGMLTensor
+ from .dequant import is_quantized, dequantize_tensor
+ 
+-IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image"}
++IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image", "qwen_image21"}
+ TXT_ARCH_LIST = {"t5", "t5encoder", "llama", "qwen2vl", "qwen3", "qwen3vl", "gemma3"}
+ VIS_TYPE_LIST = {"clip-vision", "mmproj"}
+ 
+@@ -138,8 +138,11 @@ def gguf_sd_loader(path, handle_prefix="model.diffusion_model.", is_text_model=F
+             torch_tensor = torch_tensor.view(*shape)
+         state_dict[sd_key] = GGMLTensor(torch_tensor, tensor_type=tensor.tensor_type, tensor_shape=shape)
+ 
+-        # 1D tensors shouldn't be quantized, this is a fix for BF16
+-        if len(shape) <= 1 and tensor.tensor_type == gguf.GGMLQuantizationType.BF16:
++        # 1D tensors shouldn't be quantized, this is a fix for BF16 and for
++        # sd.cpp builds that quantize 1D norm weights (cherry-picked from
++        # leejet/ComfyUI-GGUF@edd981b -- needed for Qwen-Image-2.1 GGUF files
++        # converted via stable-diffusion.cpp, see CLAUDE.md's Image gen section)
++        if len(shape) <= 1 and is_quantized(state_dict[sd_key]):
+             state_dict[sd_key] = dequantize_tensor(state_dict[sd_key], dtype=torch.float32)
+ 
+         # keep track of loaded tensor types
+-- 
+2.43.0
+
+
+From 62f144d896bbb4b4574f319de20ff21b9b09cf88 Mon Sep 17 00:00:00 2001
+From: owner <1165081+geonom@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 10:32:09 +0200
+Subject: [PATCH 2/2] Add qwen_image21 to tools/convert.py's detect_arch()
+ fallback arch_list
+
+Needed for GGUF files whose own general.architecture metadata isn't set to
+a string loader.py's IMG_ARCH_LIST already recognizes (e.g. unsloth's own
+Qwen-Image-2.1 GGUF conversion) -- gguf_sd_loader() falls back to this
+tensor-key-based detect_arch() when that's the case, and it didn't know
+about qwen_image21 either. Same keys_detect as leejet/ComfyUI-GGUF@f912d5e,
+applied by hand (not cherry-picked) due to a CRLF conflict in this checkout.
+---
+ tools/convert.py | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/tools/convert.py b/tools/convert.py
+index 5029c87..9d75f0b 100644
+--- a/tools/convert.py
++++ b/tools/convert.py
+@@ -145,8 +145,14 @@ class ModelLumina2(ModelTemplate):
+         ("cap_embedder.1.weight", "context_refiner.0.attention.qkv.weight")
+     ]
+ 
+-arch_list = [ModelFlux, ModelSD3, ModelAura, ModelHiDream, CosmosPredict2, 
+-             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2]
++class ModelQwenImage21(ModelTemplate):
++    arch = "qwen_image21"
++    keys_detect = [
++        ("txt_in.text_norm.weight",)
++    ]
++
++arch_list = [ModelFlux, ModelSD3, ModelAura, ModelHiDream, CosmosPredict2,
++             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2, ModelQwenImage21]
+ 
+ def is_model_arch(model, state_dict):
+     # check if model is correct
+-- 
+2.43.0
+

@@ -10,7 +10,7 @@ LINUX_CPU = o.Machine("Linux", "x86_64")
 
 def test_the_basic_offers():
     ids = [x.id for x in o.offers(LINUX_NV)]
-    assert ids == ["llm-gemma-e4b", "llm-gemma-e2b", "tts-chatterbox", "stt-whisper", "image-iris"]
+    assert ids == ["llm-gemma-e4b", "llm-gemma-e2b", "tts-chatterbox", "stt-whisper", "image-iris", "image-comfyui"]
 
 
 def test_gemma_pairs_its_vision_module_by_name():

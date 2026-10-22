@@ -6,7 +6,7 @@ this page is about everything else.
 
 | Kind | How hard | In short |
 |---|---|---|
-| Language models (chat, vision) | easy | put the `.gguf` into `models/` |
+| Language models (chat, vision) | easy | from Hugging Face in the dashboard / `./ai-serve model add`, or a `.gguf` into `models/` |
 | Embeddings, reranking | easy | the same – the kind is read from the file |
 | Models of Ollama, LM Studio, other servers | easy | *Compute & models → More model servers* |
 | Speech output (TTS) | medium | set up one of the bundled engines; a new engine = a provider folder |
@@ -19,14 +19,35 @@ Restart ai-serve after changing `ai-serve.local.env` (`./ai-serve restart`). New
 
 ## Language models (llama.cpp)
 
-Any GGUF that llama.cpp can run works. Put it into `models/` in the ai-serve folder (or `~/gguf_models`, or any folder
-listed in `LLAMA_MODEL_DIRS`) and it appears in the dashboard, in `GET /v1/models` and `GET /v1/llm/models`; a
-request with its file name as `model` loads it.
+Any GGUF that llama.cpp can run works. Two ways to get one:
+
+**From Hugging Face** – in the dashboard (*Compute & models → Language model from Hugging Face*) or on the command
+line:
 
 ```bash
-# e.g. from Hugging Face, with uv:
-uvx --from huggingface_hub hf download unsloth/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf --local-dir models
+./ai-serve model add https://huggingface.co/unsloth/Qwen3-4B-GGUF      # lists the files to choose from
+./ai-serve model add hf.co/unsloth/Qwen3-4B-GGUF:Q4_K_M                 # or name the quantization directly
 ```
+
+*Which address?* The page of a **GGUF repo** on huggingface.co – most model makers publish their weights as
+safetensors, and others (unsloth, bartowski, ggml-org, lmstudio-community …) convert them; those repos' names end
+in `-GGUF`. Search huggingface.co for the model's name plus "GGUF" and copy the address from the browser, e.g.
+`https://huggingface.co/unsloth/Qwen3-4B-GGUF`. Also accepted: a file's page
+(`https://huggingface.co/<owner>/<repo>/blob/main/<file>.gguf`), its download link (`…/resolve/main/<file>.gguf`),
+`<owner>/<repo>` alone, and Ollama's form `hf.co/<owner>/<repo>:<QUANT>`. Not usable: the original repo
+(`https://huggingface.co/Qwen/Qwen3-4B` – safetensors), datasets and spaces. Which file: `Q4_K_M` is a good balance
+of size and quality; `Q8_0` is closer to the original but twice as big; models split into `-00001-of-0000N` parts
+are downloaded with all their parts. A vision projector (`mmproj-*.gguf`) in the repo is offered too and saved under
+a name that pairs it with the model. Every file is checked against Hugging Face's sha256; nothing is overwritten,
+and a download that doesn't fit on the disk is refused (nothing is deleted). Gated models (Gemma, Llama …): accept
+the license on the model's page, create a token at huggingface.co/settings/tokens and put `HF_TOKEN=<token>` into
+`ai-serve.local.env`. Downloads go into the first of `LLAMA_MODEL_DIRS` (default: `models/`).
+
+**By hand:** put the `.gguf` into `models/` in the ai-serve folder (or `~/gguf_models`, or any folder listed in
+`LLAMA_MODEL_DIRS`).
+
+Either way it appears in the dashboard, in `GET /v1/models` and `GET /v1/llm/models`; a request with its file name
+as `model` loads it.
 
 - **Seeing images** needs the model's vision projector next to it, named `<model>-mmproj-<anything>.gguf` or
   `mmproj-<model>.gguf` (repos often call it just `mmproj-F16.gguf` – rename it so it starts with the model's name).

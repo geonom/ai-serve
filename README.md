@@ -47,7 +47,8 @@ Spielwiese are in English, with a switch to German at the top right.
 
 ## Extend
 
-**More models** – language models, embeddings, voices, Whisper sizes, TTS engines, image models: what it takes for
+**More models** – a GGUF language model from Hugging Face: *Compute & models → Language model from Hugging Face*, or
+`./ai-serve model add https://huggingface.co/<owner>/<repo>-GGUF`. Language models, embeddings, voices, Whisper sizes, TTS engines, image models: what it takes for
 each kind, in [docs/models.md](docs/models.md).
 
 

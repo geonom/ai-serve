@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ai-serve</title>
     <link rel="stylesheet" href="style.css?v=1.4">
-    <link rel="stylesheet" href="redesign.css?v=5">
+    <link rel="stylesheet" href="redesign.css?v=7">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -82,6 +82,11 @@
                 <div class="r-card-head"><h2 data-i18n>More model servers <span class="muted">Ollama, LM Studio, llama-server …</span></h2></div>
                 <p class="muted">If an OpenAI-compatible server already runs on this machine, ai-serve can use its models too: they show up in every app's model lists, and requests go straight there. The server stays yours &mdash; ai-serve never starts, stops or unloads it.</p>
                 <div id="model-servers"><div class="empty-state">Loading…</div></div>
+            </section>
+            <section class="r-card" aria-label="Language model from Hugging Face">
+                <div class="r-card-head"><h2 data-i18n>Language model from Hugging Face <span class="muted">GGUF, for llama.cpp</span></h2></div>
+                <p class="muted" data-i18n>Paste the address of a model's page on huggingface.co – a repo with GGUF files, its name usually ends in <code>-GGUF</code>, e.g. <code>https://huggingface.co/unsloth/Qwen3-4B-GGUF</code> – then pick a file. A file's own page (<code>…/blob/main/&lt;file&gt;.gguf</code>), its download link (<code>…/resolve/main/…</code>) or <code>hf.co/&lt;owner&gt;/&lt;repo&gt;:Q4_K_M</code> work too. The original model repos (safetensors) don't. Every file is checked against Hugging Face's checksum; gated models (Gemma, Llama …) need <code>HF_TOKEN</code> in <code>ai-serve.local.env</code>.</p>
+                <div id="hf-download"></div>
             </section>
             <section class="r-card" aria-label="Downloads">
                 <div class="r-card-head"><h2 data-i18n>Downloads <span class="muted">models and engines the plugins offer</span></h2></div>
@@ -361,7 +366,7 @@
     </div>
 
     <script src="i18n.js?v=1"></script>
-    <script src="i18n.de.js?v=15"></script>
+    <script src="i18n.de.js?v=17"></script>
     <script src="app.js?v=3.17"></script>
     <script src="services.js?v=11"></script>
     <script src="devices.js?v=9"></script>
@@ -369,6 +374,7 @@
     <script src="compute.js?v=4"></script>
     <script src="modelservers.js?v=3"></script>
     <script src="downloads.js?v=1"></script>
+    <script src="hfdownload.js?v=3"></script>
     <script src="overview.js?v=5"></script>
     <script src="doorsec.js?v=2"></script>
     <script src="welcome.js?v=1"></script>

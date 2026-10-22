@@ -357,3 +357,11 @@ dialog.welcome::backdrop { background: rgba(10, 12, 18, 0.45); }
 .welcome-list { margin: 0; padding-left: 20px; }
 .welcome-list li { margin: 4px 0; }
 .welcome-foot { display: flex; justify-content: flex-end; margin-top: 8px; }
+
+/* Hugging Face download form (hfdownload.js) */
+.hf-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.hf-row .device-input { flex: 1 1 280px; min-width: 0; }
+.hf-options { display: grid; gap: 4px; margin: 6px 0; max-height: 260px; overflow-y: auto; }
+.hf-option { display: flex; gap: 8px; align-items: baseline; justify-content: flex-start; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.hf-option input[type="radio"] { width: auto; flex: 0 0 auto; margin: 0; }
+#hf-jobs { margin-top: 8px; display: grid; gap: 4px; }

@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -229,6 +230,59 @@ def plugin_add(url: str, name: Optional[str], yes: bool) -> None:
     print("\nErscheint in Apps & Services; ai-serve startet es, wenn es gebraucht wird.")
 
 
+def model_add(url: str, file: Optional[str], mmproj: str, yes: bool) -> None:
+    """A GGUF model from Hugging Face into models/ -- the same rules and checks as the dashboard's form
+    (backend/hf_models.py): only huggingface.co, sha256 from Hugging Face, nothing overwritten or deleted."""
+    from backend import hf_download, hf_models
+    try:
+        info = hf_download.inspect(url)
+        model = file or info["selected"]
+        if not model:
+            print(f"{info['repo']} -- models:")
+            for i, m in enumerate(info["models"], 1):
+                parts = f", {m['parts']} parts" if m.get("parts", 1) > 1 else ""
+                print(f"  {i:2}. {m['path']}  ({m['size'] / 2**30:.1f} GB{parts})")
+            if not sys.stdin.isatty():
+                raise ValueError("several models in this repo -- name one with --file <path from the list>")
+            pick = input("Number: ").strip()
+            if not pick.isdigit() or not 1 <= int(pick) <= len(info["models"]):
+                raise ValueError("no model chosen")
+            model = info["models"][int(pick) - 1]["path"]
+        proj = None
+        if mmproj not in ("none", "auto"):
+            proj = mmproj
+        elif mmproj == "auto" and info["mmproj"]:
+            names = [p["path"] for p in info["mmproj"]]
+            proj = next((n for n in names if re.search(r"(?<!b)f16", n.lower())), names[0])   # F16, not BF16
+            print(f"Vision projector (lets the model see images): {proj}  -- --mmproj none to leave it out")
+        plan = hf_download.make_plan(url, model, proj)
+    except hf_models.HfLinkError as e:
+        raise ValueError(str(e))
+    for name in plan["already"]:
+        print(f"  {name}: already there")
+    if not plan["files"]:
+        print(f"Nothing to download -- {plan['model']} is ready.")
+        return
+    print(f"Into {plan['dest']} ({plan['size'] / 2**30:.1f} GB):")
+    for f in plan["files"]:
+        print(f"  {f['save_as']}  ({f['size'] / 2**30:.1f} GB)")
+    if not yes and not ask("Download?"):
+        return
+    for f in plan["files"]:
+        done = [0]
+
+        def progress(n, f=f, done=done):
+            done[0] += n
+            print(f"\r  {f['save_as']}: {done[0] >> 20} / {f['size'] >> 20} MB", end="", flush=True)
+        try:
+            hf_download.fetch(f, plan["dest"], progress)
+        except hf_models.HfLinkError as e:
+            print()
+            raise ValueError(str(e))
+        print("  -- checked")
+    print(f"Ready: {plan['model']} -- use it with \"model\": \"{plan['model']}\" (or pick it in the Spielwiese).")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ai-serve", description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -244,6 +298,13 @@ def main(argv=None) -> int:
     pa.add_argument("--name")
     pa.add_argument("--yes", action="store_true", help="also run its setup.sh without asking")
     psub.add_parser("list")
+    m = sub.add_parser("model")
+    msub = m.add_subparsers(dest="mcmd", required=True)
+    ma = msub.add_parser("add", help="download a GGUF model from Hugging Face (docs/models.md)")
+    ma.add_argument("url", help="the repo's page (https://huggingface.co/<owner>/<repo>), a file's page, or owner/repo[:QUANT]")
+    ma.add_argument("--file", help="the model file's path in the repo (else: from the address, or a list to choose from)")
+    ma.add_argument("--mmproj", default="auto", help="vision projector: auto (default), none, or its path in the repo")
+    ma.add_argument("--yes", action="store_true")
     st = sub.add_parser("start")
     st.add_argument("-d", "--background", action="store_true", help="run in the background (log: logs/launcher.log)")
     sp = sub.add_parser("stop")
@@ -262,6 +323,8 @@ def main(argv=None) -> int:
         elif a.cmd == "plugin":
             for r in P.listing(HERE / "apps", HERE / "plugins"):
                 print(f"{r.get('id', '?'):20} {r['dir']}" + (f"  ({r['error']})" if "error" in r else f"  {', '.join(r['provides'])}"))
+        elif a.cmd == "model":
+            model_add(a.url, a.file, a.mmproj, a.yes)
         elif a.cmd == "start":
             return start(a.background)
         elif a.cmd == "stop":

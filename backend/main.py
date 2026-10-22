@@ -165,7 +165,7 @@ app.add_middleware(AccessMiddleware, policy=AccessPolicy(ApiKey(API_KEY), is_pri
 app.add_middleware(PublicExposureMiddleware)
 
 # Routers — order matters only for duplicate paths (first registered wins)
-from backend.routers import cluster, comfyui_compat, dashboard, door, gpu, gateway, media, coordination, ocr, overview, plugins, public_gateway, services, smoketest, training  # noqa: E402
+from backend.routers import cluster, comfyui_compat, dashboard, door, gpu, gateway, hf_download, media, coordination, ocr, overview, plugins, public_gateway, services, smoketest, training  # noqa: E402
 
 app.include_router(dashboard.router)
 app.include_router(cluster.router)
@@ -180,6 +180,7 @@ app.include_router(overview.router)
 app.include_router(coordination.router)
 app.include_router(smoketest.router)
 app.include_router(plugins.router)
+app.include_router(hf_download.router)
 app.include_router(comfyui_compat.router)
 app.include_router(training.router)
 

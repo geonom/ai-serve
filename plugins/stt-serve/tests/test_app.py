@@ -2,6 +2,7 @@
 transcription, validation, the GPU owner's refusal, live sessions (incl. the
 segment-offset regression found live), unload/busy guard, status."""
 import base64
+import importlib.util
 import io
 
 import numpy as np
@@ -14,6 +15,10 @@ from stt_serve import app as app_module
 from stt_serve import engine
 
 SR = 16000
+# Audio is decoded through WhisperX (and ffmpeg) even with the fake model: those tests need whisperx, which setup.sh
+# installs (with torch, several GB) -- the CI runs without it and skips them (.github/workflows/tests.yml).
+needs_whisperx = pytest.mark.skipif(importlib.util.find_spec("whisperx") is None or importlib.util.find_spec("torch") is None,
+                                    reason="needs whisperx + torch (stt-serve's setup.sh)")
 
 
 def wav_b64(speech_s=1.0, silence_s=0.0):
@@ -57,6 +62,7 @@ def test_health(ctx):
     assert c.get("/health").json() == {"status": "ok"}
 
 
+@needs_whisperx
 def test_transcribe(ctx):
     c, fake, _ = ctx
     r = c.post("/v1/transcribe", json={"audio_base64": wav_b64(1.0), "language": "de"})
@@ -67,12 +73,14 @@ def test_transcribe(ctx):
     assert fake.calls[0]["task"] == "transcribe" and fake.calls[0]["language"] == "de"
 
 
+@needs_whisperx
 def test_audio_list_is_concatenated(ctx):
     c, fake, _ = ctx
     r = c.post("/v1/transcribe", json={"audio_base64_list": [wav_b64(1.0), wav_b64(0.5)]})
     assert r.status_code == 200 and fake.calls[0]["samples"] == pytest.approx(int(1.5 * SR), abs=10)
 
 
+@needs_whisperx
 @pytest.mark.parametrize("body, status", [
     ({}, 400),
     ({"audio_path": "/etc/passwd"}, 422),
@@ -84,6 +92,7 @@ def test_validation(ctx, body, status):
     assert c.post("/v1/transcribe", json=body).status_code == status
 
 
+@needs_whisperx
 def test_gpu_owner_refusal_blocks_loading(ctx, monkeypatch):
     c, *_ = ctx
     monkeypatch.setattr(engine.state, "whisperx_model", None)
@@ -96,6 +105,7 @@ def test_gpu_owner_refusal_blocks_loading(ctx, monkeypatch):
     assert r.status_code == 507 and engine.state.whisperx_model is None
 
 
+@needs_whisperx
 def test_live_session_offsets(ctx):
     """Regression found live: a finalized segment was stamped with the offset AFTER
     consuming itself (first segment of a 10.27 s clip came back as 10.274-19.427)."""
@@ -115,6 +125,7 @@ def test_live_session_offsets(ctx):
     assert c.post("/v1/live/chunk", json={"session_id": sid, "audio_base64": wav_b64(0.2)}).status_code == 404
 
 
+@needs_whisperx
 def test_live_settings(ctx):
     c, *_ = ctx
     sid = c.post("/v1/live/start", json={}).json()["session_id"]
@@ -169,6 +180,7 @@ def moss(ctx, monkeypatch):
     return c, calls
 
 
+@needs_whisperx
 def test_moss_diarized_transcript(moss):
     c, calls = moss
     r = c.post("/v1/transcribe", json={"audio_base64": wav_b64(10.0), "engine": "moss", "diarize": True,
@@ -180,6 +192,7 @@ def test_moss_diarized_transcript(moss):
     assert calls["embed"] == [] and "speaker_embeddings" not in d
 
 
+@needs_whisperx
 def test_moss_returns_voice_embeddings(moss):
     c, calls = moss
     d = c.post("/v1/transcribe", json={"audio_base64": wav_b64(10.0), "engine": "moss", "diarize": True,
@@ -189,6 +202,7 @@ def test_moss_returns_voice_embeddings(moss):
     assert "warning" not in d
 
 
+@needs_whisperx
 def test_moss_matches_known_speakers(moss):
     c, _ = moss
     d = c.post("/v1/transcribe", json={"audio_base64": wav_b64(10.0), "engine": "moss", "diarize": True,

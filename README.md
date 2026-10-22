@@ -1,5 +1,7 @@
 # ai-serve
 
+[![tests](https://github.com/geonom/ai-serve/actions/workflows/tests.yml/badge.svg)](https://github.com/geonom/ai-serve/actions/workflows/tests.yml)
+
 A gateway for local AI on your own machine: language models (llama.cpp), text-to-speech, speech-to-text, image
 generation and document reading – behind **one** OpenAI-compatible API (`/v1/...`) plus a dashboard. Installed
 models are loaded when a request needs them (the plugin serving them is started too) and unloaded after a while unused

@@ -1,0 +1,64 @@
+# Unit tests on every push and pull request, on Linux and on an Apple Silicon Mac (GitHub's macos-latest runner).
+# No GPU and no models there: what needs them (torch, WhisperX, real image models) is skipped or faked by the tests;
+# the macOS run exercises the Mac-only code paths (lsof instead of net_connections, unified memory, ...).
+# Free for public repositories.
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Gateway (ai-serve core)
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -r requirements-dev.txt
+          .venv/bin/python -m pytest -q tests/unit
+
+      - name: Plugins with their own requirements
+        run: |
+          set -e
+          for d in plugins/image-serve plugins/sd-serve extras/strata-plugin; do
+            echo "::group::$d"
+            req=requirements.txt; [ -f "$d/requirements-dev.txt" ] && req=requirements-dev.txt
+            (cd "$d" && uv venv -q --python 3.12 .ci && uv pip install -q --python .ci/bin/python -r "$req" pytest \
+              && .ci/bin/python -m pytest -q tests)
+            echo "::endgroup::"
+          done
+
+      - name: Speech plugins (without torch / WhisperX)
+        run: |
+          set -e
+          for d in plugins/tts-serve plugins/stt-serve; do
+            echo "::group::$d"
+            (cd "$d" && uv venv -q --python 3.12 .ci \
+              && uv pip install -q --python .ci/bin/python fastapi uvicorn httpx pydantic numpy soundfile psutil python-multipart pytest \
+              && .ci/bin/python -m pytest -q tests)
+            echo "::endgroup::"
+          done
+
+      - name: Spielwiese
+        working-directory: apps/spielwiese
+        run: |
+          uv venv -q --python 3.12 .ci
+          uv pip install -q --python .ci/bin/python fastapi uvicorn httpx pydantic "PyJWT[crypto]" python-multipart pytest
+          .ci/bin/python -m pytest -q tests
+          node --test tests/*.mjs

@@ -79,10 +79,12 @@ a language model through `extras/strata-plugin`: [docs/strata.md](docs/strata.md
 
 ## More machines
 
-Other machines of yours – a MacBook, a second PC, a Raspberry Pi – can lend their GPU or memory: install Tailscale on
-both, set `NETWORK_PROVIDER=tailscale`, then *Compute & models → Add a machine* gives a one-time command for the new
-device. Step by step: [docs/devices.md](docs/devices.md). Tried with a Linux PC and a MacBook; Raspberry Pi and
-Android not yet.
+Other machines of yours – a MacBook, a second PC, a Raspberry Pi – can lend their GPU or memory. They need a private
+network between them: [Tailscale](https://tailscale.com) is what has been tested (a free personal account is enough),
+WireGuard, Headscale, NetBird, ZeroTier or Nebula are meant to work too but haven't been tried. With Tailscale:
+install it on both machines with the same account, set `NETWORK_PROVIDER=tailscale` in `ai-serve.local.env`, then
+*Compute & models → Add a machine* gives a one-time command for the new device. Step by step, and the other networks:
+[docs/devices.md](docs/devices.md). Tried with a Linux PC and a MacBook; Raspberry Pi and Android not yet.
 
 ## Security
 

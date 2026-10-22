@@ -253,6 +253,28 @@ function addLog(msg, type = 'system') {
     entry.textContent = `[${timestamp}] ${msg}`;
     UI.logsViewport.appendChild(entry);
     UI.logsViewport.scrollTop = UI.logsViewport.scrollHeight;
+    if (type === 'error' || type === 'warn') showToast(msg, type);
+}
+
+// Errors and warnings must be seen, not only land in the (usually folded) log: a note at the bottom right,
+// gone after a while or on click. Found on a Mac: an image request answered 507 and the page showed nothing.
+function showToast(msg, type = 'error') {
+    let box = document.getElementById('sw-toasts');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'sw-toasts';
+        box.setAttribute('role', 'status');
+        box.setAttribute('aria-live', 'polite');
+        document.body.appendChild(box);
+    }
+    const t = document.createElement('div');
+    t.className = `sw-toast ${type}`;
+    t.textContent = msg;
+    t.title = tx('Click to close');
+    t.addEventListener('click', () => t.remove());
+    box.appendChild(t);
+    while (box.children.length > 4) box.firstChild.remove();
+    setTimeout(() => t.remove(), type === 'error' ? 15000 : 8000);
 }
 
 // Clipboard helper: navigator.clipboard is only available in "secure contexts"
@@ -1504,6 +1526,7 @@ async function generateViaGateway(prompt, model, label) {
     } catch (err) {
         addLog(tx('{label} failed: {err}', { label, err: err.message }), 'error');
         UI.imagePlaceholderBox.style.display = 'block';
+        UI.imagePlaceholderBox.textContent = '❌ ' + tx('{label} failed: {err}', { label, err: err.message });
     } finally {
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';

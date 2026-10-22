@@ -48,6 +48,7 @@ def test_detect_apple_gpu_used_mb_returns_none_when_key_absent(monkeypatch):
 
 def test_fetch_gpu_status_darwin_prefers_ioreg_over_psutil(monkeypatch):
     monkeypatch.setattr(model_manager.sys, "platform", "darwin")
+    monkeypatch.setattr(model_manager, "_apple_wired_limit_mb", lambda: 0)
     monkeypatch.setattr(
         model_manager.psutil, "virtual_memory",
         lambda: _FakeVirtualMemory(
@@ -58,6 +59,7 @@ def test_fetch_gpu_status_darwin_prefers_ioreg_over_psutil(monkeypatch):
         ),
     )
     monkeypatch.setattr(model_manager, "_detect_apple_gpu_used_mb", lambda: 8192)
+    monkeypatch.setattr(model_manager, "_apple_wired_limit_mb", lambda: 0)
 
     status = asyncio.run(model_manager.fetch_gpu_status())
 
@@ -65,12 +67,14 @@ def test_fetch_gpu_status_darwin_prefers_ioreg_over_psutil(monkeypatch):
     assert gpu["used"] == 8192
     assert gpu["memory_source"] == "ioreg_gpu"
     assert gpu["total"] == 32768
-    assert gpu["free"] == 12288
+    # free = Metal's limit (2/3 of 32 GB) minus what the GPU holds -- not psutil's available RAM
+    assert gpu["gpu_limit_mb"] == 21845 and gpu["free"] == 21845 - 8192
     assert gpu["usage_percent"] == round(8192 / 32768 * 100, 1)
 
 
 def test_fetch_gpu_status_darwin_falls_back_to_psutil_when_ioreg_unavailable(monkeypatch):
     monkeypatch.setattr(model_manager.sys, "platform", "darwin")
+    monkeypatch.setattr(model_manager, "_apple_wired_limit_mb", lambda: 0)
     monkeypatch.setattr(
         model_manager.psutil, "virtual_memory",
         lambda: _FakeVirtualMemory(

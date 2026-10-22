@@ -2,6 +2,10 @@
  * A missing entry simply shows the English text. Also holds German for texts the engines (plugins) describe
  * themselves in English. Loaded right after i18n.js, before the page's scripts. */
 I18N.add({
+    "🖼️ Generated image will appear here": "🖼️ Hier erscheint das erzeugte Bild",
+    "⏳ Model loading takes up to 30s. GPU memory is auto-freed 10s after completion.": "⏳ Das Laden des Modells dauert bis zu 30 s. Der Grafikspeicher wird kurz nach dem Ende von selbst freigegeben.",
+    "Generate a whole list of images from one JSON file, one at a time, using the same Z-Image-Turbo (or Ernie Turbo / Ideogram-4) workflow as Generate mode above. Upload a file or edit the JSON directly below. Add a per-item \"filename\" to also save that image to disk (as .png) — retrievable later via GET /api/comfyui/images/{filename}.": "Eine ganze Liste von Bildern aus einer JSON-Datei erzeugen, eins nach dem anderen, mit demselben Ablauf wie „Erzeugen“ oben. Eine Datei hochladen oder das JSON direkt unten bearbeiten. Mit \"filename\" pro Eintrag wird das Bild zusätzlich als .png gespeichert – abrufbar über GET /api/comfyui/images/{filename}.",
+    "Click to close": "Zum Schließen klicken",
     "(by similarity)": "(über Ähnlichkeit)",
     "(draw them on the canvas on the right)": "(auf der Fläche rechts aufziehen)",
     "(empty = each model's default)": "(leer = Standard je Modell)",

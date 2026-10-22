@@ -11,9 +11,18 @@ Do NOT bump for UI-only, ComfyUI, documentation, or other changes that
 don't touch the llama.cpp/model-serving path.
 """
 
-BACKEND_VERSION = 8
+BACKEND_VERSION = 9
 
 VERSION_LOG = [
+    {
+        "version": 9,
+        "date": "2026-10-22",
+        "change": (
+            "Apple Silicon: free GPU memory = Metal's limit (iogpu.wired_limit_mb, else ~2/3 of the RAM up to 36 GB, "
+            "3/4 above) minus what the GPU holds (ioreg), as Ollama/LM Studio size it -- not the RAM unused right now, "
+            "which refused Iris (7 GB) on a 24 GB Mac with '3681 MB free'. Without the ioreg figure: the old way."
+        ),
+    },
     {
         "version": 8,
         "date": "2026-10-21",

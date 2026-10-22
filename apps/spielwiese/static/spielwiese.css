@@ -198,3 +198,8 @@
 .lang-switch button + button { border-left: 1px solid var(--border-strong); }
 .lang-switch button[aria-pressed="true"] { background: var(--text-main); color: var(--bg-dark); cursor: default; }
 .lang-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* Error/warning notes (showToast in app.js) */
+#sw-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; max-width: min(460px, calc(100vw - 32px)); }
+.sw-toast { padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.4; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.18); background: var(--card-bg); color: var(--text-main); border: 1px solid var(--border-strong); border-left: 4px solid #c0392b; overflow-wrap: anywhere; }
+.sw-toast.warn { border-left-color: #d68910; }

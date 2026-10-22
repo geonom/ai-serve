@@ -438,6 +438,32 @@ def _detect_apple_gpu_used_mb() -> Optional[int]:
     return None
 
 
+def apple_gpu_limit_mb(total_mb: int, wired_limit_mb: int = 0) -> int:
+    """What Metal lets the GPU use on Apple Silicon (unified memory): `sysctl iogpu.wired_limit_mb` when the owner
+    set one, else Apple's default recommendedMaxWorkingSetSize -- about 2/3 of the RAM up to 36 GB, 3/4 above.
+    Ollama and LM Studio size models against this too, not against the RAM that happens to be unused."""
+    if wired_limit_mb > 0:
+        return min(wired_limit_mb, total_mb)
+    return int(total_mb * (0.75 if total_mb > 36 * 1024 else 2 / 3))
+
+
+def apple_gpu_free_mb(limit_mb: int, gpu_used_mb: Optional[int], available_mb: int) -> int:
+    """Free GPU memory on unified memory: the Metal limit minus what the GPU already holds (ioreg). macOS
+    compresses or pages out other apps' memory when the GPU needs it, so their RAM doesn't count against this.
+    Without the ioreg figure, only the RAM that's unused right now (psutil `available`) -- the cautious old way."""
+    if gpu_used_mb is None:
+        return available_mb
+    return max(0, limit_mb - gpu_used_mb)
+
+
+def _apple_wired_limit_mb() -> int:
+    try:
+        out = subprocess.run(["sysctl", "-n", "iogpu.wired_limit_mb"], capture_output=True, text=True, timeout=5)
+        return int(out.stdout.strip() or 0) if out.returncode == 0 else 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0
+
+
 def llama_env() -> Dict[str, str]:
     """The environment for a llama-server: a prebuilt llama.cpp (installer, runtimes/) keeps its libraries next to
     the binary, so that folder goes first on the library path (harmless for a system install)."""
@@ -467,13 +493,15 @@ async def fetch_gpu_status() -> Dict[str, Any]:
             # docstring for why this path isn't yet trusted as "confirmed live".
             gpu_used_mb = _detect_apple_gpu_used_mb()
             used_mb = gpu_used_mb if gpu_used_mb is not None else int(mem.used / (1024 * 1024))
+            limit_mb = apple_gpu_limit_mb(total_mb, _apple_wired_limit_mb())
             return {
                 "gpus": [{
                     "index": 0,
                     "name": "Apple Silicon (Unified Memory)",
                     "total": total_mb,
+                    "gpu_limit_mb": limit_mb,
                     "used": used_mb,
-                    "free": int(mem.available / (1024 * 1024)),
+                    "free": apple_gpu_free_mb(limit_mb, gpu_used_mb, int(mem.available / (1024 * 1024))),
                     "usage_percent": round((used_mb / total_mb) * 100, 1) if total_mb else 0.0,
                     "driver_version": None,
                     "memory_source": "ioreg_gpu" if gpu_used_mb is not None else "psutil_system_ram",

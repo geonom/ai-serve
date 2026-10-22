@@ -1303,8 +1303,11 @@ async def _load_locked(
 
         logger.info(f"Server ready on port {port} after {elapsed}s.")
         from backend import events
-        events.record("model", f"{os.path.basename(model_path)} geladen"
-                      + (f" auf GPU {target_gpu_id}" if target_gpu_id is not None else "") + f" ({elapsed} s)")
+        if target_gpu_id is not None:
+            events.record("model", "{model} loaded on GPU {gpu} ({s} s)", model=os.path.basename(model_path),
+                          gpu=target_gpu_id, s=elapsed)
+        else:
+            events.record("model", "{model} loaded ({s} s)", model=os.path.basename(model_path), s=elapsed)
         state.managed_processes[port]["loading"] = False
         if reservation is not None:
             # loaded: from now on its real, measured usage counts -- not the estimate

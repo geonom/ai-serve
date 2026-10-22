@@ -83,7 +83,7 @@ def test_share_multi_app(client):
 
 def test_single_app_only_owner(client):
     r = client.put("/api/door/shares/story", json={"name": "story", "groups": ["apps"]})
-    assert r.status_code == 400 and "nur für dich" in r.json()["detail"]
+    assert r.status_code == 400 and "only be shared with you" in r.json()["detail"]
     assert client.put("/api/door/shares/story", json={"name": "story", "users": ["alex"]}).status_code == 200
 
 
@@ -114,14 +114,14 @@ def test_delete_and_overview(client):
 def test_manifest_turned_single_drops_out(client, monkeypatch):
     client.shares.write_text(json.dumps({"story": {"name": "story", "groups": ["apps"]}}))
     o = client.get("/api/door").json()
-    assert "nur für dich" in o["shares"]["story"]["error"]
+    assert "only be shared with you" in o["shares"]["story"]["error"]
     assert client.fake.routes == {"routes": []}
 
 
 def test_door_down_is_reported(client):
     client.fake.down = True
     r = client.put("/api/door/shares/pv-calc", json={"name": "sonne", "groups": ["apps"]})
-    assert r.status_code == 200 and "nicht erreichbar" in r.json()["door_error"]
+    assert r.status_code == 200 and "unreachable" in r.json()["door_error"]
 
 
 def test_identity_env_for_shared_app(client):

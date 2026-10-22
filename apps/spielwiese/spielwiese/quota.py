@@ -32,6 +32,10 @@ class QuotaError(ValueError):
 class QuotaExceeded(Exception):
     status = 429
 
+    def __init__(self, message: str, busy: bool = False):
+        super().__init__(message)
+        self.busy = busy   # only "another request of yours is still running" -- worth waiting for
+
 
 @dataclass(frozen=True)
 class Limits:
@@ -180,19 +184,19 @@ class Ledger:
             return self._in_flight.get(sub, 0)
 
     def begin(self, sub: str, lim: Limits, kind: str, images: int = 0) -> Ticket:
-        """Check and reserve in one step; raises QuotaExceeded (German message for the person)."""
+        """Check and reserve in one step; raises QuotaExceeded (a message for the person)."""
         with self._lock:
             u = self._read(sub)
             busy = self._in_flight.get(sub, 0)
             if lim.concurrent is not None and busy >= lim.concurrent:
-                raise QuotaExceeded("Es läuft schon eine Anfrage von dir – warte, bis sie fertig ist.")
+                raise QuotaExceeded("Another request of yours is still running – wait until it's done.", busy=True)
             if lim.gpu_seconds_per_day is not None and u["gpu_seconds"] >= lim.gpu_seconds_per_day:
-                raise QuotaExceeded(f"Dein Tageskontingent an Rechenzeit ({lim.gpu_seconds_per_day // 60} Minuten) "
-                                    "ist aufgebraucht – morgen geht es weiter.")
+                raise QuotaExceeded(f"Your daily compute time ({lim.gpu_seconds_per_day // 60} minutes) "
+                                    "is used up – it continues tomorrow.")
             if images and lim.images_per_day is not None and u["images"] + images > lim.images_per_day:
                 left = max(0, lim.images_per_day - u["images"])
-                raise QuotaExceeded(f"Heute sind nur noch {left} Bild{'' if left == 1 else 'er'} in deinem Kontingent "
-                                    f"(von {lim.images_per_day}) – morgen geht es weiter.")
+                raise QuotaExceeded(f"Only {left} image{'' if left == 1 else 's'} left in your quota today "
+                                    f"(of {lim.images_per_day}) – it continues tomorrow.")
             self._in_flight[sub] = busy + 1
             return Ticket(sub, kind, images)
 

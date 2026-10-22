@@ -38,7 +38,7 @@ def test_single_app_only_for_the_owner():
     check_share(m, share(groups=(), users=("alex",)), owner="alex", taken={})
     for bad in [share(), share(groups=(), users=("anna",)), share(groups=(), users=("alex", "anna")),
                 share(groups=("apps",), users=("alex",))]:
-        with pytest.raises(DoorError, match="nur für dich"):
+        with pytest.raises(DoorError, match="only be shared with you"):
             check_share(m, bad, owner="alex", taken={})
     with pytest.raises(DoorError):  # owner unknown -> a single app can't be shared at all
         check_share(m, share(groups=(), users=("owner",)), owner=None, taken={})
@@ -53,7 +53,7 @@ def test_names_and_principals():
     for bad in ["", "Sonne", "login", "www", "a.b", "-x", "x" * 32]:
         with pytest.raises(DoorError):
             check_share(manifest(), share(name=bad), owner="alex", taken={})
-    with pytest.raises(DoorError, match="schon"):
+    with pytest.raises(DoorError, match="already belongs"):
         check_share(manifest(), share(), owner="alex", taken={"sonne": "storytime"})
     check_share(manifest(), share(), owner="alex", taken={"sonne": "pv-calc"})  # its own name
     for bad in [share(groups=(), users=()), share(groups=("a b",)), share(users=("x;y",))]:

@@ -1,4 +1,4 @@
-// "Sprache": text-to-speech and transcription, built from the gateway's GET /v1/audio/models. Every engine
+// "Speech": text-to-speech and transcription, built from the gateway's GET /v1/audio/models. Every engine
 // tts-serve and stt-serve offer shows up with the inputs it describes for itself (modes, reference clip,
 // transcript, style text or tags, preset speakers, numeric params; for transcription plain form fields), so
 // a new engine needs no change here (owner, 2026-10-20: "möglichst offen für zukünftige Modelle").
@@ -27,8 +27,8 @@ const SpeechRules = (() => {
 
     // What a TTS mode still needs before it can run; [] = ready. `have` says what the person provided.
     function missingInputs(mode, have) {
-        const names = { reference: 'eine Aufnahme', ref_text: 'das Transkript der Aufnahme',
-                        instruct: 'eine Stilangabe', speaker: 'einen Sprecher' };
+        const names = { reference: tx('a recording'), ref_text: tx('the recording\'s transcript'),
+                        instruct: tx('a style'), speaker: tx('a speaker') };
         return Object.entries(mode.inputs || {})
             .filter(([k, need]) => need === 'required' && !have[k])
             .map(([k]) => names[k] || k);
@@ -36,7 +36,7 @@ const SpeechRules = (() => {
 
     // The /api/tts/generate body. Params only when the person changed them (else the engine's default).
     function ttsPayload(engine, mode, v) {
-        const body = { engine: engine.id, text: v.text, language: v.language || 'de' };
+        const body = { engine: engine.id, text: v.text, language: v.language || I18N.lang };
         if (mode.variant) body.variant = mode.variant;
         const inputs = mode.inputs || {};
         if (inputs.reference) {
@@ -88,7 +88,7 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
     const R = SpeechRules;
     const COMMON_LANGS = ['de', 'en', 'fr', 'es', 'it', 'nl', 'pl', 'pt', 'ru', 'sv', 'tr', 'ja', 'zh'];
     const langName = (() => {
-        try { const d = new Intl.DisplayNames(['de'], { type: 'language' }); return c => d.of(c) || c; }
+        try { const d = new Intl.DisplayNames([I18N.lang], { type: 'language' }); return c => d.of(c) || c; }
         catch (e) { return c => c; }
     })();
     let catalog = null, voices = [];
@@ -106,9 +106,10 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         for (const k of kids.flat()) if (k != null) el.append(k);
         return el;
     }
-    const group = (label, ...kids) => h('div', { class: 'input-group' }, h('label', { text: label }), ...kids);
-    const note = text => h('div', { class: 'muted small', text });
-    const need = v => v === 'required' ? '' : ' (optional)';
+    // labels and descriptions that come from the engines (plugins) are English; tx() shows them in German when known
+    const group = (label, ...kids) => h('div', { class: 'input-group' }, h('label', { text: tx(label) }), ...kids);
+    const note = text => h('div', { class: 'muted small', text: text && tx(text) });
+    const need = v => v === 'required' ? '' : ' ' + tx('(optional)');
 
     function readFileBase64(file) {
         return new Promise((resolve, reject) => {
@@ -135,9 +136,9 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
     function languageSelect(codes, value, onChange, auto) {
         const list = codes && codes.length ? codes : COMMON_LANGS;
         const sel = h('select', { on: { change: () => onChange(sel.value) } },
-            auto ? h('option', { value: '', text: 'automatisch erkennen' }) : null,
+            auto ? h('option', { value: '', text: tx('detect automatically') }) : null,
             list.map(c => h('option', { value: c, text: langName(c) })));
-        sel.value = value && (list.includes(value) || (auto && !value)) ? value : (auto ? '' : (list.includes('de') ? 'de' : list[0]));
+        sel.value = value && (list.includes(value) || (auto && !value)) ? value : (auto ? '' : (list.includes(I18N.lang) ? I18N.lang : list[0]));
         onChange(sel.value);
         return sel;
     }
@@ -148,8 +149,8 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         const noteEl = document.getElementById('tts-engine-note');
         form.replaceChildren();
         const t = catalog && catalog.tts;
-        if (!t || !t.available) { noteEl.textContent = (t && t.reason) || 'Sprachausgabe nicht erreichbar.'; return; }
-        noteEl.textContent = `${t.engines.length} Engines`;
+        if (!t || !t.available) { noteEl.textContent = (t && t.reason) || tx('Speech output unreachable.'); return; }
+        noteEl.textContent = tx('{n} engines', { n: t.engines.length });
         if (!tts.engine || !t.engines.some(e => e.id === tts.engine.id)) {
             tts.engine = t.engines.find(e => e.id === t.default_engine) || t.engines[0];
             tts.mode = null;
@@ -160,40 +161,40 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
 
         const engSel = h('select', { on: { change: () => {
             tts.engine = t.engines.find(x => x.id === engSel.value); tts.mode = null; tts.params = {}; tts.tags = []; renderTts();
-        } } }, t.engines.map(x => h('option', { value: x.id, text: x.label + (x.loaded ? ' · geladen' : '') })));
+        } } }, t.engines.map(x => h('option', { value: x.id, text: x.label + (x.loaded ? ' · ' + tx('loaded') : '') })));
         engSel.value = e.id;
-        form.append(group('Engine', engSel, note([e.description, e.license ? `Lizenz: ${e.license}` : ''].filter(Boolean).join(' · '))));
+        form.append(group('Engine', engSel, h('div', { class: 'muted small', text: [e.description && tx(e.description), e.license ? tx('License: {l}', { l: e.license }) : ''].filter(Boolean).join(' · ') })));
 
         if (e.modes.length > 1) {
             const modeSel = h('select', { on: { change: () => {
                 tts.mode = e.modes.find(x => String(x.variant) === modeSel.value); tts.params = {}; renderTts();
-            } } }, e.modes.map(x => h('option', { value: String(x.variant), text: x.label })));
+            } } }, e.modes.map(x => h('option', { value: String(x.variant), text: tx(x.label) })));
             modeSel.value = String(m.variant);
-            form.append(group('Art', modeSel, m.description ? note(m.description) : null));
+            form.append(group('Kind', modeSel, m.description ? note(m.description) : null));
         } else if (m.description) form.append(note(m.description));
 
-        form.append(group('Sprache', languageSelect(e.languages, tts.language, v => { tts.language = v; })));
+        form.append(group('Language', languageSelect(e.languages, tts.language, v => { tts.language = v; })));
 
         const inp = m.inputs || {};
         if (inp.reference) {
-            form.append(audioPicker('Aufnahme zum Klonen' + need(inp.reference) + (m.default_voice ? ' – leer = Standardstimme' : ''),
+            form.append(audioPicker(tx('Recording to clone') + need(inp.reference) + (m.default_voice ? ' ' + tx('– empty = default voice') : ''),
                 ({ path, base64 }) => {
                     tts.refVoicePath = path || null; tts.refAudioBase64 = base64 || null;
                     const v = voices.find(x => x.path === path);
                     if (inp.ref_text && v && v.transcript) { tts.refText = v.transcript; const ta = document.getElementById('tts-ref-text'); if (ta) ta.value = v.transcript; }
-                }, inp.reference === 'required' ? '– Aufnahme wählen oder hochladen –' : '– keine –'));
+                }, inp.reference === 'required' ? tx('– choose or upload a recording –') : tx('– none –')));
         }
         if (inp.ref_text) {
-            const ta = h('textarea', { id: 'tts-ref-text', rows: 3, placeholder: 'Was in der Aufnahme gesagt wird' });
+            const ta = h('textarea', { id: 'tts-ref-text', rows: 3, placeholder: tx('What is said in the recording') });
             ta.value = tts.refText || '';
             ta.addEventListener('input', () => { tts.refText = ta.value.trim(); });
-            form.append(group('Transkript der Aufnahme' + need(inp.ref_text), ta));
+            form.append(group(tx('Transcript of the recording') + need(inp.ref_text), ta));
         }
         if (inp.speaker) {
             const sp = h('select', { on: { change: () => { tts.speaker = sp.value; } } },
                 (m.speakers || []).map(x => h('option', { value: x, text: x.replace(/_/g, ' ') })));
             if (m.speakers.includes(tts.speaker)) sp.value = tts.speaker; else tts.speaker = sp.value;
-            form.append(group('Sprecher' + need(inp.speaker), sp));
+            form.append(group(tx('Speaker') + need(inp.speaker), sp));
         }
         if (inp.instruct) form.append(instructInput(m.instruct || { kind: 'text' }, inp.instruct));
         for (const p of m.params || []) form.append(paramInput(p));
@@ -208,44 +209,44 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
                                   on: { click: () => { tts.tags = R.toggleTag(spec.groups, tts.tags, tag); tts.instruct = tts.tags.join(', '); draw(); } } })))));
             };
             draw();
-            return group('Stimme aus Stichworten' + need(required), spec.hint ? note(spec.hint) : null, box);
+            return group(tx('Voice from keywords') + need(required), spec.hint ? note(spec.hint) : null, box);
         }
-        const ta = h('textarea', { rows: 3, placeholder: spec.hint || 'Stil beschreiben' });
+        const ta = h('textarea', { rows: 3, placeholder: spec.hint ? tx(spec.hint) : tx('Describe the style') });
         ta.value = tts.instruct || '';
         ta.addEventListener('input', () => { tts.instruct = ta.value.trim(); });
-        const ex = (spec.examples || []).map(x => h('button', { type: 'button', class: 'btn-tag', text: x,
+        const ex = (spec.examples || []).map(tx).map(x => h('button', { type: 'button', class: 'btn-tag', text: x,
             on: { click: () => { ta.value = x; tts.instruct = x; } } }));
-        return group('Stil' + need(required), ta, ex.length ? h('div', { class: 'tag-row flex-wrap' }, ex) : null);
+        return group(tx('Style') + need(required), ta, ex.length ? h('div', { class: 'tag-row flex-wrap' }, ex) : null);
     }
 
     function paramInput(p) {
         const on = tts.params[p.name] !== undefined;
         const start = on ? tts.params[p.name] : (p.default !== undefined ? p.default : (p.min + p.max) / 2);
         const range = h('input', { type: 'range', min: p.min, max: p.max, step: p.step || (p.max - p.min) / 100, value: start, disabled: !on });
-        const out = h('span', { class: 'muted small', text: on ? String(start) : 'Standard' });
+        const out = h('span', { class: 'muted small', text: on ? String(start) : tx('default') });
         const box = h('input', { type: 'checkbox', checked: on });
         box.addEventListener('change', () => {
             range.disabled = !box.checked;
             if (box.checked) { tts.params[p.name] = parseFloat(range.value); out.textContent = range.value; }
-            else { delete tts.params[p.name]; out.textContent = 'Standard'; }
+            else { delete tts.params[p.name]; out.textContent = tx('default'); }
         });
         range.addEventListener('input', () => { tts.params[p.name] = parseFloat(range.value); out.textContent = range.value; });
-        return group(p.label, h('label', { class: 'small' }, box, ' anpassen ', out), range);
+        return group(p.label, h('label', { class: 'small' }, box, ' ' + tx('adjust') + ' ', out), range);
     }
 
     document.getElementById('tts-generate-btn').addEventListener('click', async () => {
         const status = document.getElementById('tts-status');
         const text = document.getElementById('tts-text').value.trim();
         if (!tts.engine) return;
-        if (!text) { status.textContent = 'Erst einen Text eingeben.'; return; }
+        if (!text) { status.textContent = tx('Enter a text first.'); return; }
         const m = tts.mode;
         const reference = !!(tts.refVoicePath || tts.refAudioBase64) || !!m.default_voice;
         const missing = R.missingInputs(m, { reference, ref_text: !!tts.refText, instruct: !!tts.instruct, speaker: !!tts.speaker });
-        if (missing.length) { status.textContent = `Es fehlt noch: ${missing.join(', ')}.`; return; }
+        if (missing.length) { status.textContent = tx('Still missing: {what}.', { what: missing.join(', ') }); return; }
         const body = R.ttsPayload(tts.engine, m, { ...tts, text });
         const btn = document.getElementById('tts-generate-btn');
         btn.disabled = true;
-        status.textContent = `${tts.engine.label} spricht… (beim ersten Mal wird die Engine geladen)`;
+        status.textContent = tx('{engine} is speaking… (the first time, the engine is loaded)', { engine: tts.engine.label });
         const t0 = performance.now();
         try {
             const r = await api('/api/tts/generate', 'POST', body);
@@ -253,11 +254,11 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
             document.getElementById('tts-result-audio').src = src;
             document.getElementById('tts-download').href = src;
             document.getElementById('tts-result').hidden = false;
-            status.textContent = `Fertig · ${tts.engine.label} · ${m.label} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
-            addLog(`Sprache erzeugt (${tts.engine.label}, ${m.label})`, 'success');
+            status.textContent = `${tx('Done')} · ${tts.engine.label} · ${tx(m.label)} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+            addLog(tx('Speech generated ({engine}, {mode})', { engine: tts.engine.label, mode: tx(m.label) }), 'success');
         } catch (err) {
-            status.textContent = `Fehlgeschlagen: ${err.message}`;
-            addLog(`Sprache: ${err.message}`, 'error');
+            status.textContent = tx('Failed: {err}', { err: err.message });
+            addLog(tx('Speech: {err}', { err: err.message }), 'error');
         } finally {
             btn.disabled = false;
         }
@@ -269,8 +270,8 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         const noteEl = document.getElementById('stt-engine-note');
         form.replaceChildren();
         const s = catalog && catalog.stt;
-        if (!s || !s.available) { noteEl.textContent = (s && s.reason) || 'Transkription nicht erreichbar.'; return; }
-        noteEl.textContent = 'Datei oder gespeicherte Aufnahme';
+        if (!s || !s.available) { noteEl.textContent = (s && s.reason) || tx('Transcription unreachable.'); return; }
+        noteEl.textContent = tx('File or saved recording');
         if (!stt.engine || !s.engines.some(e => e.id === stt.engine.id)) {
             stt.engine = s.engines.find(e => e.id === s.default_engine && e.available) || s.engines.find(e => e.available) || s.engines[0];
             stt.values = {};
@@ -279,10 +280,10 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         for (const f of e.fields || []) if (stt.values[f.name] === undefined && f.default !== undefined) stt.values[f.name] = f.default;
 
         const engSel = h('select', { on: { change: () => { stt.engine = s.engines.find(x => x.id === engSel.value); stt.values = {}; renderStt(); } } },
-            s.engines.map(x => h('option', { value: x.id, disabled: !x.available, text: x.label + (x.available ? '' : ' (nicht eingerichtet)') })));
+            s.engines.map(x => h('option', { value: x.id, disabled: !x.available, text: x.label + (x.available ? '' : ' ' + tx('(not set up)')) })));
         engSel.value = e.id;
         form.append(group('Engine', engSel, note(e.description)));
-        form.append(audioPicker('Aufnahme', ({ path, base64 }) => { stt.audioPath = path || null; stt.audioBase64 = base64 || null; }, '– Datei hochladen –'));
+        form.append(audioPicker(tx('Recording'), ({ path, base64 }) => { stt.audioPath = path || null; stt.audioBase64 = base64 || null; }, tx('– upload a file –')));
         for (const f of R.visibleFields(e.fields, stt.values)) form.append(fieldInput(f));
     }
 
@@ -292,12 +293,12 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         let el;
         if (f.type === 'bool') {
             el = h('input', { type: 'checkbox', checked: !!v, on: { change: () => set(el.checked) } });
-            return h('div', { class: 'input-group' }, h('label', {}, el, ' ' + f.label), f.help ? note(f.help) : null);
+            return h('div', { class: 'input-group' }, h('label', {}, el, ' ' + tx(f.label)), f.help ? note(f.help) : null);
         }
         if (f.type === 'choice') {
             el = h('select', { on: { change: () => set(el.value) } },
                 f.choices.map(c => h('option', { value: c.value, disabled: c.available === false,
-                                                  text: c.label + (c.available === false ? ' (nicht eingerichtet)' : '') })));
+                                                  text: tx(c.label) + (c.available === false ? ' ' + tx('(not set up)') : '') })));
             el.value = v != null ? v : f.default;
         } else if (f.type === 'language') {
             el = languageSelect(null, v, x => { stt.values[f.name] = x || null; }, true);
@@ -315,36 +316,36 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
     document.getElementById('stt-srt-btn').addEventListener('click', () => {
         if (!stt.last) return;
         const blob = new Blob([R.toSrt(stt.last.segments)], { type: 'text/plain' });
-        const a = h('a', { href: URL.createObjectURL(blob), download: 'transkript.srt' });
+        const a = h('a', { href: URL.createObjectURL(blob), download: tx('transcript') + '.srt' });
         document.body.append(a); a.click(); a.remove();
     });
     document.getElementById('stt-copy-btn').addEventListener('click', async () => {
         const text = document.getElementById('stt-result').textContent;
-        if (text) logCopyResult(await copyTextToClipboard(text), 'Transkript');
+        if (text) logCopyResult(await copyTextToClipboard(text), tx('Transcript'));
     });
 
     async function transcribe() {
         const status = document.getElementById('stt-status');
         const out = document.getElementById('stt-result');
         if (!stt.engine) return;
-        if (!stt.audioPath && !stt.audioBase64) { status.textContent = 'Erst eine Aufnahme wählen oder hochladen.'; return; }
+        if (!stt.audioPath && !stt.audioBase64) { status.textContent = tx('Choose or upload a recording first.'); return; }
         const audio = stt.audioPath ? { audio_path: stt.audioPath } : { audio_base64: stt.audioBase64 };
         const body = R.sttPayload(stt.engine, stt.values, audio);
-        status.textContent = `${stt.engine.label} schreibt ab… (beim ersten Mal wird das Modell geladen)`;
+        status.textContent = tx('{engine} is transcribing… (the first time, the model is loaded)', { engine: stt.engine.label });
         const t0 = performance.now();
         try {
             const r = await api('/api/stt/transcribe', 'POST', body);
             stt.last = r;
-            out.textContent = R.readable(r) || '(nichts erkannt)';
+            out.textContent = R.readable(r) || tx('(nothing recognised)');
             const speakers = new Set((r.segments || []).map(x => x.speaker).filter(Boolean));
-            status.textContent = `Fertig · ${stt.engine.label}${r.language ? ' · ' + langName(r.language) : ''}`
-                + `${speakers.size ? ' · ' + speakers.size + ' Sprecher' : ''} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+            status.textContent = `${tx('Done')} · ${stt.engine.label}${r.language ? ' · ' + langName(r.language) : ''}`
+                + `${speakers.size ? ' · ' + tx('{n} speakers', { n: speakers.size }) : ''} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
             document.getElementById('stt-copy-btn').disabled = false;
             document.getElementById('stt-srt-btn').disabled = !(r.segments || []).length;
-            addLog(`Abgeschrieben (${stt.engine.label})`, 'success');
+            addLog(tx('Transcribed ({engine})', { engine: stt.engine.label }), 'success');
         } catch (err) {
-            status.textContent = `Fehlgeschlagen: ${err.message}`;
-            addLog(`Abschreiben: ${err.message}`, 'error');
+            status.textContent = tx('Failed: {err}', { err: err.message });
+            addLog(tx('Transcribing: {err}', { err: err.message }), 'error');
         }
     }
 
@@ -361,13 +362,13 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
     show('tts');
 
     // The run button lives in the form's card (built per engine), so add it once below the form.
-    const sttRun = h('button', { class: 'btn btn-primary', text: 'Abschreiben', on: { click: transcribe } });
+    const sttRun = h('button', { class: 'btn btn-primary', text: tx('Transcribe'), on: { click: transcribe } });
     document.getElementById('stt-form').after(h('div', { style: 'padding: 0 1.25rem 1.25rem;' }, sttRun));
 
     async function load() {
         try { voices = (await api('/api/voices')).voices || []; } catch (e) { voices = []; }
         try { catalog = await api('/v1/audio/models'); }
-        catch (err) { catalog = null; addLog(`Sprach-Engines nicht ladbar: ${err.message}`, 'error'); }
+        catch (err) { catalog = null; addLog(tx('Couldn\'t load speech engines: {err}', { err: err.message }), 'error'); }
         renderTts(); renderStt();
     }
     // Loaded when the tab is first opened: asking starts tts-serve/stt-serve if they're down.

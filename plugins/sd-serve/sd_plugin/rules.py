@@ -75,7 +75,7 @@ def from_openai(body: Any) -> Dict[str, Any]:
 def catalog(installed: bool) -> Dict[str, Any]:
     return {"object": "list", "data": [{
         "id": MODEL_ID, "label": "Iris-3B Turbo", "aliases": list(ALIASES), "available": installed,
-        "description": "Rechnet direkt in Pixeln, 4 Schritte, ~6 s; englische Schrift im Bild sauber, deutsche nicht.",
+        "description": "Works directly in pixels, 4 steps, ~6 s; English lettering in images comes out clean, German doesn't.",
         "tasks": ["generate"], "aspect_ratios": list(ASPECT_SIZES), "text_in_image": True, "layout": False,
         "steps": {"default": 4, "adjustable": False, "max": 4},
         "license": "Apache-2.0", "commercial_use": True}]}

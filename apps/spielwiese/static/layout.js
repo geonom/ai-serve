@@ -1,9 +1,9 @@
-// "Positionen": MOSS-Image with positions. Boxes are drawn on the canvas (relative 0..1, as the
+// "With positions": MOSS-Image with positions. Boxes are drawn on the canvas (relative 0..1, as the
 // gateway's /v1/images/generations expects with model "moss" and `layout`), each with a kind,
 // a caption and -- for text -- the exact text. DOM only via textContent/value (no innerHTML).
 
 const LAY_COLORS = ['#e4572e', '#17bebb', '#ffc914', '#76b041', '#2e86ab', '#a23b72', '#f18f01', '#6a4c93'];
-const LAY_KINDS = [['object', 'Objekt'], ['character', 'Figur'], ['text', 'Text']];
+const LAY_KINDS = [['object', tx('Object')], ['character', tx('Character')], ['text', tx('Text')]];
 const lay = { elements: [], selected: -1, drag: null, image: null };
 
 const layCanvas = document.getElementById('lay-canvas');
@@ -64,25 +64,25 @@ function layRenderBoxes() {
 function layRenderList() {
     layList.replaceChildren();
     if (!lay.elements.length) {
-        layList.append(layEl('div', { class: 'muted small', text: 'Noch keine Rahmen – ziehe auf der Fläche einen auf.' }));
+        layList.append(layEl('div', { class: 'muted small', text: tx('No boxes yet – draw one on the canvas.') }));
         return;
     }
     lay.elements.forEach((e, i) => {
-        const kind = layEl('select', { 'aria-label': `Art von Element ${i + 1}`, onchange: (ev) => { e.kind = ev.target.value; layRender(); } },
+        const kind = layEl('select', { 'aria-label': tx('Kind of element {n}', { n: i + 1 }), onchange: (ev) => { e.kind = ev.target.value; layRender(); } },
             ...LAY_KINDS.map(([v, l]) => { const o = layEl('option', { value: v, text: l }); o.selected = v === e.kind; return o; }));
-        const caption = layEl('input', { type: 'text', maxlength: '400', placeholder: 'Was ist hier? z. B. Bäckerin mit Brotkorb',
-                                         'aria-label': `Beschreibung von Element ${i + 1}`, value: e.caption,
+        const caption = layEl('input', { type: 'text', maxlength: '400', placeholder: tx('What is here? e.g. baker with a bread basket'),
+                                         'aria-label': tx('Description of element {n}', { n: i + 1 }), value: e.caption,
                                          oninput: (ev) => { e.caption = ev.target.value; layRenderBoxes(); } });
-        const text = e.kind === 'text' ? layEl('input', { type: 'text', maxlength: '200', class: 'lay-wide', placeholder: 'Genauer Text im Bild',
-                                                           'aria-label': `Text von Element ${i + 1}`, value: e.text || '',
+        const text = e.kind === 'text' ? layEl('input', { type: 'text', maxlength: '200', class: 'lay-wide', placeholder: tx('Exact text in the image'),
+                                                           'aria-label': tx('Text of element {n}', { n: i + 1 }), value: e.text || '',
                                                            oninput: (ev) => { e.text = ev.target.value; layRenderBoxes(); } }) : null;
-        const color = layEl('input', { type: 'color', value: e.palette || '#888888', title: 'Farbe (optional)',
-                                       'aria-label': `Farbe von Element ${i + 1}`,
+        const color = layEl('input', { type: 'color', value: e.palette || '#888888', title: tx('Colour (optional)'),
+                                       'aria-label': tx('Colour of element {n}', { n: i + 1 }),
                                        onchange: (ev) => { e.palette = ev.target.value; } });
         const useColor = layEl('label', { class: 'small lay-wide' }, (() => {
             const c = layEl('input', { type: 'checkbox', onchange: (ev) => { e.usePalette = ev.target.checked; } });
-            c.checked = !!e.usePalette; return c; })(), document.createTextNode(' Farbe vorgeben '), color);
-        const del = layEl('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: '✕', title: 'Rahmen löschen',
+            c.checked = !!e.usePalette; return c; })(), document.createTextNode(' ' + tx('set a colour') + ' '), color);
+        const del = layEl('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: '✕', title: tx('Delete box'),
                                       onclick: () => { lay.elements.splice(i, 1); lay.selected = -1; layRender(); } });
         layList.append(layEl('div', { class: `lay-el${i === lay.selected ? ' selected' : ''}`, style: `--lay-color:${layColor(i)}`,
                                       onclick: (ev) => { if (ev.target === ev.currentTarget) laySelect(i); } },
@@ -110,7 +110,7 @@ layCanvas.addEventListener('pointerdown', (ev) => {
         layRender();
         return;
     }
-    if (lay.elements.length >= 20) { layStatus.textContent = 'Höchstens 20 Rahmen.'; return; }
+    if (lay.elements.length >= 20) { layStatus.textContent = tx('At most 20 boxes.'); return; }
     lay.elements.push({ box: [p.x, p.y, p.x, p.y], kind: 'object', caption: '', text: '', palette: '#888888' });
     lay.selected = lay.elements.length - 1;
     lay.drag = { mode: 'draw', i: lay.selected, start: p };
@@ -162,7 +162,7 @@ function layRequestBody() {
     const seed = document.getElementById('lay-seed').value;
     if (seed !== '') body.seed = parseInt(seed, 10);
     body.layout = lay.elements.map(e => {
-        const item = { box: e.box, kind: e.kind, caption: e.caption.trim() || (e.kind === 'text' ? 'Schriftzug' : '') };
+        const item = { box: e.box, kind: e.kind, caption: e.caption.trim() || (e.kind === 'text' ? 'lettering' : '') };
         if (e.kind === 'text') item.text = (e.text || '').trim();
         if (e.usePalette && e.palette) item.palette = [e.palette];
         return item;
@@ -172,13 +172,13 @@ function layRequestBody() {
 
 async function layGenerate() {
     const body = layRequestBody();
-    if (!body.prompt) { layStatus.textContent = 'Beschreibe zuerst das ganze Bild.'; return; }
+    if (!body.prompt) { layStatus.textContent = tx('Describe the whole image first.'); return; }
     const missing = body.layout.findIndex(e => !e.caption || (e.kind === 'text' && !e.text));
-    if (missing >= 0) { layStatus.textContent = `Element ${missing + 1}: Beschreibung${body.layout[missing].kind === 'text' ? ' und Text' : ''} fehlt.`; return; }
+    if (missing >= 0) { layStatus.textContent = body.layout[missing].kind === 'text' ? tx('Element {n}: description and text missing.', { n: missing + 1 }) : tx('Element {n}: description missing.', { n: missing + 1 }); return; }
     const btn = document.getElementById('lay-run-btn');
     btn.disabled = true;
     const t0 = Date.now();
-    layStatus.textContent = 'Erzeuge … (der erste Aufruf lädt das Modell, das dauert länger)';
+    layStatus.textContent = tx('Generating … (the first call loads the model, which takes longer)');
     try {
         const res = await swFetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await res.json().catch(() => ({}));
@@ -189,14 +189,14 @@ async function layGenerate() {
         const dl = document.getElementById('lay-download');
         dl.href = src;
         dl.hidden = false;
-        layStatus.textContent = `Fertig nach ${Math.round((Date.now() - t0) / 1000)} s (${body.model}).`;
+        layStatus.textContent = tx('Done after {s} s ({model}).', { s: Math.round((Date.now() - t0) / 1000), model: body.model });
         if (typeof saveToGallery === 'function') {
             saveToGallery(data.data[0].b64_json, { prompt: body.prompt, model: body.model, label: (document.getElementById('lay-variant').selectedOptions[0] || {}).textContent || body.model, steps: body.steps,
                                                    seed: body.seed, seconds: (Date.now() - t0) / 1000, source: 'positionen' });
         }
-        if (typeof addLog === 'function') addLog(`MOSS-Image: Bild mit ${body.layout.length} Rahmen erzeugt`, 'system');
+        if (typeof addLog === 'function') addLog(tx('MOSS-Image: image with {n} boxes generated', { n: body.layout.length }), 'system');
     } catch (err) {
-        layStatus.textContent = `Fehler: ${err.message}`;
+        layStatus.textContent = tx('Error: {err}', { err: err.message });
         if (typeof addLog === 'function') addLog(`MOSS-Image: ${err.message}`, 'error');
     } finally {
         btn.disabled = false;

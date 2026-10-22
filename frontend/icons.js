@@ -33,12 +33,12 @@ const APP_ICONS = {
 };
 
 const APP_CATEGORIES = {
-    ai: { label: 'KI-Backends', hint: 'starten bei Bedarf von selbst', tint: 'var(--cat-ai-bg)', ink: 'var(--cat-ai)' },
-    stories: { label: 'Geschichten & Spiele', hint: '', tint: 'var(--cat-stories-bg)', ink: 'var(--cat-stories)' },
-    learning: { label: 'Lernen', hint: '', tint: 'var(--cat-learning-bg)', ink: 'var(--cat-learning)' },
-    knowledge: { label: 'Wissen', hint: '', tint: 'var(--cat-knowledge-bg)', ink: 'var(--cat-knowledge)' },
-    tools: { label: 'Werkzeuge', hint: '', tint: 'var(--cat-tools-bg)', ink: 'var(--cat-tools)' },
-    integrations: { label: 'Integrationen', hint: 'Starten öffnet ihren Zugang', tint: 'var(--cat-integrations-bg)', ink: 'var(--cat-integrations)' },
+    ai: { label: tx('AI backends'), hint: tx('start by themselves when needed'), tint: 'var(--cat-ai-bg)', ink: 'var(--cat-ai)' },
+    stories: { label: tx('Stories & games'), hint: '', tint: 'var(--cat-stories-bg)', ink: 'var(--cat-stories)' },
+    learning: { label: tx('Learning'), hint: '', tint: 'var(--cat-learning-bg)', ink: 'var(--cat-learning)' },
+    knowledge: { label: tx('Knowledge'), hint: '', tint: 'var(--cat-knowledge-bg)', ink: 'var(--cat-knowledge)' },
+    tools: { label: tx('Tools'), hint: '', tint: 'var(--cat-tools-bg)', ink: 'var(--cat-tools)' },
+    integrations: { label: tx('Integrations'), hint: tx('starting one opens its access'), tint: 'var(--cat-integrations-bg)', ink: 'var(--cat-integrations)' },
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -71,9 +71,9 @@ function appTile(s, size = 48) {
 
 // How far an app is (manifest "maturity"): a small pill, nothing when unrated.
 const MATURITY = {
-    alpha: ['Alpha', 'pill-maturity-alpha', 'Funktioniert, aber noch roh'],
-    beta: ['Beta', 'pill-maturity-beta', 'Benutzbar, wird gerade getestet'],
-    stable: ['Getestet', 'pill-maturity-stable', 'Vollständig getestet'],
+    alpha: [tx('Alpha'), 'pill-maturity-alpha', tx('Works, but still rough')],
+    beta: [tx('Beta'), 'pill-maturity-beta', tx('Usable, being tested')],
+    stable: [tx('Tested'), 'pill-maturity-stable', tx('Fully tested')],
 };
 
 function maturityPill(s) {
@@ -88,7 +88,7 @@ const appShotCache = new Map();
 function appScreenshot(s, href = null) {
     let img = appShotCache.get(s.id);
     if (!img) {
-        img = el('img', { src: `/api/services/${encodeURIComponent(s.id)}/screenshot`, alt: `Screenshot von ${s.name}`, decoding: 'async' });
+        img = el('img', { src: `/api/services/${encodeURIComponent(s.id)}/screenshot`, alt: tx('Screenshot of {name}', { name: s.name }), decoding: 'async' });
         img.addEventListener('error', () => { appShotCache.delete(s.id); img.closest('.app-shot')?.remove(); });
         appShotCache.set(s.id, img);
     }
@@ -100,5 +100,5 @@ function appScreenshot(s, href = null) {
 
 function fmtGb(mb) {
     if (mb === null || mb === undefined) return '?';
-    return (mb / 1024).toFixed(1).replace('.', ',');
+    return (mb / 1024).toLocaleString(I18N.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }

@@ -88,7 +88,7 @@ class TestQuotaServer(unittest.TestCase):
         self.assertEqual(self.req("POST", "/v1/images/generations", "anna", {"prompt": "x", "n": 2})[0], 200)
         st, body = self.req("POST", "/v1/images/generations", "anna", {"prompt": "x", "n": 2})
         self.assertEqual(st, 429)
-        self.assertIn("1 Bild", body["detail"])
+        self.assertIn("1 image", body["detail"])
         self.assertEqual(HITS, ["/v1/images/generations"])                 # the refused one never left
         st, q = self.req("GET", "/sw/quota", "anna")
         self.assertEqual((q["usage"]["images"], q["limits"]["images_per_day"], q["unlimited"]), (2, 3, False))
@@ -116,7 +116,7 @@ class TestQuotaServer(unittest.TestCase):
     def test_comparison_checks_the_image_budget_up_front(self):
         st, body = self.req("POST", "/sw/compare", "anna", {"prompt": "x", "models": ["z"], "steps": [4, 8, 12, 16]})
         self.assertEqual(st, 429, body)
-        self.assertIn("Bild", body["detail"])
+        self.assertIn("images", body["detail"])
         st, job = self.req("POST", "/sw/compare", "anna", {"prompt": "x", "models": ["z"], "steps": [4, 8]})
         self.assertEqual(st, 202, job)
         for _ in range(100):

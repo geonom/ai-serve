@@ -1,4 +1,4 @@
-// "Tür: Zugriffe und Abweisungen" (Zugang & API): what the door let through and turned away per day,
+// "Door: access and refusals" (Access & API): what the door let through and turned away per day,
 // from edge-door's /api/security via GET /api/door/security. The number that matters most: requests that
 // reached an app without a signed-in person -- must be 0. DOM only via textContent.
 
@@ -11,10 +11,10 @@
         return e;
     };
     const COLS = [
-        ['day', 'Tag'], ['total', 'Anfragen'], ['signed_in', 'angemeldet in Apps'], ['people', 'Personen'],
-        ['to_login', 'zum Login umgeleitet'], ['denied', 'abgewiesen 401/403'], ['not_found', 'unbekannt 404'],
-        ['bad', 'fehlerhaft 400'], ['probes', 'davon Angriffsmuster'], ['door', 'Login-Seite/öffentlich'],
-        ['leak', 'ohne Anmeldung durch'],
+        ['day', tx('Day')], ['total', tx('Requests')], ['signed_in', tx('signed in to apps')], ['people', tx('People')],
+        ['to_login', tx('sent to login')], ['denied', tx('refused 401/403')], ['not_found', tx('unknown 404')],
+        ['bad', tx('malformed 400')], ['probes', tx('of which attack patterns')], ['door', tx('login page/public')],
+        ['leak', tx('through without sign-in')],
     ];
 
     async function load() {
@@ -25,23 +25,23 @@
         const alarm = $('door-sec-alarm');
         if (data.configured === false) {
             alarm.className = 'door-sec-alarm';
-            alarm.textContent = 'Die Tür (Zugang für andere über Nextcloud) ist nicht eingerichtet – eine optionale Erweiterung.';
+            alarm.textContent = tx('The door (access for others through Nextcloud) isn\'t set up – an optional extension.');
             $('door-sec-table').replaceChildren();
             return;
         }
         if (!data.available) {
             alarm.className = 'door-sec-alarm bad';
-            alarm.textContent = `Übersicht nicht verfügbar: ${data.detail || 'Türsteher nicht erreichbar'}`;
+            alarm.textContent = tx('Overview not available: {err}', { err: data.detail || tx('door unreachable') });
             $('door-sec-table').replaceChildren();
             return;
         }
         if (data.leak_total > 0) {
             alarm.className = 'door-sec-alarm bad';
             const last = (data.leaks || []).slice(-3).map(l => `${l.time} ${l.upstream}${l.path}`).join(' · ');
-            alarm.textContent = `ACHTUNG: ${data.leak_total} Anfrage(n) haben eine App ohne Anmeldung erreicht. Zuletzt: ${last}`;
+            alarm.textContent = tx('WARNING: {n} request(s) reached an app without sign-in. Latest: {last}', { n: data.leak_total, last });
         } else {
             alarm.className = 'door-sec-alarm ok';
-            alarm.textContent = 'Keine Anfrage hat eine App ohne Anmeldung erreicht.';
+            alarm.textContent = tx('No request reached an app without sign-in.');
         }
         const table = el('table', { class: 'door-sec-table' });
         const head = el('tr');
@@ -53,7 +53,7 @@
         for (const d of data.days || []) {
             const tr = el('tr');
             COLS.forEach(([k]) => {
-                const v = k === 'day' ? new Date(d.day + 'T12:00').toLocaleDateString() : String(d[k] ?? 0);
+                const v = k === 'day' ? new Date(d.day + 'T12:00').toLocaleDateString(I18N.locale) : String(d[k] ?? 0);
                 tr.append(el('td', k === 'leak' && d.leak > 0 ? { class: 'bad' } : {}, v));
             });
             body.append(tr);
@@ -63,7 +63,7 @@
         const probes = $('door-sec-probes');
         probes.replaceChildren();
         if ((data.top_probes || []).length) {
-            probes.append(el('strong', {}, 'Häufigste Angriffsmuster (7 Tage): '));
+            probes.append(el('strong', {}, tx('Most common attack patterns (7 days): ')));
             data.top_probes.forEach(([p, n]) => probes.append(el('code', {}, `${p} ×${n}`)));
         }
         $('door-sec-note').textContent = data.note || '';

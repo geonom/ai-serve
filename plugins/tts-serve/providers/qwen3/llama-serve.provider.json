@@ -42,8 +42,8 @@
   "modes": [
     {
       "variant": "base",
-      "label": "Stimme klonen",
-      "description": "Klont die Stimme aus Aufnahme und Transkript.",
+      "label": "Clone a voice",
+      "description": "Clones the voice from the recording and its transcript.",
       "inputs": {
         "reference": "required",
         "ref_text": "required"
@@ -51,24 +51,24 @@
     },
     {
       "variant": "voice_design",
-      "label": "Stimme beschreiben",
-      "description": "Baut eine Stimme aus einer Beschreibung, ohne Aufnahme.",
+      "label": "Describe a voice",
+      "description": "Builds a voice from a description, without a recording.",
       "inputs": {
         "instruct": "required"
       },
       "instruct": {
         "kind": "text",
-        "hint": "Klang, Alter, Gefühl, Sprechweise",
+        "hint": "Sound, age, feeling, way of speaking",
         "examples": [
           "A warm, calm female voice in her forties, speaking slowly.",
-          "Ein aufgeregter Junge, etwa zehn Jahre alt, spricht schnell."
+          "An excited boy, about ten years old, speaking fast."
         ]
       }
     },
     {
       "variant": "custom_voice",
-      "label": "Fertige Sprecher",
-      "description": "Einer von neun eingebauten Sprechern, optional mit Stilangabe.",
+      "label": "Preset speakers",
+      "description": "One of nine built-in speakers, optionally with a style.",
       "inputs": {
         "speaker": "required",
         "instruct": "optional"
@@ -86,9 +86,9 @@
       ],
       "instruct": {
         "kind": "text",
-        "hint": "Stil (optional)",
+        "hint": "Style (optional)",
         "examples": [
-          "Sprich traurig.",
+          "Speak sadly.",
           "Speak with excitement."
         ]
       }

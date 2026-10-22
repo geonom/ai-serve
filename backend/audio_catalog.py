@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 def _down(service: str, url_hint: str) -> Dict[str, Any]:
     return {"available": False, "engines": [], "default_engine": None,
-            "reason": f"{service} ist nicht erreichbar ({url_hint}); in Apps & Services starten."}
+            "reason": f"{service} is unreachable ({url_hint}); start it in Apps & Services."}
 
 
 def _tts_modes(e: Dict[str, Any], default_voice: str) -> List[Dict[str, Any]]:

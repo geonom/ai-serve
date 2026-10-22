@@ -32,35 +32,35 @@ document.getElementById('ocr-run-btn').addEventListener('click', async () => {
     const status = document.getElementById('ocr-status');
     const out = document.getElementById('ocr-result');
     const btn = document.getElementById('ocr-run-btn');
-    if (!file) { status.textContent = 'Erst eine Datei wählen.'; return; }
+    if (!file) { status.textContent = tx('Choose a file first.'); return; }
     const mode = document.getElementById('ocr-mode').value;
     const body = { images_base64: [await readFileBase64(file)], mode };
     if (mode === 'structured') {
         body.template = document.getElementById('ocr-template').value.trim();
         const instr = document.getElementById('ocr-instructions').value.trim();
         if (instr) body.instructions = instr;
-        if (!body.template) { status.textContent = 'Für „Felder nach Vorlage“ braucht es eine Vorlage.'; return; }
+        if (!body.template) { status.textContent = tx('“Fields from a template” needs a template.'); return; }
     }
     const model = document.getElementById('ocr-model').value;
     if (model) body.model = model;
     btn.disabled = true;
-    status.textContent = 'Lese… (beim ersten Mal wird das Modell geladen)';
+    status.textContent = tx('Reading… (the first time, the model is loaded)');
     const t0 = performance.now();
     try {
         const r = await api('/api/ocr', 'POST', body);
         const pages = (r.pages || []).length;
         ocrResultText = r.content != null ? r.content : JSON.stringify(r.parsed, null, 2);
-        out.textContent = ocrResultText || '(leer)';
-        status.textContent = `${r.status === 'completed' ? 'Fertig' : r.status === 'partial' ? 'Teilweise' : r.status} · ${pages} Seite${pages === 1 ? '' : 'n'} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+        out.textContent = ocrResultText || tx('(empty)');
+        status.textContent = `${r.status === 'completed' ? tx('Done') : r.status === 'partial' ? tx('Partly') : r.status} · ${pages === 1 ? tx('1 page') : tx('{n} pages', { n: pages })} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
         document.getElementById('ocr-copy-btn').disabled = !ocrResultText;
-        addLog(`Dokument gelesen: ${file.name}`, 'info');
+        addLog(tx('Document read: {name}', { name: file.name }), 'info');
     } catch (err) {
-        status.textContent = `Fehlgeschlagen: ${err.message}`;
-        addLog(`Dokument: ${err.message}`, 'error');
+        status.textContent = tx('Failed: {err}', { err: err.message });
+        addLog(tx('Document: {err}', { err: err.message }), 'error');
     }
     btn.disabled = false;
 });
 
 document.getElementById('ocr-copy-btn').addEventListener('click', async () => {
-    logCopyResult(await copyTextToClipboard(ocrResultText), 'Ergebnis');
+    logCopyResult(await copyTextToClipboard(ocrResultText), tx('Result'));
 });

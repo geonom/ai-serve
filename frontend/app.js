@@ -348,7 +348,7 @@ UI.tabLinks.forEach(link => {
     });
 });
 
-// Buttons elsewhere on a page that open another page ("Zur App-Übersicht" ...).
+// Buttons elsewhere on a page that open another page ("Go to the apps" ...).
 function gotoTab(tab) {
     const link = document.querySelector(`.tab-link[data-tab="${tab}"]`);
     if (link) link.click();
@@ -1404,7 +1404,7 @@ function renderAPIExplorer() {
             desc: 'OPENAI COMPATIBLE: Text-to-speech. Engine follows the model field: "qwen"→Qwen3-TTS, "chatter"→Chatterbox, "omni"→OmniVoice, anything else (incl. "tts-1")→server default (CosyVoice 3). voice = a voices/ preset filename (matched prefix), an OpenAI built-in name (ignored), or a free-form voice description. For CosyVoice a preset voice is cloned; a description drives instruct on DEFAULT_TTS_VOICE. OmniVoice descriptions use a narrow tag vocabulary (accent/age/pitch/whisper); Qwen3 → VoiceDesign (free-form).',
             payload: {
                 model: "tts-1",
-                input: "Hallo, das ist ein Test.",
+                input: "Hello, this is a test.",
                 voice: "synth-default"
             },
             payloadSchema: '<ul><li><code>model</code> (string, required): Engine selector — "tts-1" (or anything without "qwen") = OmniVoice; contains "qwen" = Qwen3-TTS VoiceDesign.</li><li><code>input</code> (string, required): Text to read.</li><li><code>voice</code> (string, required): Reference voice preset filename (e.g. "synth-default.wav"), or a voice description. OmniVoice: instruct-design tags (e.g. "p-de-f, fast"). Qwen3: free-form, e.g. "a slow, calm voice with a low pitch".</li></ul>',
@@ -1414,7 +1414,7 @@ function renderAPIExplorer() {
   -o output.wav \\
   -d '{
     "model": "tts-1",
-    "input": "Hallo, das ist ein Test.",
+    "input": "Hello, this is a test.",
     "voice": "synth-default"
   }'`
         },
@@ -1452,7 +1452,7 @@ function renderAPIExplorer() {
             path: '/api/tts/generate',
             desc: 'TTS (engine-agnostic): Speech generation. Omit engine for the server default (DEFAULT_TTS_ENGINE, normally "cosyvoice"; every engine runs in tts-serve; 503 if it is unavailable). engine="cosyvoice" (CosyVoice 3 — clone + free-form style via variant="instruct"; Apache-2.0) | "omnivoice" (23 style tags OR clone; weights CC-BY-NC / non-commercial) | "qwen3" (3 checkpoints) | "chatterbox" (clone + exaggeration/cfg_weight; MIT, watermarked). Worker engines need a one-time scripts/setup_{cosyvoice,chatterbox}.sh. A default request with no reference clones DEFAULT_TTS_VOICE.',
             payload: {
-                text: "Hallo, das ist ein Test der Stimme.",
+                text: "Hello, this is a test of the voice.",
                 language: "de",
                 ref_voice_path: "/opt/ai-serve/voices/synth-default.wav",
                 ref_text: null,
@@ -1463,7 +1463,7 @@ function renderAPIExplorer() {
             curl: `curl -X POST ${BASE_URL}/api/tts/generate \\
   -H "Content-Type: application/json" \\
   -d '{
-    "text": "Hallo, das ist ein Test der Stimme.",
+    "text": "Hello, this is a test of the voice.",
     "language": "de",
     "ref_voice_path": "/opt/ai-serve/voices/synth-default.wav",
     "ref_text": null

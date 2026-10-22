@@ -22,8 +22,8 @@
   "modes": [
     {
       "variant": null,
-      "label": "Klonen oder Stimme beschreiben",
-      "description": "Mit Aufnahme wird die Stimme geklont, ohne Aufnahme aus Stichworten gebaut – nie beides zugleich.",
+      "label": "Clone or describe a voice",
+      "description": "With a recording the voice is cloned, without one it's built from keywords – never both at once.",
       "inputs": {
         "reference": "optional",
         "ref_text": "optional",
@@ -31,7 +31,7 @@
       },
       "instruct": {
         "kind": "tags",
-        "hint": "Höchstens ein Stichwort je Gruppe; nur ohne Aufnahme.",
+        "hint": "At most one keyword per group; only without a recording.",
         "groups": [
           [
             "male",

@@ -466,12 +466,12 @@ def overall_status(statuses: Sequence[str]) -> str:
 def _ago(seconds: float) -> str:
     s = max(0, int(seconds))
     if s < 60:
-        return f"vor {s} s"
+        return f"{s} s ago"
     if s < 3600:
-        return f"vor {s // 60} min"
+        return f"{s // 60} min ago"
     if s < 86400:
-        return f"vor {s // 3600} h"
-    return f"vor {s // 86400} d"
+        return f"{s // 3600} h ago"
+    return f"{s // 86400} d ago"
 
 
 def status_facts(engines: Sequence[Mapping[str, Any]], default_engine: Optional[str], now: float) -> List[Dict[str, str]]:
@@ -481,15 +481,15 @@ def status_facts(engines: Sequence[Mapping[str, Any]], default_engine: Optional[
     loaded = [names[e["id"]] for e in engines if e.get("status") in ("idle", "loading", "generating")]
     working = [names[e["id"]] for e in engines if e.get("status") == "generating" or (e.get("inflight") or 0) > 0]
     failed = [names[e["id"]] for e in engines if e.get("status") == "error"]
-    facts = [{"label": "Geladen", "value": ", ".join(loaded) if loaded else "keine Engine"}]
+    facts = [{"label": "Loaded", "value": ", ".join(loaded) if loaded else "no engine"}]
     if working:
-        facts.append({"label": "Arbeitet", "value": ", ".join(working)})
+        facts.append({"label": "Working", "value": ", ".join(working)})
     if failed:
-        facts.append({"label": "Fehler", "value": ", ".join(failed)})
+        facts.append({"label": "Error", "value": ", ".join(failed)})
     used = [e for e in engines if e.get("last_used") and e.get("status") != "unloaded"]
     if used:
         last = max(used, key=lambda e: e["last_used"])
-        facts.append({"label": "Zuletzt genutzt", "value": f"{names[last['id']]}, {_ago(now - last['last_used'])}"})
+        facts.append({"label": "Last used", "value": f"{names[last['id']]}, {_ago(now - last['last_used'])}"})
     if default_engine:
-        facts.append({"label": "Standard", "value": names.get(default_engine, default_engine)})
+        facts.append({"label": "Default", "value": names.get(default_engine, default_engine)})
     return facts

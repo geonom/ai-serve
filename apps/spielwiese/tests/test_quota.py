@@ -73,7 +73,7 @@ class TestLedger(unittest.TestCase):
         t = self.ledger.begin("anna", self.lim, "chat")
         with self.assertRaises(QuotaExceeded) as e:
             self.ledger.begin("anna", self.lim, "chat")
-        self.assertIn("läuft", str(e.exception))
+        self.assertIn("still running", str(e.exception)); self.assertTrue(e.exception.busy)
         self.ledger.begin("ben", self.lim, "chat")                          # others aren't blocked
         self.ledger.end(t, seconds=1, images=0)
         self.ledger.begin("anna", self.lim, "chat")

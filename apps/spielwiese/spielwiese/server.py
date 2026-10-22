@@ -94,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else None
         kind = quota.classify(self.command, urlsplit(self.path).path)
         if kind == "owner_only" and not person.is_owner:
-            return self._error(403, "Batch-Läufe sind dem Besitzer vorbehalten.")
+            return self._error(403, "Batch runs are for the owner only.")
         ticket, images = None, 0
         if kind and kind != "owner_only":
             images = self._images_requested(body) if kind == "image" else 0
@@ -293,7 +293,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json_out(200, self._quota_view(person))
             if path == "/sw/admin/quotas":
                 if not person.is_owner:
-                    return self._error(403, "nur für den Besitzer")
+                    return self._error(403, "for the owner only")
                 if m == "PUT":
                     body = self._json_in()
                     if body is None:

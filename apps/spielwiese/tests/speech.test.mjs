@@ -1,9 +1,10 @@
-// node --test tests/speech.test.mjs -- the Sprache tab's rules (static/speech.js): it builds requests from
+// node --test tests/speech.test.mjs -- the Speech tab's rules (static/speech.js): it builds requests from
 // whatever the engines describe in GET /v1/audio/models, so these use made-up engines on purpose.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
+createRequire(import.meta.url)('../static/i18n.js');   // tx() -- English in node
 const R = createRequire(import.meta.url)('../static/speech.js');
 
 const ENGINE = { id: 'future', fields: [
@@ -26,9 +27,9 @@ const MODE = { variant: 'v1', label: 'x', inputs: { reference: 'required', ref_t
                params: [{ name: 'top_p', min: 0, max: 1 }] };
 
 test('tts: what is still missing', () => {
-    assert.deepEqual(R.missingInputs(MODE, {}), ['eine Aufnahme']);
+    assert.deepEqual(R.missingInputs(MODE, {}), ['a recording']);
     assert.deepEqual(R.missingInputs(MODE, { reference: true }), []);
-    assert.deepEqual(R.missingInputs({ inputs: { speaker: 'required', instruct: 'required' } }, { speaker: true }), ['eine Stilangabe']);
+    assert.deepEqual(R.missingInputs({ inputs: { speaker: 'required', instruct: 'required' } }, { speaker: true }), ['a style']);
 });
 
 test('tts: the body carries only the inputs the mode takes and only changed params', () => {
@@ -37,7 +38,7 @@ test('tts: the body carries only the inputs the mode takes and only changed para
     assert.deepEqual(body, { engine: 'future', text: 'Hallo', language: 'de', variant: 'v1', ref_voice_path: '/v/a.wav',
         ref_text: 'hi', instruct: 'ruhig', params: { top_p: 0.5 } });
     const bare = R.ttsPayload({ id: 'e' }, { variant: null, inputs: {} }, { text: 'x', params: {} });
-    assert.deepEqual(bare, { engine: 'e', text: 'x', language: 'de' });
+    assert.deepEqual(bare, { engine: 'e', text: 'x', language: 'en' });   // no language chosen: the UI's (English in node)
 });
 
 test('tags: one per group, a second click clears it', () => {

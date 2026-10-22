@@ -239,7 +239,7 @@ class TestIdentityGuard:
 
     def test_single_app_not_for_the_whole_tailnet(self, tmp_path):
         m = _manifest(tmp_path)   # no identity field -> single
-        with pytest.raises(ExposureError, match="Nur ich"):
+        with pytest.raises(ExposureError, match="Only me"):
             plan_exposure(m, Exposure.TAILNET, "owner@github")
         assert plan_exposure(m, Exposure.OWNER, "owner@github").route is not None
 

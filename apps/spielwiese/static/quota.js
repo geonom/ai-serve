@@ -11,9 +11,9 @@ async function quotaBadge() {
         const q = await sw('/quota');
         if (q.unlimited) { badge.hidden = true; return; }
         const L = q.limits, u = q.usage, parts = [];
-        if (L.images_per_day !== null) parts.push(`${u.images}/${L.images_per_day} Bilder`);
-        if (L.gpu_seconds_per_day !== null) parts.push(`${minutes(u.gpu_seconds)}/${minutes(L.gpu_seconds_per_day)} Min`);
-        badge.textContent = parts.length ? `Heute: ${parts.join(' · ')}` : 'Heute: unbegrenzt';
+        if (L.images_per_day !== null) parts.push(tx('{used}/{max} images', { used: u.images, max: L.images_per_day }));
+        if (L.gpu_seconds_per_day !== null) parts.push(tx('{used}/{max} min', { used: minutes(u.gpu_seconds), max: minutes(L.gpu_seconds_per_day) }));
+        badge.textContent = parts.length ? tx('Today: {parts}', { parts: parts.join(' · ') }) : tx('Today: unlimited');
         const low = (L.images_per_day !== null && u.images >= L.images_per_day * 0.9) ||
                     (L.gpu_seconds_per_day !== null && u.gpu_seconds >= L.gpu_seconds_per_day * 0.9);
         badge.classList.toggle('low', low);
@@ -27,19 +27,19 @@ function quotaPersonRow(p) {
     const own = p.limits || {};
     const unlimited = p.limits && own.images_per_day === null && own.gpu_seconds_per_day === null;
     const mk = (cls, val, label, min) => el('label', {}, document.createTextNode(label),
-        el('input', { type: 'number', class: cls, min, step: '1', placeholder: 'Standard',
+        el('input', { type: 'number', class: cls, min, step: '1', placeholder: tx('default'),
                       value: val === undefined || val === null ? '' : String(val), disabled: unlimited || null }));
     const unl = el('input', { type: 'checkbox', class: 'q-unl', checked: unlimited || null });
     const row = el('div', { class: 'quota-person', 'data-sub': p.sub },
         el('div', { class: 'who' }, el('b', { text: p.name || p.sub }),
-           el('span', { text: `${p.owner ? 'Besitzer · ' : ''}heute ${p.usage.images} Bilder, ${minutes(p.usage.gpu_seconds)} Min` +
-                              (p.last_seen ? ` · zuletzt ${new Date(p.last_seen * 1000).toLocaleString()}` : '') })),
+           el('span', { text: (p.owner ? tx('owner') + ' · ' : '') + tx('today {images} images, {min} min', { images: p.usage.images, min: minutes(p.usage.gpu_seconds) }) +
+                              (p.last_seen ? ' · ' + tx('last seen {when}', { when: new Date(p.last_seen * 1000).toLocaleString(I18N.locale) }) : '') })),
         mk('q-minutes', own.gpu_seconds_per_day === undefined || own.gpu_seconds_per_day === null ? undefined
-                                                              : minutes(own.gpu_seconds_per_day), 'Minuten/Tag', '0'),
-        mk('q-images', own.images_per_day, 'Bilder/Tag', '0'),
-        el('label', { class: 'unl' }, unl, document.createTextNode('unbegrenzt')));
+                                                              : minutes(own.gpu_seconds_per_day), tx('minutes/day'), '0'),
+        mk('q-images', own.images_per_day, tx('images/day'), '0'),
+        el('label', { class: 'unl' }, unl, document.createTextNode(tx('unlimited'))));
     unl.addEventListener('change', () => row.querySelectorAll('input[type=number]').forEach(i => { i.disabled = unl.checked; }));
-    if (p.owner) row.querySelectorAll('input').forEach(i => { i.disabled = true; i.title = 'Du bist nicht begrenzt'; });
+    if (p.owner) row.querySelectorAll('input').forEach(i => { i.disabled = true; i.title = tx('You aren\'t limited'); });
     return row;
 }
 
@@ -47,14 +47,14 @@ async function quotaLoadAdmin() {
     const status = document.getElementById('q-status');
     try {
         quota.cfg = await sw('/admin/quotas');
-    } catch (err) { status.textContent = `Nicht verfügbar: ${err.message}`; return; }
+    } catch (err) { status.textContent = tx('Not available: {err}', { err: err.message }); return; }
     const d = quota.cfg.defaults;
     document.getElementById('q-def-minutes').value = d.gpu_seconds_per_day === null ? '' : String(minutes(d.gpu_seconds_per_day));
     document.getElementById('q-def-images').value = d.images_per_day === null ? '' : String(d.images_per_day);
     document.getElementById('q-def-concurrent').value = d.concurrent === null ? '' : String(d.concurrent);
     const people = quota.cfg.people;
     document.getElementById('quota-people').replaceChildren(...(people.length ? people.map(quotaPersonRow)
-        : [el('p', { class: 'muted small', text: 'Noch niemand außer dir hat die Spielwiese benutzt.' })]));
+        : [el('p', { class: 'muted small', text: tx('Nobody but you has used the Spielwiese yet.') })]));
     status.textContent = '';
 }
 
@@ -80,9 +80,9 @@ async function quotaSave() {
     });
     try {
         await sw('/admin/quotas', 'PUT', { defaults, people });
-        status.textContent = 'Gespeichert.';
+        status.textContent = tx('Saved.');
         quotaLoadAdmin();
-    } catch (err) { status.textContent = `Nicht gespeichert: ${err.message}`; }
+    } catch (err) { status.textContent = tx('Not saved: {err}', { err: err.message }); }
 }
 
 document.getElementById('q-save').addEventListener('click', quotaSave);

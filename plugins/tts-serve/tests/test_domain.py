@@ -222,8 +222,8 @@ class TestStatusFacts:
     def test_nothing_loaded(self):
         from tts_serve.domain import status_facts
         facts = status_facts([self._e("cosyvoice", "CosyVoice 3", "unloaded")], "cosyvoice", now=1000.0)
-        assert facts == [{"label": "Geladen", "value": "keine Engine"},
-                         {"label": "Standard", "value": "CosyVoice 3"}]
+        assert facts == [{"label": "Loaded", "value": "no engine"},
+                         {"label": "Default", "value": "CosyVoice 3"}]
 
     def test_loaded_working_and_last_use(self):
         from tts_serve.domain import status_facts
@@ -231,14 +231,14 @@ class TestStatusFacts:
                    self._e("omnivoice", "OmniVoice", "generating", last_used=1000.0 - 5, inflight=1),
                    self._e("chatterbox", "Chatterbox", "unloaded", last_used=10.0)]
         facts = {f["label"]: f["value"] for f in status_facts(engines, "cosyvoice", now=1000.0)}
-        assert facts["Geladen"] == "CosyVoice 3, OmniVoice"
-        assert facts["Arbeitet"] == "OmniVoice"
-        assert facts["Zuletzt genutzt"] == "OmniVoice, vor 5 s"
+        assert facts["Loaded"] == "CosyVoice 3, OmniVoice"
+        assert facts["Working"] == "OmniVoice"
+        assert facts["Last used"] == "OmniVoice, 5 s ago"
 
     def test_error_reported(self):
         from tts_serve.domain import status_facts
         facts = {f["label"]: f["value"] for f in status_facts([self._e("voxcpm", "VoxCPM2", "error")], "cosyvoice", now=1.0)}
-        assert facts["Fehler"] == "VoxCPM2"
+        assert facts["Error"] == "VoxCPM2"
 
 
 # --------------------------------------------------------------------------- modes (self-description)

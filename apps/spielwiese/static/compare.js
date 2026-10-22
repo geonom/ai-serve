@@ -35,7 +35,7 @@ async function saveToGallery(b64, meta) {
         await sw('/gallery', 'POST', { image: b64, meta: clean });
         mine.dirty = true;
     } catch (err) {
-        addLog(`Could not keep the image in "Meine Bilder": ${err.message}`, 'warn');
+        addLog(tx('Could not keep the image in “My images”: {err}', { err: err.message }), 'warn');
     }
 }
 
@@ -44,7 +44,7 @@ const numbers = (text) => (text || '').split(/[\s,;]+/).filter(Boolean).map(Numb
 const badNumbers = (text, name, lo, hi) => {
     const parts = (text || '').split(/[\s,;]+/).filter(Boolean);
     const bad = parts.filter(p => !/^\d+$/.test(p) || Number(p) < lo || Number(p) > hi);
-    return bad.length ? `${name}: „${bad.join(', ')}“ – nur ganze Zahlen ${lo}–${hi}, durch Komma getrennt` : null;
+    return bad.length ? tx('{name}: “{bad}” – only whole numbers {lo}–{hi}, separated by commas', { name, bad: bad.join(', '), lo, hi }) : null;
 };
 
 function cmpSay(text, kind) {
@@ -54,19 +54,20 @@ function cmpSay(text, kind) {
     box.hidden = !text;
 }
 
-// problems that make the server refuse, checked before sending (null = fine)
+// problems that make the server refuse, checked before sending (null = fine); the "please …" ones aren't errors yet
+const CMP_SOFT = () => [tx('Please enter a prompt.'), tx('Please choose at least one model.')];
 function cmpProblem() {
     const models = cmpChosen().map(id => cmp.catalog.find(m => m.id === id)).filter(Boolean);
-    if (!document.getElementById('cmp-prompt').value.trim()) return 'Bitte einen Prompt eingeben.';
-    if (!models.length) return 'Bitte mindestens ein Modell wählen.';
-    if (models.length > 8) return 'Höchstens 8 Modelle pro Vergleich.';
-    const steps = badNumbers(document.getElementById('cmp-steps').value, 'Schrittzahlen', 1, 60);
+    if (!document.getElementById('cmp-prompt').value.trim()) return tx('Please enter a prompt.');
+    if (!models.length) return tx('Please choose at least one model.');
+    if (models.length > 8) return tx('At most 8 models per comparison.');
+    const steps = badNumbers(document.getElementById('cmp-steps').value, tx('Step counts'), 1, 60);
     if (steps) return steps;
-    const seeds = badNumbers(document.getElementById('cmp-seeds').value, 'Seeds', 0, 2147483647);
+    const seeds = badNumbers(document.getElementById('cmp-seeds').value, tx('Seeds'), 0, 2147483647);
     if (seeds) return seeds;
-    if (numbers(document.getElementById('cmp-steps').value).length > 6) return 'Höchstens 6 Schrittzahlen.';
-    if (numbers(document.getElementById('cmp-seeds').value).length > 4) return 'Höchstens 4 Seeds.';
-    if (cmpCells() > 32) return `${cmpCells()} Bilder – höchstens 32 pro Vergleich (weniger Modelle, Schrittzahlen oder Seeds).`;
+    if (numbers(document.getElementById('cmp-steps').value).length > 6) return tx('At most 6 step counts.');
+    if (numbers(document.getElementById('cmp-seeds').value).length > 4) return tx('At most 4 seeds.');
+    if (cmpCells() > 32) return tx('{n} images – at most 32 per comparison (fewer models, step counts or seeds).', { n: cmpCells() });
     return null;
 }
 
@@ -90,17 +91,17 @@ async function cmpLoadCatalog() {
         const data = await api('/v1/images/models');
         cmp.catalog = data.data || [];
     } catch (err) {
-        box.replaceChildren(el('span', { class: 'muted small', text: `Modellliste nicht verfügbar: ${err.message}` }));
+        box.replaceChildren(el('span', { class: 'muted small', text: tx('Model list not available: {err}', { err: err.message }) }));
         return;
     }
     box.replaceChildren(...cmp.catalog.map(m => {
         const st = m.steps || {};
-        const note = `Standard ${st.default} Schritte${st.adjustable ? '' : ' (fest)'}` +
-                     (m.aspect_ratios.length < 5 ? ` · nur ${m.aspect_ratios.join(', ')}` : '');
-        return el('label', { class: m.available ? null : 'off', title: m.description },
+        const note = (st.adjustable ? tx('default {n} steps', { n: st.default }) : tx('default {n} steps (fixed)', { n: st.default })) +
+                     (m.aspect_ratios.length < 5 ? ' · ' + tx('only {list}', { list: m.aspect_ratios.join(', ') }) : '');
+        return el('label', { class: m.available ? null : 'off', title: m.description ? tx(m.description) : null },
             el('input', { type: 'checkbox', value: m.id, disabled: !m.available, checked: m.default || null,
                           onchange: cmpCount }),
-            el('span', {}, document.createTextNode(m.available ? m.label : `${m.label} (nicht installiert)`),
+            el('span', {}, document.createTextNode(m.available ? m.label : tx('{label} (not installed)', { label: m.label })),
                el('span', { class: 'muted', text: note })));
     }));
     cmpCount();
@@ -123,10 +124,12 @@ function cmpCount() {
     const n = cmpCells();
     const aspect = document.getElementById('cmp-aspect').value;
     const other = cmpChosen().map(id => cmp.catalog.find(m => m.id === id)).filter(m => m && !m.aspect_ratios.includes(aspect))
-        .map(m => `${m.label} in ${closestAspect(aspect, m.aspect_ratios)}`);
-    box.textContent = problem && !/^Bitte/.test(problem) ? problem
-        : n ? `${n} Bild${n === 1 ? '' : 'er'} werden erzeugt.${other.length ? ` ${other.join(', ')} (kann ${aspect} nicht).` : ''}` : '';
-    box.classList.toggle('bad', !!problem && !/^Bitte/.test(problem));
+        .map(m => tx('{label} in {aspect}', { label: m.label, aspect: closestAspect(aspect, m.aspect_ratios) }));
+    const hard = !!problem && !CMP_SOFT().includes(problem);
+    box.textContent = hard ? problem
+        : n ? (n === 1 ? tx('1 image will be generated.') : tx('{n} images will be generated.', { n }))
+              + (other.length ? ' ' + tx('{list} (can\'t do {aspect}).', { list: other.join(', '), aspect }) : '') : '';
+    box.classList.toggle('bad', hard);
 }
 
 async function cmpStart() {
@@ -140,25 +143,25 @@ async function cmpStart() {
     if (seeds.length) body.seeds = seeds;
     const btn = document.getElementById('cmp-run');
     btn.disabled = true;
-    btn.textContent = 'Starte …';
-    cmpSay('Vergleich wird gestartet …');
+    btn.textContent = tx('Starting …');
+    cmpSay(tx('Starting the comparison …'));
     try {
         const job = await sw('/compare', 'POST', body);
-        cmpSay(`Gestartet: ${job.cells.length} Bild${job.cells.length === 1 ? '' : 'er'} – verschiedene Dienste (ComfyUI, MOSS, Iris) rechnen gleichzeitig. Läuft auf dem Server weiter, auch wenn du die Seite schließt.`, 'ok');
+        cmpSay(tx('Started: {n} image(s) – different services compute at the same time. Keeps running on the server even if you close the page.', { n: job.cells.length }), 'ok');
         cmpShow(job);
         cmpLoadHistory();
         const grid = document.getElementById('cmp-grid');
         if (grid.getBoundingClientRect().top > innerHeight * 0.7) grid.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
     } catch (err) {
         const msg = /still running/.test(err.message)
-            ? 'Es läuft schon ein Vergleich – warte, bis er fertig ist, oder brich ihn ab.' : `Nicht gestartet: ${err.message}`;
+            ? tx('A comparison is already running – wait until it\'s done, or cancel it.') : tx('Not started: {err}', { err: err.message });
         cmpSay(msg, 'error');
         if (!cmp.job || cmp.job.status !== 'running') {   // never cover a comparison that is still running
             document.getElementById('cmp-grid').replaceChildren(el('div', { class: 'cmp-error', text: msg }));
         }
         btn.disabled = false;
     } finally {
-        btn.textContent = 'Vergleich starten';
+        btn.textContent = tx('Start comparison');
     }
 }
 
@@ -185,14 +188,14 @@ async function cmpRefresh(id) {
 function cmpRender() {
     const job = cmp.job;
     const done = job.cells.filter(c => c.status === 'done').length;
-    document.getElementById('cmp-title').textContent = 'Ergebnis';
-    const state = { running: `läuft – ${done} von ${job.cells.length} fertig`, done: 'fertig', cancelled: 'abgebrochen',
-                    interrupted: 'unterbrochen (Server neu gestartet)', failed: 'fehlgeschlagen' }[job.status] || job.status;
-    document.getElementById('cmp-subtitle').textContent = `„${job.prompt}“ · ${job.aspect_ratio} · ${state}`;
+    document.getElementById('cmp-title').textContent = tx('Result');
+    const state = { running: tx('running – {done} of {n} done', { done, n: job.cells.length }), done: tx('done'), cancelled: tx('cancelled'),
+                    interrupted: tx('interrupted (server restarted)'), failed: tx('failed') }[job.status] || job.status;
+    document.getElementById('cmp-subtitle').textContent = `“${job.prompt}” · ${job.aspect_ratio} · ${state}`;
     const cancelBtn = document.getElementById('cmp-cancel');
     cancelBtn.hidden = job.status !== 'running';
-    if (job.status !== 'running') { cancelBtn.disabled = false; cancelBtn.textContent = 'Abbrechen'; }
-    if (job.status === 'cancelled' && document.getElementById('cmp-status').classList.contains('ok')) cmpSay('Abgebrochen.', 'ok');
+    if (job.status !== 'running') { cancelBtn.disabled = false; cancelBtn.textContent = tx('Cancel'); }
+    if (job.status === 'cancelled' && document.getElementById('cmp-status').classList.contains('ok')) cmpSay(tx('Cancelled.'), 'ok');
     document.getElementById('cmp-run').disabled = job.status === 'running';
     if (job.status === 'done' && document.getElementById('cmp-status').classList.contains('ok')) cmpSay('');
 
@@ -207,15 +210,15 @@ function cmpRender() {
     if (!stepsVary) {
         for (const seed of seeds) {
             const cells = job.cells.filter(c => c.seed === seed);
-            if (seeds.length > 1) blocks.push(el('h3', { class: 'cmp-block-title', text: `Seed ${seed}` }));
+            if (seeds.length > 1) blocks.push(el('h3', { class: 'cmp-block-title', text: tx('Seed {s}', { s: seed }) }));
             blocks.push(tiles(cells, c => c.label));
         }
     } else {
         for (const [m, label] of models) {
             const fixed = stepsOf(m).length === 1 && cmp.catalog.find(x => x.id === m)?.steps?.adjustable === false;
-            blocks.push(el('h3', { class: 'cmp-block-title', text: fixed ? `${label} (fest ${stepsOf(m)[0]} Schritte)` : label }));
+            blocks.push(el('h3', { class: 'cmp-block-title', text: fixed ? tx('{label} (fixed {n} steps)', { label, n: stepsOf(m)[0] }) : label }));
             const cells = job.cells.filter(c => c.model === m).sort((a, b) => a.steps - b.steps || a.seed - b.seed);
-            blocks.push(tiles(cells, c => `${c.steps} Schritte${seeds.length > 1 ? ` · Seed ${c.seed}` : ''}`));
+            blocks.push(tiles(cells, c => tx('{n} steps', { n: c.steps }) + (seeds.length > 1 ? ' · ' + tx('Seed {s}', { s: c.seed }) : '')));
         }
     }
     document.getElementById('cmp-grid').replaceChildren(...blocks);
@@ -233,15 +236,15 @@ function cmpSet(job) {
 function cmpCell(c, job, title) {
     const own = c.aspect_ratio || job.aspect_ratio;
     const fmt = own !== job.aspect_ratio ? ` · ${own}` : '';
-    const details = `${c.steps} Schritte · Seed ${c.seed}${fmt}${c.seconds ? ` · ${c.seconds} s` : ''}`;
+    const details = `${tx('{n} steps', { n: c.steps })} · ${tx('Seed {s}', { s: c.seed })}${fmt}${c.seconds ? ` · ${c.seconds} s` : ''}`;
     let body;
     if (c.status === 'done' && c.image) {
-        body = el('img', { src: imgUrl(c.image), alt: `${c.label}, ${c.steps} Schritte, Seed ${c.seed}`, loading: 'lazy',
+        body = el('img', { src: imgUrl(c.image), alt: `${c.label}, ${tx('{n} steps', { n: c.steps })}, ${tx('Seed {s}', { s: c.seed })}`, loading: 'lazy',
                            'data-id': c.image, style: `aspect-ratio:${ratio(own)}`,
                            onclick: () => { const set = cmpSet(job); openViewer(set, Math.max(0, set.findIndex(x => x.id === c.image))); } });
     } else {
-        const text = c.waiting ? 'wartet auf freie GPU bzw. den Gateway …'
-            : { pending: 'wartet', running: 'wird erzeugt …', cancelled: 'abgebrochen' }[c.status] || c.error || c.status;
+        const text = c.waiting ? tx('waiting for a free GPU or the gateway …')
+            : { pending: tx('waiting'), running: tx('generating …'), cancelled: tx('cancelled') }[c.status] || c.error || c.status;
         body = el('div', { class: `ph${c.status === 'failed' ? ' failed' : ''}`, style: `aspect-ratio:${ratio(own)}`, text });
     }
     return el('figure', { class: 'cmp-tile' }, el('figcaption', { class: 'cmp-tile-title', text: title }), body,
@@ -252,13 +255,13 @@ async function cmpLoadHistory() {
     const box = document.getElementById('cmp-history');
     let list = [];
     try { list = (await sw('/compare')).comparisons || []; } catch (err) { return; }
-    if (!list.length) { box.replaceChildren(el('span', { class: 'muted small', text: 'Noch keine.' })); return; }
+    if (!list.length) { box.replaceChildren(el('span', { class: 'muted small', text: tx('None yet.') })); return; }
     box.replaceChildren(...list.map(j => el('button', {
         class: j.id === cmp.viewing ? 'active' : null,
         onclick: async () => { cmpShow(await sw(`/compare/${j.id}`)); cmpLoadHistory(); },
     }, document.createTextNode(j.prompt.length > 70 ? j.prompt.slice(0, 70) + ' …' : j.prompt),
-       el('span', { class: 'muted', text: `${new Date(j.created * 1000).toLocaleString()} · ${j.cells} Bilder · ${j.models.join(', ')}` +
-                                         (j.status === 'running' ? ' · läuft' : '') }))));
+       el('span', { class: 'muted', text: `${new Date(j.created * 1000).toLocaleString(I18N.locale)} · ${tx('{n} images', { n: j.cells })} · ${j.models.join(', ')}` +
+                                         (j.status === 'running' ? ' · ' + tx('running') : '') }))));
     const running = list.find(j => j.status === 'running');
     if (running && !cmp.viewing) cmpShow(await sw(`/compare/${running.id}`));
 }
@@ -268,24 +271,24 @@ document.getElementById('cmp-cancel').addEventListener('click', async () => {
     if (!cmp.job) return;
     const btn = document.getElementById('cmp-cancel');
     btn.disabled = true;
-    btn.textContent = 'Wird abgebrochen …';
-    cmpSay('Wird abgebrochen – das Bild, das gerade entsteht, wird gestoppt.', 'ok');
+    btn.textContent = tx('Cancelling …');
+    cmpSay(tx('Cancelling – the image being made right now is stopped.'), 'ok');
     try {
         await sw(`/compare/${cmp.job.id}/cancel`, 'POST', {});
         cmpRefresh(cmp.job.id);
     } catch (err) {
-        cmpSay(`Abbrechen ging nicht: ${err.message}`, 'error');
+        cmpSay(tx('Couldn\'t cancel: {err}', { err: err.message }), 'error');
         btn.disabled = false;
-        btn.textContent = 'Abbrechen';
+        btn.textContent = tx('Cancel');
     }
 });
 ['cmp-steps', 'cmp-seeds', 'cmp-prompt'].forEach(id => document.getElementById(id).addEventListener('input', () => { cmpCount(); cmpSay(''); }));
 document.getElementById('cmp-aspect').addEventListener('change', cmpCount);
 
-// ------------------------------------------------------------------ Meine Bilder
+// ------------------------------------------------------------------ My images
 function mineCaption(e) {
-    return [e.label || e.model, e.steps ? `${e.steps} Schritte` : null, e.seed !== undefined ? `Seed ${e.seed}` : null]
-        .filter(Boolean).join(' · ') || 'Bild';
+    return [e.label || e.model, e.steps ? tx('{n} steps', { n: e.steps }) : null, e.seed !== undefined ? tx('Seed {s}', { s: e.seed }) : null]
+        .filter(Boolean).join(' · ') || tx('Image');
 }
 
 async function mineLoad(reset = true) {
@@ -296,7 +299,7 @@ async function mineLoad(reset = true) {
         if (mine.before) q.set('before', mine.before);
         data = await sw(`/gallery?${q}`);
     } catch (err) {
-        document.getElementById('mine-grid').replaceChildren(el('p', { class: 'muted', text: `Nicht verfügbar: ${err.message}` }));
+        document.getElementById('mine-grid').replaceChildren(el('p', { class: 'muted', text: tx('Not available: {err}', { err: err.message }) }));
         return;
     }
     mine.items.push(...data.images);
@@ -310,13 +313,13 @@ function mineRender() {
     const filter = document.getElementById('mine-filter');
     const models = [...new Set(mine.items.map(e => e.label || e.model).filter(Boolean))].sort();
     const keep = filter.value;
-    filter.replaceChildren(el('option', { value: '', text: 'alle' }), ...models.map(m => el('option', { value: m, text: m })));
+    filter.replaceChildren(el('option', { value: '', text: tx('all') }), ...models.map(m => el('option', { value: m, text: m })));
     filter.value = models.includes(keep) ? keep : '';
     const shown = mine.items.filter(e => !filter.value || (e.label || e.model) === filter.value);
     const grid = document.getElementById('mine-grid');
-    if (!shown.length) { grid.replaceChildren(el('p', { class: 'muted', text: 'Noch keine Bilder – erzeuge welche unter „Bild“, „Positionen“ oder „Vergleich“.' })); return; }
+    if (!shown.length) { grid.replaceChildren(el('p', { class: 'muted', text: tx('No images yet – make some under “Create images”, “With positions” or “Compare models”.') })); return; }
     grid.replaceChildren(...shown.map((e, i) => el('figure', { onclick: () => openViewer(shown, i) },
-        el('img', { src: imgUrl(e.id), alt: e.prompt || 'Bild', loading: 'lazy' }),
+        el('img', { src: imgUrl(e.id), alt: e.prompt || tx('Image'), loading: 'lazy' }),
         el('figcaption', { title: e.prompt || '', text: mineCaption(e) }))));
 }
 
@@ -333,8 +336,8 @@ const view = { set: [], i: 0, prev: null, mode: 'flip', a: 0, b: 1, split: 50, p
 const $ = (id) => document.getElementById(id);
 
 function viewLabel(e) {
-    return [e.label || e.model || 'Bild', e.steps ? `${e.steps} Schritte` : null,
-            e.seed !== undefined && e.seed !== null ? `Seed ${e.seed}` : null].filter(Boolean).join(' · ');
+    return [e.label || e.model || tx('Image'), e.steps ? tx('{n} steps', { n: e.steps }) : null,
+            e.seed !== undefined && e.seed !== null ? tx('Seed {s}', { s: e.seed }) : null].filter(Boolean).join(' · ');
 }
 
 function openViewer(set, index = 0) {
@@ -355,8 +358,8 @@ function setMode(mode, index = view.i) {
     const slider = view.mode === 'slider';
     $('sw-lb-stage').classList.toggle('slider', slider);
     ['sw-lb-img-b', 'sw-lb-divider', 'sw-lb-tag-a', 'sw-lb-tag-b', 'sw-lb-slider-row'].forEach(id => { $(id).hidden = !slider; });
-    $('sw-lb-hint').textContent = slider ? 'Im Bild ziehen oder ← → verschieben · Bilder links/rechts wählen'
-                                         : '← → wechseln · Leertaste: zum vorigen · 1–9 direkt';
+    $('sw-lb-hint').textContent = slider ? tx('Drag in the image or move with ← → · choose the left/right images')
+                                         : tx('← → switch · space: to the previous one · 1–9 directly');
     if (slider) {
         view.a = index;
         view.b = view.set.length > 1 ? (index + 1) % view.set.length : index;
@@ -394,7 +397,7 @@ function show(i, remember = true) {
     const e = view.set[i];
     const img = $('sw-lb-img');
     img.src = imgUrl(e.id);
-    img.alt = e.prompt || 'Bild';
+    img.alt = e.prompt || tx('Image');
     fitFrame(e);
     $('sw-lb-pos').textContent = view.set.length > 1 ? `${i + 1} / ${view.set.length} · ${viewLabel(e)}` : viewLabel(e);
     renderMeta(e);
@@ -402,17 +405,17 @@ function show(i, remember = true) {
 }
 
 function renderMeta(e, other) {
-    const lines = (x) => [x.prompt ? `„${x.prompt}“` : null, '', `Modell: ${x.label || x.model || '?'}`,
-        x.steps ? `Schritte: ${x.steps}` : null, x.seed !== undefined && x.seed !== null ? `Seed: ${x.seed}` : null,
-        x.aspect_ratio ? `Format: ${x.aspect_ratio}` : null, x.seconds ? `Dauer: ${x.seconds} s` : null,
-        x.created ? `Erstellt: ${new Date(x.created * 1000).toLocaleString()}` : null].filter(l => l !== null);
+    const lines = (x) => [x.prompt ? `“${x.prompt}”` : null, '', tx('Model: {m}', { m: x.label || x.model || '?' }),
+        x.steps ? tx('Steps: {n}', { n: x.steps }) : null, x.seed !== undefined && x.seed !== null ? tx('Seed: {s}', { s: x.seed }) : null,
+        x.aspect_ratio ? tx('Format: {f}', { f: x.aspect_ratio }) : null, x.seconds ? tx('Duration: {s} s', { s: x.seconds }) : null,
+        x.created ? tx('Created: {when}', { when: new Date(x.created * 1000).toLocaleString(I18N.locale) }) : null].filter(l => l !== null);
     $('sw-lb-meta').textContent = other
-        ? [`Links: ${viewLabel(e)}${e.seconds ? ` (${e.seconds} s)` : ''}`, `Rechts: ${viewLabel(other)}${other.seconds ? ` (${other.seconds} s)` : ''}`,
-           '', e.prompt ? `„${e.prompt}“` : ''].join('\n')
+        ? [tx('Left: {v}', { v: viewLabel(e) + (e.seconds ? ` (${e.seconds} s)` : '') }), tx('Right: {v}', { v: viewLabel(other) + (other.seconds ? ` (${other.seconds} s)` : '') }),
+           '', e.prompt ? `“${e.prompt}”` : ''].join('\n')
         : lines(e).join('\n');
     const dl = $('sw-lb-download');
     dl.href = imgUrl(e.id);
-    dl.download = `${(e.model || 'bild').replace(/[^\w.-]+/g, '_')}-${e.steps ?? ''}-${e.seed ?? e.id}.png`;
+    dl.download = `${(e.model || 'image').replace(/[^\w.-]+/g, '_')}-${e.steps ?? ''}-${e.seed ?? e.id}.png`;
     mine.current = e;
 }
 
@@ -513,7 +516,7 @@ $('sw-lb-reuse').addEventListener('click', () => {
 });
 $('sw-lb-delete').addEventListener('click', async () => {
     const e = mine.current;
-    if (!e || !confirm(`„${viewLabel(e)}“ endgültig löschen?`)) return;
+    if (!e || !confirm(tx('Delete “{v}” for good?', { v: viewLabel(e) }))) return;
     try {
         await sw(`/gallery/${e.id}`, 'DELETE');
         mine.items = mine.items.filter(x => x.id !== e.id);
@@ -524,7 +527,7 @@ $('sw-lb-delete').addEventListener('click', async () => {
         view.set = left;
         setMode(view.mode, idx);
         if (cmp.job) cmpRefresh(cmp.job.id);
-    } catch (err) { addLog(`Löschen fehlgeschlagen: ${err.message}`, 'error'); }
+    } catch (err) { addLog(tx('Deleting failed: {err}', { err: err.message }), 'error'); }
 });
 
 // load lazily when a tab is opened

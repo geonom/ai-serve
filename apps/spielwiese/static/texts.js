@@ -62,21 +62,20 @@ if (typeof document !== 'undefined' && document.getElementById('texts-tab')) (()
     }
 
     async function load() {
-        try { models = (await api('/v1/llm/models')).models || []; } catch (err) { addLog(`Modelle: ${err.message}`, 'error'); }
+        try { models = (await api('/v1/llm/models')).models || []; } catch (err) { addLog(tx('Models: {err}', { err: err.message }), 'error'); }
         const emb = R.modelsOfKind(models, 'embedding'), rr = R.modelsOfKind(models, 'rerank');
-        fill($('emb-model'), emb, 'kein Embedding-Modell vorhanden');
-        fill($('rr-model'), rr.concat(emb.map(m => ({ ...m, viaEmbedding: true }))), 'kein passendes Modell vorhanden');
+        fill($('emb-model'), emb, tx('no embedding model available'));
+        fill($('rr-model'), rr.concat(emb.map(m => ({ ...m, viaEmbedding: true }))), tx('no suitable model available'));
         // options from embedding models rank by similarity: mark them
-        [...$('rr-model').options].forEach((o, i) => { if (i >= rr.length && o.value) { o.dataset.emb = '1'; o.textContent += ' (über Ähnlichkeit)'; } });
-        $('rr-note').textContent = rr.length ? '' : 'Kein Rerank-Modell erreichbar – sortiert wird über die Ähnlichkeit eines Embedding-Modells. '
-            + 'Ein echtes Rerank-Modell (z. B. bge-reranker-v2-m3) bewertet Frage und Text gemeinsam und ist meist genauer.';
+        [...$('rr-model').options].forEach((o, i) => { if (i >= rr.length && o.value) { o.dataset.emb = '1'; o.textContent += ' ' + tx('(by similarity)'); } });
+        $('rr-note').textContent = rr.length ? '' : tx('No rerank model reachable – sorting uses an embedding model\'s similarity. A real rerank model (e.g. bge-reranker-v2-m3) scores question and text together and is usually more accurate.');
     }
 
     $('emb-run').addEventListener('click', async () => {
         const texts = R.lines($('emb-texts').value), status = $('emb-status'), out = $('emb-result');
-        if (!$('emb-model').value) { status.textContent = 'Kein Embedding-Modell vorhanden.'; return; }
-        if (texts.length < 2) { status.textContent = 'Mindestens zwei Texte, einer pro Zeile.'; return; }
-        status.textContent = 'Rechne… (beim ersten Mal wird das Modell geladen)';
+        if (!$('emb-model').value) { status.textContent = tx('No embedding model available.'); return; }
+        if (texts.length < 2) { status.textContent = tx('At least two texts, one per line.'); return; }
+        status.textContent = tx('Computing… (the first time, the model is loaded)');
         const t0 = performance.now();
         try {
             const r = await api('/v1/embeddings', 'POST', { model: $('emb-model').value, input: texts });
@@ -100,20 +99,20 @@ if (typeof document !== 'undefined' && document.getElementById('texts-tab')) (()
             const pairs = R.closestPairs(m).map(p => `${p.score.toFixed(2)}  ${p.i + 1} ↔ ${p.j + 1}: „${short(texts[p.i])}“ / „${short(texts[p.j])}“`);
             const pre = document.createElement('pre');
             pre.className = 'sw-result';
-            pre.textContent = 'Am ähnlichsten:\n' + pairs.join('\n');
+            pre.textContent = tx('Most similar:') + '\n' + pairs.join('\n');
             out.replaceChildren(table, pre);
-            status.textContent = `Fertig · ${vecs.length} Vektoren mit ${vecs[0] ? vecs[0].length : 0} Zahlen · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+            status.textContent = tx('Done · {n} vectors of {d} numbers · {s} s', { n: vecs.length, d: vecs[0] ? vecs[0].length : 0, s: ((performance.now() - t0) / 1000).toFixed(1) });
         } catch (err) {
-            status.textContent = `Fehlgeschlagen: ${err.message}`;
+            status.textContent = tx('Failed: {err}', { err: err.message });
         }
     });
 
     $('rr-run').addEventListener('click', async () => {
         const query = $('rr-query').value.trim(), docs = R.lines($('rr-docs').value), status = $('rr-status');
         const opt = $('rr-model').selectedOptions[0];
-        if (!opt || !opt.value) { status.textContent = 'Kein passendes Modell vorhanden.'; return; }
-        if (!query || docs.length < 2) { status.textContent = 'Eine Frage und mindestens zwei Texte (einer pro Zeile).'; return; }
-        status.textContent = 'Bewerte… (beim ersten Mal wird das Modell geladen)';
+        if (!opt || !opt.value) { status.textContent = tx('No suitable model available.'); return; }
+        if (!query || docs.length < 2) { status.textContent = tx('A question and at least two texts (one per line).'); return; }
+        status.textContent = tx('Scoring… (the first time, the model is loaded)');
         const t0 = performance.now();
         try {
             let ranked;
@@ -125,9 +124,9 @@ if (typeof document !== 'undefined' && document.getElementById('texts-tab')) (()
                 ranked = R.rankFromRerank(r.results, docs);
             }
             $('rr-result').textContent = ranked.map((x, i) => `${i + 1}. ${x.score.toFixed(3)}  ${x.document}`).join('\n');
-            status.textContent = `Fertig · ${opt.dataset.emb ? 'nach Ähnlichkeit' : 'Rerank'} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+            status.textContent = tx('Done · {how} · {s} s', { how: opt.dataset.emb ? tx('by similarity') : 'Rerank', s: ((performance.now() - t0) / 1000).toFixed(1) });
         } catch (err) {
-            status.textContent = `Fehlgeschlagen: ${err.message}`;
+            status.textContent = tx('Failed: {err}', { err: err.message });
         }
     });
 

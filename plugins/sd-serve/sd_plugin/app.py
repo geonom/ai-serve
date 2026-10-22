@@ -260,8 +260,8 @@ async def status():
     running = SERVER.alive()
     workers = [{"id": "iris", "label": "Iris-3B Turbo", "pid": SERVER.pid, "loaded": SERVER.loaded,
                 "busy": SERVER.busy > 0, "last_used": SERVER.last_used or None, "gpu": SERVER.gpu}] if running else []
-    facts = [{"label": "Iris", "value": ("geladen" if SERVER.loaded else "gestartet") + (f" auf GPU {SERVER.gpu}" if SERVER.gpu is not None else "")
-              if running else "aus (startet beim nächsten Bild)"}]
+    facts = [{"label": "Iris", "value": ("loaded" if SERVER.loaded else "started") + (f" on GPU {SERVER.gpu}" if SERVER.gpu is not None else "")
+              if running else "off (starts with the next image)"}]
     return {"busy": SERVER.busy > 0, "ready": True, "workers": workers, "facts": facts}
 
 

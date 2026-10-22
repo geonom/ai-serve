@@ -184,8 +184,8 @@ class Runner:
         if self.ledger is not None and limits is not None and limits.images_per_day is not None:
             left = limits.images_per_day - self.ledger.usage(sub)["images"]
             if len(p["cells"]) > left:
-                raise QuotaExceeded(f"Dieser Vergleich braucht {len(p['cells'])} Bilder, dein Kontingent hat heute noch "
-                                    f"{max(0, left)} (von {limits.images_per_day}).")
+                raise QuotaExceeded(f"This comparison needs {len(p['cells'])} images; your quota has {max(0, left)} "
+                                    f"left today (of {limits.images_per_day}).")
         with self._lock:
             if key in self._running:
                 raise CompareError("a comparison is still running -- wait for it or cancel it")
@@ -249,7 +249,7 @@ class Runner:
             try:
                 return self.ledger.begin(sub, limits, "image", images=1)
             except QuotaExceeded as e:
-                if "läuft schon" not in str(e) or time.time() > deadline or job_id in self._cancel:
+                if not e.busy or time.time() > deadline or job_id in self._cancel:
                     raise
                 time.sleep(2)
 

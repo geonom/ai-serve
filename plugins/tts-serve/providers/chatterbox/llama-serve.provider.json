@@ -47,15 +47,15 @@
   "modes": [
     {
       "variant": null,
-      "label": "Sprechen",
-      "description": "Mit Aufnahme wird die Stimme geklont, ohne spricht die eingebaute Stimme. Ausdruck über Regler.",
+      "label": "Speak",
+      "description": "With a recording the voice is cloned, without one the built-in voice speaks. Expression through the sliders.",
       "inputs": {
         "reference": "optional"
       },
       "params": [
         {
           "name": "exaggeration",
-          "label": "Ausdruck",
+          "label": "Expression",
           "min": 0.0,
           "max": 2.0,
           "step": 0.05,
@@ -63,7 +63,7 @@
         },
         {
           "name": "cfg_weight",
-          "label": "Führung (CFG)",
+          "label": "Guidance (CFG)",
           "min": 0.0,
           "max": 1.0,
           "step": 0.05,
@@ -71,7 +71,7 @@
         },
         {
           "name": "temperature",
-          "label": "Temperatur (Zufall)",
+          "label": "Temperature (randomness)",
           "min": 0.05,
           "max": 2.0,
           "step": 0.05,

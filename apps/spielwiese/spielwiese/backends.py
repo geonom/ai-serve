@@ -12,8 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-REASON = ("Der verbundene Server ist ein Standard-OpenAI-Server (z. B. Ollama oder LM Studio) – das gibt es dort "
-          "nicht, dafür braucht es ai-serve.")
+REASON = ("The connected server is a standard OpenAI server (e.g. Ollama or LM Studio) – it doesn't offer this; "
+          "that needs ai-serve.")
 EMPTY: Dict[str, Any] = {
     "/v1/audio/models": {"tts": {"available": False, "reason": REASON, "engines": []},
                          "stt": {"available": False, "reason": REASON, "engines": []}},

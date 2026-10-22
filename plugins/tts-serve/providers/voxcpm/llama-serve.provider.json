@@ -31,15 +31,15 @@
   "modes": [
     {
       "variant": "reference",
-      "label": "Stimme klonen",
-      "description": "Klont die Stimme aus der Aufnahme.",
+      "label": "Clone a voice",
+      "description": "Clones the voice from the recording.",
       "inputs": {
         "reference": "required"
       },
       "params": [
         {
           "name": "cfg_weight",
-          "label": "Führung (CFG)",
+          "label": "Guidance (CFG)",
           "min": 1.0,
           "max": 5.0,
           "step": 0.1,
@@ -47,7 +47,7 @@
         },
         {
           "name": "temperature",
-          "label": "Temperatur (Zufall)",
+          "label": "Temperature (randomness)",
           "min": 0.05,
           "max": 2.0,
           "step": 0.05,
@@ -57,8 +57,8 @@
     },
     {
       "variant": "prompt",
-      "label": "Klonen mit Transkript",
-      "description": "Aufnahme plus Transkript: genauer, setzt die Aufnahme fort.",
+      "label": "Clone with a transcript",
+      "description": "Recording plus transcript: more accurate, continues the recording.",
       "inputs": {
         "reference": "required",
         "ref_text": "required"
@@ -66,7 +66,7 @@
       "params": [
         {
           "name": "cfg_weight",
-          "label": "Führung (CFG)",
+          "label": "Guidance (CFG)",
           "min": 1.0,
           "max": 5.0,
           "step": 0.1,
@@ -74,7 +74,7 @@
         },
         {
           "name": "temperature",
-          "label": "Temperatur (Zufall)",
+          "label": "Temperature (randomness)",
           "min": 0.05,
           "max": 2.0,
           "step": 0.05,

@@ -225,7 +225,7 @@ async function swFetch(url, options = {}) {
     try {
         return await fetch(url, { ...options, headers: { Accept: 'application/json', ...(options.headers || {}) } });
     } catch (err) {
-        throw new Error('Keine Verbindung zur Spielwiese.');
+        throw new Error(tx('No connection to the Spielwiese.'));
     }
 }
 
@@ -287,7 +287,7 @@ async function copyTextToClipboard(text) {
 }
 
 function logCopyResult(ok, label) {
-    addLog(ok ? `${label} copied to clipboard.` : `Copy failed — clipboard access is blocked on this connection (try opening the dashboard via https:// or localhost).`, ok ? 'system' : 'error');
+    addLog(ok ? tx('{label} copied to the clipboard.', { label }) : tx('Copy failed — clipboard access is blocked on this connection (try opening the page via https:// or localhost).'), ok ? 'system' : 'error');
 }
 
 // ----------------------------------------------------
@@ -319,11 +319,11 @@ document.documentElement.setAttribute('data-theme', currentTheme);
 UI.clearChatBtn.addEventListener('click', () => {
     UI.chatMessages.innerHTML = `
         <div class="chat-system-message">
-            🤖 Schreib unten eine Nachricht – das gewählte Modell wird beim ersten Mal automatisch geladen.
+            ${tx('🤖 Write a message below – the chosen model is loaded automatically the first time.')}
         </div>
     `;
     gatewayChatHistory = [];
-    addLog('Chat history cleared.', 'system');
+    addLog(tx('Chat history cleared.'), 'system');
     updateTokenEstimate();
 });
 
@@ -351,15 +351,15 @@ function handleGatewayFileSelect(e) {
             UI.multimodalImgPreview.src = evt.target.result;
             UI.multimodalImgPreview.style.display = 'block';
             UI.multimodalAudioPreview.style.display = 'none';
-            addLog(`Angehängt: ${file.name}`, 'system');
+            addLog(tx('Attached: {name}', { name: file.name }), 'system');
         } else if (file.type.startsWith('audio/')) {
             currentMultimodalFormat = 'audio';
             UI.multimodalAudioPreview.src = evt.target.result;
             UI.multimodalAudioPreview.style.display = 'block';
             UI.multimodalImgPreview.style.display = 'none';
-            addLog(`Audio attached: ${file.name}`, 'system');
+            addLog(tx('Audio attached: {name}', { name: file.name }), 'system');
         } else {
-            addLog('Dieser Dateityp geht nicht – bitte ein Bild oder Audio wählen.', 'warn');
+            addLog(tx('This file type doesn\'t work – please choose an image or audio.'), 'warn');
             clearGatewayFile();
         }
     };
@@ -426,7 +426,7 @@ if (UI.strategyPruneBtn) {
             reRenderChat();
             updateTokenEstimate();
         } else {
-            addLog('Verlauf ist leer oder zu kurz, um gekürzt zu werden.', 'warn');
+            addLog(tx('The history is empty or too short to trim.'), 'warn');
         }
     });
 }
@@ -442,12 +442,12 @@ if (UI.strategyAutoshrinkBtn) {
             autoSummarizeEnabled = false;
             if (UI.strategyAutosummarizeBtn) {
                 UI.strategyAutosummarizeBtn.classList.remove('active');
-                UI.strategyAutosummarizeBtn.textContent = '📝 Auto-Zusammenfassen: Aus';
+                UI.strategyAutosummarizeBtn.textContent = tx('📝 Auto-summarise: off');
             }
         }
         UI.strategyAutoshrinkBtn.classList.toggle('active', autoPruneEnabled);
-        UI.strategyAutoshrinkBtn.textContent = autoPruneEnabled ? '🤖 Auto-Kürzen: An' : '🤖 Auto-Kürzen: Aus';
-        addLog(`Auto-Kürzen wurde ${autoPruneEnabled ? 'aktiviert' : 'deaktiviert'}.`, 'system');
+        UI.strategyAutoshrinkBtn.textContent = autoPruneEnabled ? tx('🤖 Auto-trim: on') : tx('🤖 Auto-trim: off');
+        addLog(autoPruneEnabled ? tx('Auto-trim switched on.') : tx('Auto-trim switched off.'), 'system');
         updateTokenEstimate();
     });
 }
@@ -458,12 +458,12 @@ if (UI.strategyAutosummarizeBtn) {
             autoPruneEnabled = false;
             if (UI.strategyAutoshrinkBtn) {
                 UI.strategyAutoshrinkBtn.classList.remove('active');
-                UI.strategyAutoshrinkBtn.textContent = '🤖 Auto-Kürzen: Aus';
+                UI.strategyAutoshrinkBtn.textContent = tx('🤖 Auto-trim: off');
             }
         }
         UI.strategyAutosummarizeBtn.classList.toggle('active', autoSummarizeEnabled);
-        UI.strategyAutosummarizeBtn.textContent = autoSummarizeEnabled ? '📝 Auto-Zusammenfassen: An' : '📝 Auto-Zusammenfassen: Aus';
-        addLog(`Auto-Zusammenfassen wurde ${autoSummarizeEnabled ? 'aktiviert' : 'deaktiviert'}.`, 'system');
+        UI.strategyAutosummarizeBtn.textContent = autoSummarizeEnabled ? tx('📝 Auto-summarise: on') : tx('📝 Auto-summarise: off');
+        addLog(autoSummarizeEnabled ? tx('Auto-summarise switched on.') : tx('Auto-summarise switched off.'), 'system');
         updateTokenEstimate();
     });
 }
@@ -614,7 +614,7 @@ const debouncedFetchExactTokens = debounce(async (userText, historyText, maxLimi
                         UI.tokenWarningActions.style.display = 'flex';
                         UI.tokenWarningActions.classList.add('danger');
                         if (UI.tokenWarningMsg) {
-                            UI.tokenWarningMsg.innerHTML = `⚠️ <strong>Limit überschritten!</strong> (${exactTotal} > ${maxLimit})`;
+                            UI.tokenWarningMsg.innerHTML = `⚠️ <strong>${tx('Limit exceeded!')}</strong> (${exactTotal} > ${maxLimit})`;
                         }
                         if (autoPruneEnabled) {
                             if (pruneOldestMessagePair()) {
@@ -627,7 +627,7 @@ const debouncedFetchExactTokens = debounce(async (userText, historyText, maxLimi
                         UI.tokenWarningActions.style.display = 'flex';
                         UI.tokenWarningActions.classList.remove('danger');
                         if (UI.tokenWarningMsg) {
-                            UI.tokenWarningMsg.innerHTML = `⚠️ <strong>Limit bald voll!</strong> (${exactTotal} / ${maxLimit})`;
+                            UI.tokenWarningMsg.innerHTML = `⚠️ <strong>${tx('Limit almost reached!')}</strong> (${exactTotal} / ${maxLimit})`;
                         }
                     } else {
                         UI.tokenWarningActions.style.display = 'none';
@@ -704,7 +704,7 @@ function updateTokenEstimate() {
             UI.tokenWarningActions.style.display = 'flex';
             UI.tokenWarningActions.classList.add('danger');
             if (UI.tokenWarningMsg) {
-                UI.tokenWarningMsg.innerHTML = `⚠️ <strong>Limit überschritten!</strong> (${totalTokens} > ${maxLimit})`;
+                UI.tokenWarningMsg.innerHTML = `⚠️ <strong>${tx('Limit exceeded!')}</strong> (${totalTokens} > ${maxLimit})`;
             }
             if (autoPruneEnabled) {
                 if (pruneOldestMessagePair()) {
@@ -717,7 +717,7 @@ function updateTokenEstimate() {
             UI.tokenWarningActions.style.display = 'flex';
             UI.tokenWarningActions.classList.remove('danger');
             if (UI.tokenWarningMsg) {
-                UI.tokenWarningMsg.innerHTML = `⚠️ <strong>Limit bald voll!</strong> (${totalTokens} / ${maxLimit})`;
+                UI.tokenWarningMsg.innerHTML = `⚠️ <strong>${tx('Limit almost reached!')}</strong> (${totalTokens} / ${maxLimit})`;
             }
         } else {
             UI.tokenWarningActions.style.display = 'none';
@@ -731,7 +731,7 @@ function updateTokenEstimate() {
 function pruneOldestMessagePair() {
     if (gatewayChatHistory.length >= 2) {
         const removed = gatewayChatHistory.splice(0, 2);
-        addLog(`Auto-Pruned oldest turn: "${removed[0].content.substring(0, 30)}..."`, 'info');
+        addLog(tx('Trimmed the oldest turn: “{text}…”', { text: removed[0].content.substring(0, 30) }), 'info');
         return true;
     }
     return false;
@@ -745,7 +745,7 @@ async function summarizeOldestTurns() {
     isSummarizing = true;
     
     UI.chatSendBtn.disabled = true;
-    addLog('Fasse ältere Nachrichten zusammen...', 'system');
+    addLog(tx('Summarising older messages…'), 'system');
     
     // Summarize all except the last 2 messages (the most recent user/assistant pair)
     const messagesToSummarize = gatewayChatHistory.slice(0, -2);
@@ -753,7 +753,7 @@ async function summarizeOldestTurns() {
     
     let textToSummarize = "";
     messagesToSummarize.forEach(m => {
-        const roleName = m.role === 'user' ? 'Nutzer' : 'Assistent';
+        const roleName = m.role === 'user' ? 'User' : 'Assistant';
         let textVal = "";
         if (typeof m.content === 'string') {
             textVal = m.content;
@@ -767,7 +767,7 @@ async function summarizeOldestTurns() {
         textToSummarize += `${roleName}: ${textVal.trim()}\n`;
     });
     
-    const summaryPrompt = `Fasse den folgenden Teil dieses Gesprächs kurz und prägnant in maximal 2-3 Sätzen zusammen. Behalte alle wichtigen Fakten bei:\n\n${textToSummarize}\n\nZusammenfassung:`;
+    const summaryPrompt = `Summarise the following part of this conversation briefly, in at most 2-3 sentences, in the conversation's own language. Keep all important facts:\n\n${textToSummarize}\n\nSummary:`;
     
     const modelName = UI.gatewayModelSelect.value || null;
     
@@ -781,13 +781,13 @@ async function summarizeOldestTurns() {
         });
         
         const summaryText = (response.choices?.[0]?.message?.content || '').trim();
-        addLog(`Erfolgreich zusammengefasst: "${summaryText.substring(0, 40)}..."`, 'info');
+        addLog(tx('Summarised: “{text}…”', { text: summaryText.substring(0, 40) }), 'info');
         
         // Rebuild history
         gatewayChatHistory = [
             { 
                 role: "system", 
-                content: `[Zusammenfassung des vorherigen Gesprächs: ${summaryText}]`,
+                content: `[Summary of the earlier conversation: ${summaryText}]`,
                 meta: { systemSummary: true }
             },
             ...remainingMessages
@@ -797,7 +797,7 @@ async function summarizeOldestTurns() {
         updateTokenEstimate();
         return true;
     } catch (err) {
-        addLog(`Zusammenfassung fehlgeschlagen: ${err.message}`, 'error');
+        addLog(tx('Summary failed: {err}', { err: err.message }), 'error');
         return false;
     } finally {
         isSummarizing = false;
@@ -808,7 +808,7 @@ async function summarizeOldestTurns() {
 function reRenderChat() {
     UI.chatMessages.innerHTML = `
         <div class="chat-system-message">
-            🤖 Schreib unten eine Nachricht – das gewählte Modell wird beim ersten Mal automatisch geladen.
+            ${tx('🤖 Write a message below – the chosen model is loaded automatically the first time.')}
         </div>
     `;
     gatewayChatHistory.forEach(msg => {
@@ -835,7 +835,7 @@ async function sendGatewayChatMessage() {
         try {
             responseFormat = JSON.parse(rawSchema);
         } catch (err) {
-            return addLog(`Schema is invalid JSON: ${err.message}`, 'error');
+            return addLog(tx('The schema is not valid JSON: {err}', { err: err.message }), 'error');
         }
     }
 
@@ -881,7 +881,7 @@ async function sendGatewayChatMessage() {
     // Clear file selection visual state
     clearGatewayFile();
 
-    addLog('Sending completions request to API Gateway...', 'system');
+    addLog(tx('Sending the request to the gateway…'), 'system');
     
     // Auto-pruning check before sending (if exceeded limit)
     if (autoPruneEnabled) {
@@ -905,7 +905,7 @@ async function sendGatewayChatMessage() {
             if (est >= limit && gatewayChatHistory.length >= 3) { // keep at least current message (User) and 2 older ones
                 // remove oldest pair from history (elements 0 and 1)
                 const removed = gatewayChatHistory.splice(0, 2);
-                addLog(`Auto-Pruned oldest turn before sending: "${removed[0].content.substring(0, 30)}..."`, 'info');
+                addLog(tx('Trimmed the oldest turn before sending: “{text}…”', { text: removed[0].content.substring(0, 30) }), 'info');
                 reRenderChat();
             } else {
                 break;
@@ -995,7 +995,7 @@ async function sendGatewayChatMessage() {
                         const chunk = JSON.parse(payload);
                         fullReasoning += chunk.choices?.[0]?.delta?.reasoning_content || '';
                         const delta = chunk.choices?.[0]?.delta?.content || '';
-                        if (!fullContent && !delta && fullReasoning) streamBubble.textContent = '… denkt nach …';
+                        if (!fullContent && !delta && fullReasoning) streamBubble.textContent = tx('… thinking …');
                         if (delta) {
                             fullContent += delta;
                             streamBubble.textContent = fullContent;
@@ -1010,10 +1010,10 @@ async function sendGatewayChatMessage() {
             const assistantMeta = { model: modelName || 'auto',
                                     runtime: ((performance.now() - streamStart) / 1000).toFixed(1) };
             if (fullReasoning.trim()) assistantMeta.thinking = fullReasoning.trim();
-            if (!fullContent.trim()) fullContent = fullReasoning.trim() ? '(Nur Gedankengang, keine Antwort – evtl. „Max. Tokens“ erhöhen.)' : '(Leere Antwort)';
+            if (!fullContent.trim()) fullContent = fullReasoning.trim() ? tx('(Only reasoning, no answer – maybe raise “Max. tokens”.)') : tx('(Empty answer)');
             appendChatMessage('assistant', fullContent, assistantMeta);
             gatewayChatHistory.push({ role: 'assistant', content: fullContent, meta: assistantMeta });
-            addLog('Antwort erhalten.', 'info');
+            addLog(tx('Answer received.'), 'info');
         } else {
             const response = await api('/api/chat/completions', 'POST', {
                 model_name: modelName,
@@ -1037,13 +1037,13 @@ async function sendGatewayChatMessage() {
 
             appendChatMessage('assistant', response.content, assistantMeta);
             gatewayChatHistory.push({ role: 'assistant', content: response.content, meta: assistantMeta });
-            addLog(`Antwort erhalten (${response.tps} Tokens/s).`, 'info');
+            addLog(tx('Answer received ({tps} tokens/s).', { tps: response.tps }), 'info');
         }
     } catch (err) {
         // Remove the failed user message from history to prevent corrupting future attempts
         gatewayChatHistory.pop();
-        addLog(`Chat fehlgeschlagen: ${err.message}`, 'error');
-        appendChatMessage('assistant', `⚠️ Error: ${err.message}`, { error: true });
+        addLog(tx('Chat failed: {err}', { err: err.message }), 'error');
+        appendChatMessage('assistant', '⚠️ ' + tx('Error: {err}', { err: err.message }), { error: true });
     } finally {
         UI.chatSendBtn.disabled = false;
         UI.chatUserInput.disabled = false;
@@ -1074,7 +1074,7 @@ function appendChatMessage(sender, text, meta = {}) {
     if (sender === 'user' && meta.filename) {
         innerHTML += `
             <div style="font-size: 0.75rem; background: rgba(0,0,0,0.1); padding: 0.35rem 0.6rem; border-radius: 6px; margin-bottom: 0.4rem; font-weight: 600;">
-                📎 Attached ${meta.format === 'image' ? 'Image' : 'Audio'}: ${meta.filename}
+                📎 ${meta.format === 'image' ? tx('Image attached: {name}', { name: meta.filename }) : tx('Audio attached: {name}', { name: meta.filename })}
             </div>
         `;
     }
@@ -1138,17 +1138,17 @@ async function loadModels() {
             populateOcrModels(lastApiData.llm.filter(m => m.kind === 'chat' && m.vision).map(m => ({ name: m.id })));
         }
     } catch (err) {
-        addLog(`Modelle nicht ladbar: ${err.message}`, 'error');
+        addLog(tx('Couldn\'t load models: {err}', { err: err.message }), 'error');
     }
     try {
         const loraData = await api('/api/comfyui/loras');
         lastApiData.loras = loraData;
-        UI.comfyLora.innerHTML = '<option value="">keine</option>' +
+        UI.comfyLora.innerHTML = `<option value="">${tx('none')}</option>` +
             (loraData.loras || []).map(l => {
                 const tooltipParts = [];
                 if (l.trigger_words) tooltipParts.push(`Trigger: ${l.trigger_words}`);
                 if (l.description) tooltipParts.push(l.description);
-                if (l.base_model) tooltipParts.push(`Base model: ${l.base_model}`);
+                if (l.base_model) tooltipParts.push(tx('Base model: {m}', { m: l.base_model }));
                 const title = tooltipParts.length ? ` title="${tooltipParts.join(' — ').replace(/"/g, '&quot;')}"` : '';
                 return `<option value="${l.name}"${title}>${l.name}</option>`;
             }).join('');
@@ -1225,8 +1225,8 @@ function setComfyMode(mode) {
     UI.comfyGenerateBtn.style.display = mode === 'batch' ? 'none' : 'inline-flex';
     UI.comfySingleResults.style.display = mode === 'batch' ? 'none' : 'block';
     UI.comfyBatchResults.style.display = mode === 'batch' ? 'block' : 'none';
-    UI.comfyPromptLabel.textContent = mode === 'generate' ? 'Was soll zu sehen sein?' : mode === 'edit' ? 'Was soll sich ändern?' : 'Wie soll der Stil übertragen werden?';
-    UI.comfyGenerateBtn.textContent = mode === 'generate' ? 'Bild erzeugen' : mode === 'edit' ? 'Bild bearbeiten' : 'Stil übertragen';
+    UI.comfyPromptLabel.textContent = mode === 'generate' ? tx('What should be in the picture?') : mode === 'edit' ? tx('What should change?') : tx('How should the style be transferred?');
+    UI.comfyGenerateBtn.textContent = mode === 'generate' ? tx('Generate image') : mode === 'edit' ? tx('Edit image') : tx('Transfer style');
 
     // The prompt box is shared across modes — leaving the Generate-mode sample text in
     // place would otherwise get silently submitted as an edit/style instruction.
@@ -1266,7 +1266,7 @@ UI.comfyEditInput.addEventListener('change', (e) => {
         UI.comfyEditPlaceholder.style.display = 'none';
         UI.comfyEditPreviewContainer.style.display = 'block';
         UI.comfyEditImgPreview.src = evt.target.result;
-        addLog(`Bild zum Bearbeiten: ${file.name}`, 'system');
+        addLog(tx('Image to edit: {name}', { name: file.name }), 'system');
     };
     reader.readAsDataURL(file);
 });
@@ -1328,8 +1328,8 @@ UI.comfyGenerateBtn.addEventListener('click', () => {
 
 async function startStyleTransfer() {
     const prompt = UI.comfyPrompt.value.trim();
-    if (!comfyStyleContentBase64) return addLog('Bitte ein Inhaltsbild anhängen.', 'warn');
-    if (!comfyStyleRefBase64) return addLog('Bitte eine Stilvorlage anhängen.', 'warn');
+    if (!comfyStyleContentBase64) return addLog(tx('Please attach a content image.'), 'warn');
+    if (!comfyStyleRefBase64) return addLog(tx('Please attach a style reference.'), 'warn');
 
     UI.comfyGenerateBtn.disabled = true;
     UI.comfyLoading.style.display = 'flex';
@@ -1337,7 +1337,7 @@ async function startStyleTransfer() {
     UI.comfyResultImg.style.display = 'none';
     UI.comfyProgressPanel.style.display = 'block';
 
-    addLog('Queueing style transfer task...', 'system');
+    addLog(tx('Starting the style transfer…'), 'system');
 
     try {
         const payload = {
@@ -1352,12 +1352,12 @@ async function startStyleTransfer() {
         if (prompt) payload.prompt = prompt;
         const resp = await api('/api/comfyui/style-transfer', 'POST', payload);
 
-        addLog(`Task queued: ${resp.task_id}. Polling progress...`, 'system');
+        addLog(tx('Task queued: {id}. Following its progress…', { id: resp.task_id }), 'system');
 
         if (comfyPollInterval) clearInterval(comfyPollInterval);
         comfyPollInterval = setInterval(() => pollComfyTask(resp.task_id), 1500);
     } catch (err) {
-        addLog(`Stil übertragen fehlgeschlagen: ${err.message}`, 'error');
+        addLog(tx('Style transfer failed: {err}', { err: err.message }), 'error');
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
         UI.imagePlaceholderBox.style.display = 'block';
@@ -1367,8 +1367,8 @@ async function startStyleTransfer() {
 
 async function startImageEdit() {
     const prompt = UI.comfyPrompt.value.trim();
-    if (!prompt) return addLog('Bitte beschreiben, was sich ändern soll.', 'warn');
-    if (!comfyEditImageBase64) return addLog('Bitte ein Bild zum Bearbeiten anhängen.', 'warn');
+    if (!prompt) return addLog(tx('Please describe what should change.'), 'warn');
+    if (!comfyEditImageBase64) return addLog(tx('Please attach an image to edit.'), 'warn');
 
     UI.comfyGenerateBtn.disabled = true;
     UI.comfyLoading.style.display = 'flex';
@@ -1376,7 +1376,7 @@ async function startImageEdit() {
     UI.comfyResultImg.style.display = 'none';
     UI.comfyProgressPanel.style.display = 'block';
 
-    addLog('Bearbeitung gestartet …', 'system');
+    addLog(tx('Editing started …'), 'system');
 
     try {
         const resp = await api('/api/comfyui/edit', 'POST', {
@@ -1389,12 +1389,12 @@ async function startImageEdit() {
             filename: UI.comfyFilename.value.trim() || null
         });
 
-        addLog(`Task queued: ${resp.task_id}. Polling progress...`, 'system');
+        addLog(tx('Task queued: {id}. Following its progress…', { id: resp.task_id }), 'system');
 
         if (comfyPollInterval) clearInterval(comfyPollInterval);
         comfyPollInterval = setInterval(() => pollComfyTask(resp.task_id), 1500);
     } catch (err) {
-        addLog(`Bearbeiten fehlgeschlagen: ${err.message}`, 'error');
+        addLog(tx('Editing failed: {err}', { err: err.message }), 'error');
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
         UI.imagePlaceholderBox.style.display = 'block';
@@ -1404,7 +1404,7 @@ async function startImageEdit() {
 
 async function startImageGeneration() {
     const prompt = UI.comfyPrompt.value.trim();
-    if (!prompt) return addLog('Bitte beschreiben, was zu sehen sein soll.', 'warn');
+    if (!prompt) return addLog(tx('Please describe what should be in the picture.'), 'warn');
     
     UI.comfyGenerateBtn.disabled = true;
     UI.comfyLoading.style.display = 'flex';
@@ -1419,7 +1419,7 @@ async function startImageGeneration() {
                            steps: UI.comfySteps.value ? parseInt(UI.comfySteps.value) : null,
                            seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
                            aspect_ratio: UI.comfyAspectRatio.value, source: 'bild' };
-    addLog('Bild wird erzeugt …', 'system');
+    addLog(tx('Generating the image …'), 'system');
     
     try {
         const resp = await api('/api/comfyui/generate', 'POST', {
@@ -1435,12 +1435,12 @@ async function startImageGeneration() {
             filename: UI.comfyFilename.value.trim() || null
         });
         
-        addLog(`Task queued: ${resp.task_id}. Polling progress...`, 'system');
+        addLog(tx('Task queued: {id}. Following its progress…', { id: resp.task_id }), 'system');
         
         if (comfyPollInterval) clearInterval(comfyPollInterval);
         comfyPollInterval = setInterval(() => pollComfyTask(resp.task_id), 1500);
     } catch (err) {
-        addLog(`Erzeugen fehlgeschlagen: ${err.message}`, 'error');
+        addLog(tx('Generating failed: {err}', { err: err.message }), 'error');
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
         UI.imagePlaceholderBox.style.display = 'block';
@@ -1460,10 +1460,10 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
         const o = document.createElement('option');
         o.value = valueOf(m);
         if (m.provider !== 'comfyui' && select === UI.comfyModel) o.dataset.gateway = '1';
-        o.textContent = m.available ? m.label : `${m.label} (nicht installiert)`;
-        o.title = m.description || '';
+        o.textContent = m.available ? m.label : tx('{label} (not installed)', { label: m.label });
+        o.title = m.description ? tx(m.description) : '';
         o.disabled = !m.available;
-        o.dataset.description = m.description || '';
+        o.dataset.description = m.description ? tx(m.description) : '';
         select.append(o);
     }
     const def = rows.find(m => m.default && m.available);
@@ -1483,12 +1483,12 @@ async function loadImageModels() {
         fillImageModelSelect(UI.comfyStyleModel, style.data || [], m => m.id, document.getElementById('comfy-style-model-note'));
         UI.comfyModel.dispatchEvent(new Event('change'));
     } catch (err) {
-        addLog(`Bildmodelle nicht ladbar: ${err.message}`, 'warn');
+        addLog(tx('Couldn\'t load image models: {err}', { err: err.message }), 'warn');
     }
 }
 
 async function generateViaGateway(prompt, model, label) {
-    addLog(`${label}: erzeuge … (das erste Bild lädt das Modell)`, 'system');
+    addLog(tx('{label}: generating … (the first image loads the model)', { label }), 'system');
     const t0 = Date.now();
     try {
         const body = { model, prompt, aspect_ratio: UI.comfyAspectRatio.value, response_format: 'b64_json' };
@@ -1496,13 +1496,13 @@ async function generateViaGateway(prompt, model, label) {
         const data = await api('/v1/images/generations', 'POST', body);
         UI.comfyResultImg.src = `data:image/png;base64,${data.data[0].b64_json}`;
         UI.comfyResultImg.style.display = 'inline-block';
-        addLog(`${label}: fertig nach ${Math.round((Date.now() - t0) / 100) / 10} s.`, 'success');
+        addLog(tx('{label}: done after {s} s.', { label, s: Math.round((Date.now() - t0) / 100) / 10 }), 'success');
         if (typeof saveToGallery === 'function') {
             saveToGallery(data.data[0].b64_json, { prompt, model, label, seed: body.seed, aspect_ratio: body.aspect_ratio,
                                                    seconds: (Date.now() - t0) / 1000, source: 'bild' });
         }
     } catch (err) {
-        addLog(`${label} fehlgeschlagen: ${err.message}`, 'error');
+        addLog(tx('{label} failed: {err}', { label, err: err.message }), 'error');
         UI.imagePlaceholderBox.style.display = 'block';
     } finally {
         UI.comfyGenerateBtn.disabled = false;
@@ -1523,12 +1523,12 @@ async function pollComfyTask(taskId) {
         
         if (data.status === 'processing') {
             const prog = data.progress;
-            UI.comfyProgressNode.textContent = prog.node ? `Node: ${prog.node}` : 'Generating...';
+            UI.comfyProgressNode.textContent = prog.node ? `Node: ${prog.node}` : tx('Generating…');
             UI.comfyProgressPercentage.textContent = `${prog.value}%`;
             UI.comfyProgressFill.style.width = `${prog.value}%`;
         } else if (data.status === 'completed') {
             clearInterval(comfyPollInterval);
-            addLog(`Fertig nach ${data.runtime_seconds} s.`, 'success');
+            addLog(tx('Done after {s} s.', { s: data.runtime_seconds }), 'success');
             
             UI.comfyResultImg.src = data.image_base64.startsWith('data:') ? data.image_base64 : `data:image/png;base64,${data.image_base64}`;
             UI.comfyResultImg.style.display = 'inline-block';
@@ -1541,11 +1541,11 @@ async function pollComfyTask(taskId) {
             UI.comfyProgressPanel.style.display = 'none';
         } else if (data.status === 'failed') {
             clearInterval(comfyPollInterval);
-            addLog(`Fehlgeschlagen: ${data.error}`, 'error');
+            addLog(tx('Failed: {err}', { err: data.error }), 'error');
             UI.comfyLoading.style.display = 'none';
             UI.comfyGenerateBtn.disabled = false;
             UI.imagePlaceholderBox.style.display = 'block';
-            UI.imagePlaceholderBox.textContent = `❌ Fehlgeschlagen: ${data.error}`;
+            UI.imagePlaceholderBox.textContent = '❌ ' + tx('Failed: {err}', { err: data.error });
             UI.comfyProgressPanel.style.display = 'none';
         }
     } catch (err) {
@@ -1569,9 +1569,9 @@ UI.comfyBatchFileInput.addEventListener('change', (e) => {
             // valid but oddly formatted still renders as clean, readable JSON.
             const parsed = JSON.parse(evt.target.result);
             UI.comfyBatchJson.value = JSON.stringify(parsed, null, 2);
-            addLog(`Loaded batch JSON from ${file.name}.`, 'system');
+            addLog(tx('Loaded the batch JSON from {name}.', { name: file.name }), 'system');
         } catch (err) {
-            addLog(`That file isn't valid JSON: ${err.message}`, 'error');
+            addLog(tx('That file isn\'t valid JSON: {err}', { err: err.message }), 'error');
         }
     };
     reader.readAsText(file);
@@ -1587,7 +1587,7 @@ async function startComfyBatch() {
     try {
         payload = JSON.parse(UI.comfyBatchJson.value);
     } catch (err) {
-        return addLog(`Batch JSON is invalid: ${err.message}`, 'error');
+        return addLog(tx('The batch JSON is invalid: {err}', { err: err.message }), 'error');
     }
 
     UI.comfyBatchStartBtn.disabled = true;
@@ -1596,12 +1596,12 @@ async function startComfyBatch() {
 
     try {
         const resp = await api('/api/comfyui/batch', 'POST', payload);
-        addLog(`Stapel gestartet: ${resp.total} Bild(er).`, 'system');
+        addLog(tx('Batch started: {n} image(s).', { n: resp.total }), 'system');
         if (comfyBatchPollInterval) clearInterval(comfyBatchPollInterval);
         comfyBatchPollInterval = setInterval(pollComfyBatchStatus, 1500);
         await pollComfyBatchStatus();
     } catch (err) {
-        addLog(`Failed to start batch: ${err.message}`, 'error');
+        addLog(tx('Couldn\'t start the batch: {err}', { err: err.message }), 'error');
         UI.comfyBatchStartBtn.disabled = false;
     }
 }
@@ -1609,10 +1609,10 @@ async function startComfyBatch() {
 async function comfyBatchAction(action) {
     try {
         await api(`/api/comfyui/batch/${action}`, 'POST', {});
-        addLog(`Batch ${action} requested.`, 'system');
+        addLog(tx('Batch: {action} requested.', { action }), 'system');
         await pollComfyBatchStatus();
     } catch (err) {
-        addLog(`Stapel (${action}) fehlgeschlagen: ${err.message}`, 'error');
+        addLog(tx('Batch ({action}) failed: {err}', { action, err: err.message }), 'error');
     }
 }
 
@@ -1654,7 +1654,7 @@ async function pollComfyBatchStatus() {
     // (the API explorer stayed in the dashboard)
 
     if (data.status === 'none') {
-        UI.comfyBatchStatusLabel.textContent = 'Bereit';
+        UI.comfyBatchStatusLabel.textContent = tx('Ready');
         UI.comfyBatchStatusLabel.className = 'badge success';
         UI.comfyBatchPauseBtn.style.display = 'none';
         UI.comfyBatchResumeBtn.style.display = 'none';
@@ -1703,47 +1703,47 @@ async function pollComfyBatchStatus() {
 
 let activeProvider = 'llamacpp';
 let builderFields = [
-    { name: "character_name", type: "string", desc: "Der Name des Charakters", required: true },
-    { name: "class", type: "enum", enumOptions: "warrior, mage, rogue", desc: "Die Charakterklasse", required: true },
-    { name: "level", type: "integer", desc: "Das Level des Charakters", required: true },
-    { name: "skills", type: "array", desc: "Spezialfaehigkeiten", required: false },
-    { name: "is_hero", type: "boolean", desc: "Ist ein Hauptheld", required: false }
+    { name: "character_name", type: "string", desc: "The character's name", required: true },
+    { name: "class", type: "enum", enumOptions: "warrior, mage, rogue", desc: "The character class", required: true },
+    { name: "level", type: "integer", desc: "The character's level", required: true },
+    { name: "skills", type: "array", desc: "Special abilities", required: false },
+    { name: "is_hero", type: "boolean", desc: "Is a main hero", required: false }
 ];
 
 const presets = {
     character: [
-        { name: "character_name", type: "string", desc: "Der Name des Charakters", required: true },
-        { name: "class", type: "enum", enumOptions: "warrior, mage, rogue", desc: "Die Charakterklasse", required: true },
-        { name: "level", type: "integer", desc: "Das Level des Charakters", required: true },
-        { name: "skills", type: "array", desc: "Spezialfaehigkeiten", required: false },
-        { name: "is_hero", type: "boolean", desc: "Ist ein Hauptheld", required: false }
+        { name: "character_name", type: "string", desc: "The character's name", required: true },
+        { name: "class", type: "enum", enumOptions: "warrior, mage, rogue", desc: "The character class", required: true },
+        { name: "level", type: "integer", desc: "The character's level", required: true },
+        { name: "skills", type: "array", desc: "Special abilities", required: false },
+        { name: "is_hero", type: "boolean", desc: "Is a main hero", required: false }
     ],
     sentiment: [
-        { name: "sentiment", type: "enum", enumOptions: "positive, negative, neutral", desc: "Die sentimentale Stimmung", required: true },
-        { name: "confidence", type: "number", desc: "Konfidenz (0.0 - 1.0)", required: true },
-        { name: "summary", type: "string", desc: "Zusammenfassung", required: false },
-        { name: "keywords", type: "array", desc: "Wichtigste Schlagworte", required: false }
+        { name: "sentiment", type: "enum", enumOptions: "positive, negative, neutral", desc: "The sentiment", required: true },
+        { name: "confidence", type: "number", desc: "Confidence (0.0 - 1.0)", required: true },
+        { name: "summary", type: "string", desc: "Summary", required: false },
+        { name: "keywords", type: "array", desc: "Most important keywords", required: false }
     ],
     simple: [
-        { name: "first_name", type: "string", desc: "Vorname", required: true },
-        { name: "last_name", type: "string", desc: "Nachname", required: true },
-        { name: "age", type: "integer", desc: "Alter in Jahren", required: false },
-        { name: "email", type: "string", desc: "E-Mail-Adresse", required: false }
+        { name: "first_name", type: "string", desc: "First name", required: true },
+        { name: "last_name", type: "string", desc: "Last name", required: true },
+        { name: "age", type: "integer", desc: "Age in years", required: false },
+        { name: "email", type: "string", desc: "Email address", required: false }
     ],
     catalog: [
-        { name: "product_name", type: "string", desc: "Produktname", required: true },
-        { name: "price", type: "number", desc: "Preis in Euro", required: true },
-        { name: "category", type: "enum", enumOptions: "electronics, clothing, books, food", desc: "Produktkategorie", required: true },
-        { name: "in_stock", type: "boolean", desc: "Auf Lager", required: false }
+        { name: "product_name", type: "string", desc: "Product name", required: true },
+        { name: "price", type: "number", desc: "Price in euros", required: true },
+        { name: "category", type: "enum", enumOptions: "electronics, clothing, books, food", desc: "Product category", required: true },
+        { name: "in_stock", type: "boolean", desc: "In stock", required: false }
     ]
 };
 
 const providerDocs = {
     llamacpp: `
         <div class="doc-header">llama.cpp / OpenAI Structured Outputs</div>
-        <p>Das Gateway und llama.cpp unterstuetzen Standard OpenAI-kompatible JSON-Schemas ueber den Parameter <code>response_format</code>. Das Gateway konvertiert das Schema automatisch zur Inferenzzeit in eine GBNF-Grammatik, um 100% korrekte Strukturen zu garantieren.</p>
+        <p data-i18n>The gateway and llama.cpp support standard OpenAI-compatible JSON schemas through the <code>response_format</code> parameter. The gateway turns the schema into a GBNF grammar at inference time, which guarantees a 100% correct structure.</p>
         
-        <div class="doc-section">API Payload Struktur</div>
+        <div class="doc-section">API payload structure</div>
         <div class="code-snippet">"response_format": {
   "type": "json_schema",
   "json_schema": {
@@ -1753,11 +1753,11 @@ const providerDocs = {
   }
 }</div>
 
-        <div class="doc-section">Beispiele & Presets</div>
+        <div class="doc-section">Examples & presets</div>
         <details class="doc-details" open>
-            <summary>🟢 Einfaches Beispiel: User Profile</summary>
+            <summary>🟢 Simple example: user profile</summary>
             <div class="doc-details-content">
-                <p>Einfaches, flaches Schema mit Basis-Datentypen.</p>
+                <p>A simple, flat schema with basic data types.</p>
                 <div class="code-snippet">{
   "type": "object",
   "properties": {
@@ -1767,14 +1767,14 @@ const providerDocs = {
   },
   "required": ["first_name", "last_name"]
 }</div>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="simple" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="simple" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
 
         <details class="doc-details">
-            <summary>🟡 Mittleres Beispiel: Sentiment (mit Enums)</summary>
+            <summary>🟡 Medium example: sentiment (with enums)</summary>
             <div class="doc-details-content">
-                <p>Schema mit einer festen Auswahl (Enum) und numerischen Werten.</p>
+                <p>A schema with a fixed choice (enum) and numeric values.</p>
                 <div class="code-snippet">{
   "type": "object",
   "properties": {
@@ -1784,14 +1784,14 @@ const providerDocs = {
   },
   "required": ["sentiment", "confidence"]
 }</div>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="sentiment" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="sentiment" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
 
         <details class="doc-details">
-            <summary>🔴 Komplexes Beispiel: Product Catalog</summary>
+            <summary>🔴 Complex example: product catalogue</summary>
             <div class="doc-details-content">
-                <p>Umfangreicheres Schema mit Boolean, Enums und Zahlen.</p>
+                <p>A larger schema with booleans, enums and numbers.</p>
                 <div class="code-snippet">{
   "type": "object",
   "properties": {
@@ -1802,25 +1802,25 @@ const providerDocs = {
   },
   "required": ["product_name", "price", "category"]
 }</div>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="catalog" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="catalog" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
     `,
     ollama: `
         <div class="doc-header">Ollama JSON Schema Format</div>
-        <p>Ollama unterstuetzt strukturierte Ausgaben, indem ein JSON-Schema direkt im Parameter <code>format</code> uebergeben wird. Dies ist ab Ollama Version 0.2.7 vollumfaenglich integriert.</p>
+        <p data-i18n>Ollama supports structured output when a JSON schema is passed directly in the <code>format</code> parameter. This is fully built in since Ollama 0.2.7.</p>
         
-        <div class="doc-section">API Payload Struktur</div>
+        <div class="doc-section">API payload structure</div>
         <div class="code-snippet">"format": {
   "type": "object",
   "properties": { ... }
 }</div>
 
-        <div class="doc-section">Beispiele & Presets</div>
+        <div class="doc-section">Examples & presets</div>
         <details class="doc-details" open>
-            <summary>🟢 Einfaches Beispiel: User Profile</summary>
+            <summary>🟢 Simple example: user profile</summary>
             <div class="doc-details-content">
-                <p>Einfaches JSON-Schema direkt an Ollamas <code>format</code>-Feld uebergeben.</p>
+                <p data-i18n>A simple JSON schema passed directly to Ollama's <code>format</code> field.</p>
                 <div class="code-snippet">"format": {
   "type": "object",
   "properties": {
@@ -1829,37 +1829,37 @@ const providerDocs = {
   },
   "required": ["first_name", "last_name"]
 }</div>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="simple" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="simple" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
 
         <details class="doc-details">
-            <summary>🟡 Mittleres Beispiel: Sentiment (mit Enums)</summary>
+            <summary>🟡 Medium example: sentiment (with enums)</summary>
             <div class="doc-details-content">
-                <p>Ollama erzwingt die Enum-Werte ebenfalls zur Inferenzzeit.</p>
+                <p>Ollama enforces the enum values at inference time too.</p>
                 <div class="code-snippet">"format": {
   "type": "object",
   "properties": {
     "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] }
   }
 }</div>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="sentiment" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="sentiment" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
 
         <details class="doc-details">
-            <summary>🔴 Komplexes Beispiel: RPG Character</summary>
+            <summary>🔴 Complex example: RPG character</summary>
             <div class="doc-details-content">
-                <p>Ein komplexeres Schema fuer Charaktergenerierung.</p>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="character" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <p>A more complex schema for generating characters.</p>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="character" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
     `,
     lmstudio: `
         <div class="doc-header">LM Studio Structured Outputs</div>
-        <p>LM Studio ist OpenAI-kompatibel und erwartet das Schema unter <code>response_format.json_schema.schema</code>.</p>
+        <p data-i18n>LM Studio is OpenAI-compatible and expects the schema under <code>response_format.json_schema.schema</code>.</p>
         
-        <div class="doc-section">API Payload Struktur</div>
+        <div class="doc-section">API payload structure</div>
         <div class="code-snippet">"response_format": {
   "type": "json_schema",
   "json_schema": {
@@ -1868,28 +1868,28 @@ const providerDocs = {
   }
 }</div>
 
-        <div class="doc-section">Beispiele & Presets</div>
+        <div class="doc-section">Examples & presets</div>
         <details class="doc-details" open>
-            <summary>🟢 Einfaches Beispiel: User Profile</summary>
+            <summary>🟢 Simple example: user profile</summary>
             <div class="doc-details-content">
-                <p>Standard OpenAI-kompatibles Schema fuer Profile.</p>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="simple" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <p>A standard OpenAI-compatible schema for profiles.</p>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="simple" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
 
         <details class="doc-details">
-            <summary>🟡 Mittleres Beispiel: Sentiment (mit Enums)</summary>
+            <summary>🟡 Medium example: sentiment (with enums)</summary>
             <div class="doc-details-content">
-                <p>Schema fuer Klassifikationen.</p>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="sentiment" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <p>A schema for classifications.</p>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="sentiment" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
 
         <details class="doc-details">
-            <summary>🔴 Komplexes Beispiel: RPG Character</summary>
+            <summary>🔴 Complex example: RPG character</summary>
             <div class="doc-details-content">
-                <p>Umfangreiches RPG-Schema fuer strukturierte Generierung.</p>
-                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="character" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">In Builder laden</button>
+                <p>A large RPG schema for structured generation.</p>
+                <button type="button" class="btn btn-primary btn-load-preset" data-preset-load="character" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; margin-top: 0.25rem;">Load into the builder</button>
             </div>
         </details>
     `
@@ -1903,7 +1903,7 @@ function initSchemaHelper() {
         UI.schemaHelperModal.style.display = 'flex';
         updateProviderDocs();
         loadPreset('character');
-        addLog('Opened JSON Schema Builder.', 'system');
+        addLog(tx('Opened the JSON schema builder.'), 'system');
     });
 
     // Close Modal
@@ -1971,7 +1971,7 @@ function initSchemaHelper() {
         const schema = buildJSONSchema();
         UI.gatewaySchema.value = JSON.stringify(schema, null, 2);
         UI.schemaHelperModal.style.display = 'none';
-        addLog('Schema in den Chat übernommen.', 'success');
+        addLog(tx('Schema taken over into the chat.'), 'success');
     });
 }
 
@@ -1988,18 +1988,19 @@ function loadPreset(presetName) {
                 btn.classList.remove('active');
             }
         });
-        addLog(`Loaded preset "${presetName}" in schema builder.`, 'system');
+        addLog(tx('Loaded the template “{name}” into the schema builder.', { name: presetName }), 'system');
     }
 }
 
 function updateProviderDocs() {
     UI.providerDescContent.innerHTML = providerDocs[activeProvider] || "";
+    I18N.apply(UI.providerDescContent);
 }
 
 function renderBuilderFields() {
     UI.builderFieldsList.innerHTML = "";
     if (builderFields.length === 0) {
-        UI.builderFieldsList.innerHTML = '<div class="empty-state-small" style="padding: 1rem; text-align: center; color: var(--text-muted); font-style: italic;">Noch keine Felder – unten „+ Feld hinzufügen“.</div>';
+        UI.builderFieldsList.innerHTML = `<div class="empty-state-small" style="padding: 1rem; text-align: center; color: var(--text-muted); font-style: italic;">${tx('No fields yet – “+ Add field” below.')}</div>`;
         return;
     }
 
@@ -2022,12 +2023,12 @@ function renderBuilderFields() {
             ${isEnum ? `
                 <input type="text" class="field-enum-input" value="${field.enumOptions || ''}" placeholder="opt1, opt2" title="Enum Options (comma-separated)" style="width: 20%;">
             ` : ''}
-            <input type="text" class="field-desc-input" value="${field.desc || ''}" placeholder="Beschreibung (optional)" title="Description" style="width: ${isEnum ? '24%' : '44%'};">
+            <input type="text" class="field-desc-input" value="${field.desc || ''}" placeholder="${tx('Description (optional)')}" title="${tx('Description')}" style="width: ${isEnum ? '24%' : '44%'};">
             <label class="checkbox-label-inline" style="width: 10%; margin-left: auto; justify-content: flex-end;">
                 <input type="checkbox" class="field-required-checkbox" ${field.required ? 'checked' : ''}>
                 Req
             </label>
-            <button type="button" class="btn-remove-row" title="Remove Property">&times;</button>
+            <button type="button" class="btn-remove-row" title="${tx('Remove field')}">&times;</button>
         `;
 
         const nameInput = row.querySelector('.field-name-input');

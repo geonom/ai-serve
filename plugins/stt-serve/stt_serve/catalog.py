@@ -7,38 +7,38 @@ values. A client renders these without knowing the engine; a new engine or optio
 file (tests: tests/test_catalog.py)."""
 from typing import Any, Dict, Iterable
 
-_LANGUAGE = {"name": "language", "type": "language", "label": "Sprache",
-             "help": "Leer = automatisch erkennen. Wenn bekannt, angeben: das ist zuverlässiger."}
+_LANGUAGE = {"name": "language", "type": "language", "label": "Language",
+             "help": "Empty = detect automatically. If you know it, give it: that's more reliable."}
 
 
 def engine_catalog(*, nemotron_ready: bool, moss_ready: bool, loaded: Iterable[str]) -> Dict[str, Any]:
     loaded = set(loaded)
     whisperx = {
         "id": "whisperx", "label": "WhisperX",
-        "description": "Whisper mit Wort-Zeitstempeln; Sprecher-Trennung wahlweise mit pyannote oder Nemotron.",
+        "description": "Whisper with word timestamps; speaker separation with pyannote or Nemotron.",
         "available": True, "loaded": "whisperx" in loaded,
         "outputs": ["text", "segments", "words", "speakers"],
         "fields": [
             _LANGUAGE,
-            {"name": "diarize", "type": "bool", "label": "Sprecher trennen", "default": False},
-            {"name": "diarize_backend", "type": "choice", "label": "Sprecher-Trennung mit", "default": "whisperx",
+            {"name": "diarize", "type": "bool", "label": "Separate speakers", "default": False},
+            {"name": "diarize_backend", "type": "choice", "label": "Separate speakers with", "default": "whisperx",
              "show_if": {"diarize": True},
-             "choices": [{"value": "whisperx", "label": "pyannote (genau, Stimmen wiedererkennbar)", "available": True},
+             "choices": [{"value": "whisperx", "label": "pyannote (accurate, voices recognisable)", "available": True},
                          {"value": "nemotron", "label": "Nemotron (NVIDIA)", "available": bool(nemotron_ready)}]},
-            {"name": "num_speakers", "type": "int", "label": "Anzahl Sprecher (wenn bekannt)", "min": 1, "max": 20,
+            {"name": "num_speakers", "type": "int", "label": "Number of speakers (if known)", "min": 1, "max": 20,
              "show_if": {"diarize": True}},
         ],
     }
     moss = {
         "id": "moss", "label": "MOSS-Transcribe-Diarize",
-        "description": "Text, Sprecher und Zeiten in einem Durchgang, bis 90 Minuten; keine Wort-Zeitstempel."
-                       + ("" if moss_ready else " Noch nicht eingerichtet (setup: moss/setup.sh)."),
+        "description": "Text, speakers and times in one pass, up to 90 minutes; no word timestamps."
+                       + ("" if moss_ready else " Not set up yet (setup: moss/setup.sh)."),
         "available": bool(moss_ready), "loaded": "moss" in loaded,
         "outputs": ["text", "segments", "speakers"],
         "fields": [
-            {"name": "diarize", "type": "bool", "label": "Sprecher kennzeichnen", "default": True},
-            {"name": "hotwords", "type": "list", "label": "Schreibweisen (Namen, Fachwörter)", "max_items": 50,
-             "max_length": 40, "help": "Ein Begriff pro Zeile; so schreibt das Modell sie."},
+            {"name": "diarize", "type": "bool", "label": "Mark speakers", "default": True},
+            {"name": "hotwords", "type": "list", "label": "Spellings (names, technical terms)", "max_items": 50,
+             "max_length": 40, "help": "One term per line; the model writes them like that."},
         ],
     }
     return {"engines": [whisperx, moss], "default_engine": "whisperx"}

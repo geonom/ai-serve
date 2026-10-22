@@ -4,7 +4,7 @@
 // Pure; tests: node --test tests/models.test.mjs
 const ChatModels = (() => {
     function optionText(m) {
-        const badges = [m.vision && 'Bild', m.thinking && 'Denken', m.mtp && 'MTP'].filter(Boolean);
+        const badges = [m.vision && tx('image'), m.thinking && tx('thinking'), m.mtp && 'MTP'].filter(Boolean);
         const devices = m.where.filter(p => p.place === 'device').map(p => p.node);
         const local = m.where.some(p => p.place === 'local');
         return m.label + (m.quant ? ` · ${m.quant}` : '') + (badges.length ? ` (${badges.join(', ')})` : '')
@@ -14,11 +14,11 @@ const ChatModels = (() => {
     function groups(models) {
         const chat = (models || []).filter(m => m.kind === 'chat');
         const out = [
-            { label: 'Läuft gerade', items: chat.filter(m => m.loaded) },
-            { label: 'Exklusiv (belegt alle Grafikkarten)', items: chat.filter(m => !m.loaded && m.exclusive) },
-            { label: 'Auf dem Gateway-Rechner', items: chat.filter(m => !m.loaded && !m.exclusive && m.where.some(p => p.place === 'local')) },
-            { label: 'Weitere Modellserver', items: chat.filter(m => !m.loaded && !m.exclusive && m.where.some(p => p.place === 'plugin')) },
-            { label: 'Auf anderen Rechnern im Netzwerk', items: chat.filter(m => !m.loaded && m.where.length && m.where.every(p => p.place === 'device')) },
+            { label: tx('Running now'), items: chat.filter(m => m.loaded) },
+            { label: tx('Exclusive (takes all graphics cards)'), items: chat.filter(m => !m.loaded && m.exclusive) },
+            { label: tx('On the gateway machine'), items: chat.filter(m => !m.loaded && !m.exclusive && m.where.some(p => p.place === 'local')) },
+            { label: tx('More model servers'), items: chat.filter(m => !m.loaded && !m.exclusive && m.where.some(p => p.place === 'plugin')) },
+            { label: tx('On other machines in the network'), items: chat.filter(m => !m.loaded && m.where.length && m.where.every(p => p.place === 'device')) },
         ];
         return out.filter(g => g.items.length).map(g => ({
             label: g.label,
@@ -39,9 +39,9 @@ const ChatModels = (() => {
     function note(m) {
         if (!m) return '';
         const server = m.where.find(p => p.place === 'plugin');
-        if (m.exclusive) return `${(server && server.name) || m.label} belegt alle Grafikkarten für sich; das Laden kann Minuten dauern, andere Modelle werden dafür entladen.`;
-        if (server) return `Läuft auf ${server.name || server.plugin}, das Gateway leitet dorthin.`;
-        if (!m.where.some(p => p.place === 'local')) return `Liegt nur auf ${m.where.map(p => p.node).join(', ')} – das Gateway leitet dorthin.`;
+        if (m.exclusive) return tx('{name} takes all graphics cards for itself; loading can take minutes, other models are unloaded for it.', { name: (server && server.name) || m.label });
+        if (server) return tx('Runs on {server}; the gateway passes requests there.', { server: server.name || server.plugin });
+        if (!m.where.some(p => p.place === 'local')) return tx('Only on {nodes} – the gateway passes requests there.', { nodes: m.where.map(p => p.node).join(', ') });
         return '';
     }
 

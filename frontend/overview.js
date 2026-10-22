@@ -1,4 +1,4 @@
-// "Übersicht": boxes the owner arranges (order, width, hidden -- saved in the backend,
+// "Overview": boxes the owner arranges (order, width, hidden -- saved in the backend,
 // GET/PUT /api/dashboard/layout) showing key figures, who uses the compute power on
 // every machine, apps that start automatically, pinned apps and recent events.
 
@@ -11,10 +11,10 @@ let overviewData = null;
 let overviewSaveTimer = null;
 
 const WIDGET_TITLES = {
-    stats: 'Kennzahlen', compute: 'Rechenleistung', autostart: 'Startet automatisch',
-    pinned: 'Angeheftete Apps', events: 'Zuletzt passiert',
+    stats: tx('Key figures'), compute: tx('Compute power'), autostart: tx('Starts automatically'),
+    pinned: tx('Pinned apps'), events: tx('Recent events'),
 };
-const WIDGET_SIZES = { narrow: 'Schmal', half: 'Halb', wide: 'Breit', full: 'Ganze Breite' };
+const WIDGET_SIZES = { narrow: tx('Narrow'), half: tx('Half'), wide: tx('Wide'), full: tx('Full width') };
 
 function setOverviewPolling(active) {
     if (overviewPollInterval) {
@@ -46,7 +46,7 @@ async function loadOverviewData() {
     if (services?.tailscale) servicesTailscale = services.tailscale;
     const host = services?.tailscale?.dns_name ? services.tailscale.dns_name.split('.')[0] : null;
     const side = document.getElementById('side-host');
-    if (host && side) side.textContent = `${host} · Koordinator`;
+    if (host && side) side.textContent = `${host} · ${tx('Coordinator')}`;
     return { services: services?.services || [], consumers: consumers?.gpus || [], status: status?.instances || [],
              nodes: details, events, facts };
 }
@@ -77,7 +77,7 @@ function saveOverviewLayout() {
         try {
             overviewLayout = await api('/api/dashboard/layout', 'PUT', overviewLayout);
         } catch (err) {
-            addLog(`Anordnung nicht gespeichert: ${err.message}`, 'error');
+            addLog(tx('Arrangement not saved: {err}', { err: err.message }), 'error');
         }
     }, 400);
 }
@@ -87,18 +87,18 @@ function renderOverview() {
     const box = document.getElementById('overview-widgets');
     const bar = document.getElementById('overview-arrange-bar');
     const btn = document.getElementById('overview-arrange-btn');
-    btn.textContent = overviewArranging ? 'Fertig' : 'Anordnen';
+    btn.textContent = overviewArranging ? tx('Done') : tx('Arrange');
     btn.setAttribute('aria-pressed', String(overviewArranging));
     btn.classList.toggle('btn-primary', overviewArranging);
     btn.classList.toggle('btn-secondary', !overviewArranging);
     document.getElementById('overview-sub').textContent = overviewArranging
-        ? 'Boxen ziehen oder mit den Pfeilen verschieben, Breite wählen, ausblenden. Wird gespeichert.'
-        : 'Alles, was gerade läuft — auf einen Blick.';
+        ? tx('Drag boxes or move them with the arrows, pick a width, hide them. Saved automatically.')
+        : tx('Everything that\'s running right now — at a glance.');
 
     const hidden = overviewLayout.widgets.filter(w => w.hidden);
     bar.hidden = !overviewArranging;
-    bar.replaceChildren(el('span', { text: 'Anordnen: Reihenfolge, Breite und Sichtbarkeit gelten für dieses Dashboard.' }),
-        ...(hidden.length ? [el('span', { class: 'muted', text: 'Ausgeblendet:' }),
+    bar.replaceChildren(el('span', { text: tx('Arrange: order, width and visibility apply to this dashboard.') }),
+        ...(hidden.length ? [el('span', { class: 'muted', text: tx('Hidden:') }),
             ...hidden.map(w => el('button', { class: 'chip', text: `+ ${WIDGET_TITLES[w.id]}`,
                 onclick: () => { w.hidden = false; saveOverviewLayout(); renderOverview(); } }))] : []));
 
@@ -136,7 +136,7 @@ function renderWidget(w) {
             saveOverviewLayout();
             renderOverview();
         });
-        const size = el('select', { class: 'r-select-sm', 'aria-label': `Breite von ${WIDGET_TITLES[w.id]}`,
+        const size = el('select', { class: 'r-select-sm', 'aria-label': tx('Width of {box}', { box: WIDGET_TITLES[w.id] }),
             onchange: (e) => { w.size = e.target.value; saveOverviewLayout(); renderOverview(); } });
         for (const [k, label] of Object.entries(WIDGET_SIZES)) {
             const o = el('option', { value: k, text: label });
@@ -147,10 +147,10 @@ function renderWidget(w) {
             el('span', { class: 'drag-handle', 'aria-hidden': 'true', text: '⠿' }),
             el('span', { class: 'strong small', text: WIDGET_TITLES[w.id] }),
             el('span', { class: 'spacer' }),
-            el('button', { class: 'btn-icon-sm', text: '←', 'aria-label': `${WIDGET_TITLES[w.id]} nach vorn`, onclick: () => moveWidget(w.id, -1) }),
-            el('button', { class: 'btn-icon-sm', text: '→', 'aria-label': `${WIDGET_TITLES[w.id]} nach hinten`, onclick: () => moveWidget(w.id, 1) }),
+            el('button', { class: 'btn-icon-sm', text: '←', 'aria-label': tx('Move {box} forward', { box: WIDGET_TITLES[w.id] }), onclick: () => moveWidget(w.id, -1) }),
+            el('button', { class: 'btn-icon-sm', text: '→', 'aria-label': tx('Move {box} back', { box: WIDGET_TITLES[w.id] }), onclick: () => moveWidget(w.id, 1) }),
             size,
-            el('button', { class: 'btn btn-secondary btn-sm', text: 'Ausblenden',
+            el('button', { class: 'btn btn-secondary btn-sm', text: tx('Hide'),
                            onclick: () => { w.hidden = true; saveOverviewLayout(); renderOverview(); } })));
     }
     const body = { stats: widgetStats, compute: widgetCompute, autostart: widgetAutostart, pinned: widgetPinned, events: widgetEvents }[w.id];
@@ -164,7 +164,7 @@ function overviewAccelerators() {
     const d = overviewData;
     const out = [];
     for (const g of d.consumers) {
-        out.push({ where: 'local', machine: 'dieser Rechner', name: g.name || `GPU ${g.index}`, total: g.total_mb,
+        out.push({ where: 'local', machine: tx('this machine'), name: g.name || `GPU ${g.index}`, total: g.total_mb,
                    free: Math.max(0, g.free_mb - (g.reserved_mb || 0)),
                    parts: g.consumers.map((c, i) => ({ label: consumerLabel(c), mb: c.mb, color: consumerColor(c, i),
                        state: consumerState(c)[0] })) });
@@ -176,7 +176,7 @@ function overviewAccelerators() {
         for (const a of n.accelerators || []) {
             const parts = (n.instances || []).filter(i => i.gpu === null || i.gpu === undefined || i.gpu === a.index)
                 .map((i, k) => ({ label: i.model, mb: sizes[i.model] || 0, color: CONSUMER_COLORS[k % CONSUMER_COLORS.length],
-                                  state: i.state === 'ready' ? 'bereit' : i.state }));
+                                  state: i.state === 'ready' ? tx('ready') : i.state }));
             const used = parts.reduce((t, p) => t + p.mb, 0);
             out.push({ where: 'remote', machine: n.name || n.id, name: a.name, total: a.budget_mb,
                        free: Math.max(0, a.budget_mb - used), parts, budget: true });
@@ -200,31 +200,32 @@ function widgetStats() {
         el('span', { class: 'stat-value' }, el('span', { text: value }), of ? el('span', { class: 'stat-of', text: ` ${of}` }) : null),
         el('span', { class: 'muted small stat-note', text: note }));
     return [el('div', { class: 'stat-grid' },
-        stat('Frei auf allen Rechnern', fmtGb(free), `/ ${fmtGb(total)} GB`,
-             `${accels.length} Beschleuniger auf ${1 + online.length} Rechner${online.length ? 'n' : ''}`, 'compute', 'a'),
-        stat('Modelle geladen', String(models.length), '', models.slice(0, 3).join(' · ') || 'keine', 'compute', 'b'),
-        stat('Rechner online', String(1 + online.length), `/ ${1 + d.nodes.length}`,
-             offline.length ? `${offline.map(n => n.name || n.id).join(', ')} nicht erreichbar` : 'alle erreichbar', 'compute', 'c'),
-        stat('Apps aktiv', String(running.length), `/ ${d.services.length}`, running.slice(0, 3).map(s => s.name).join(', ') || 'keine', 'services', 'd'))];
+        stat(tx('Free on all machines'), fmtGb(free), `/ ${fmtGb(total)} GB`,
+             (online.length ? tx('{a} accelerators on {m} machines', { a: accels.length, m: 1 + online.length })
+                            : tx('{a} accelerators on 1 machine', { a: accels.length })), 'compute', 'a'),
+        stat(tx('Models loaded'), String(models.length), '', models.slice(0, 3).join(' · ') || tx('none'), 'compute', 'b'),
+        stat(tx('Machines online'), String(1 + online.length), `/ ${1 + d.nodes.length}`,
+             offline.length ? tx('{names} unreachable', { names: offline.map(n => n.name || n.id).join(', ') }) : tx('all reachable'), 'compute', 'c'),
+        stat(tx('Apps active'), String(running.length), `/ ${d.services.length}`, running.slice(0, 3).map(s => s.name).join(', ') || tx('none'), 'services', 'd'))];
 }
 
 function widgetCompute() {
     const accels = overviewAccelerators();
-    return [el('div', { class: 'widget-head' }, el('h2', { text: 'Wer nutzt die Rechenleistung' }),
-               el('button', { class: 'link-btn', 'data-goto': 'compute', text: 'Details' })),
+    return [el('div', { class: 'widget-head' }, el('h2', { text: tx('Who uses the compute power') }),
+               el('button', { class: 'link-btn', 'data-goto': 'compute', text: tx('Details') })),
         ...accels.map(a => {
-            const bar = el('div', { class: 'usage-bar usage-bar-thin', role: 'img', 'aria-label': `${a.name}: ${a.parts.map(p => p.label).join(', ') || 'leer'}` });
+            const bar = el('div', { class: 'usage-bar usage-bar-thin', role: 'img', 'aria-label': `${a.name}: ${a.parts.map(p => p.label).join(', ') || tx('empty')}` });
             for (const p of a.parts) bar.append(el('div', { style: `width:${Math.min(100, 100 * p.mb / Math.max(1, a.total))}%;background:${p.color}` }));
             return el('div', { class: 'ov-accel' },
                 el('div', { class: 'ov-accel-head' },
                     el('span', { class: 'strong' }, el('span', { text: a.name }),
-                       el('span', { class: `where-tag ${a.where === 'local' ? 'where-local' : ''}`, text: a.where === 'local' ? 'dieser Rechner' : `${a.machine} · entfernt` })),
-                    el('span', { class: 'mono small muted', text: `${fmtGb(a.total - a.free)} / ${fmtGb(a.total)} GB${a.budget ? ' Budget' : ''}` })),
+                       el('span', { class: `where-tag ${a.where === 'local' ? 'where-local' : ''}`, text: a.where === 'local' ? tx('this machine') : `${a.machine} · ${tx('remote')}` })),
+                    el('span', { class: 'mono small muted', text: `${fmtGb(a.total - a.free)} / ${fmtGb(a.total)} GB${a.budget ? ' ' + tx('budget') : ''}` })),
                 bar,
                 el('div', { class: 'legend' }, ...(a.parts.length ? a.parts.map(p => el('span', {},
                     el('span', { class: 'swatch', style: `background:${p.color}` }),
                     el('span', { text: `${p.label} · ${fmtGb(p.mb)} GB${p.state && p.state !== '—' ? ` · ${p.state}` : ''}` })))
-                    : [el('span', { class: 'muted', text: 'nichts geladen' })])));
+                    : [el('span', { class: 'muted', text: tx('nothing loaded') })])));
         })];
 }
 
@@ -236,38 +237,38 @@ function appTileCard(s, withShot) {
     if (open) actions.push(open);
     if (s.instances.length === 1) {
         const inst = s.instances[0];
-        actions.push(el('button', { class: 'btn btn-danger-outline btn-sm', text: s.category === 'integrations' ? 'Stoppen (Zugang schließen)' : 'Stoppen',
+        actions.push(el('button', { class: 'btn btn-danger-outline btn-sm', text: s.category === 'integrations' ? tx('Stop (close access)') : tx('Stop'),
             onclick: () => { if (confirmStop(s, inst)) serviceAction(s.id, 'stop', { pid: inst.pid }); } }));
     }
-    if (!s.instances.length) actions.push(el('button', { class: 'btn btn-outline btn-sm', text: s.status === 'starting' ? 'Startet…' : 'Starten',
+    if (!s.instances.length) actions.push(el('button', { class: 'btn btn-outline btn-sm', text: s.status === 'starting' ? tx('Starting…') : tx('Start'),
         disabled: s.status === 'starting', onclick: () => serviceAction(s.id, 'start') }));
     return el('article', { class: 'ov-app' },
         withShot && s.has_screenshot ? appScreenshot(s, best && !best.unreachable ? best.url : null) : null,
         el('div', { class: 'ov-app-head' }, appTile(s, 34), el('span', { class: 'strong ov-app-name', text: s.name }), maturityPill(s), statusPill(s)),
-        facts.length ? el('dl', { class: 'facts' }, ...facts.flatMap(f => [el('dt', { text: f.label }), el('dd', { text: f.value })])) : null,
+        facts.length ? el('dl', { class: 'facts' }, ...facts.flatMap(f => [el('dt', { text: tx(f.label) }), el('dd', { text: tx(f.value) })])) : null,
         actions.length ? el('div', { class: 'app-actions' }, ...actions) : null);
 }
 
 function widgetAutostart() {
     const apps = overviewData.services.filter(s => s.autostart);
     return [el('div', { class: 'widget-head' },
-            el('div', {}, el('h2', { text: 'Startet automatisch' }), el('span', { class: 'muted small', text: 'Folgt dem Autostart-Haken in Apps & Services' })),
-            el('button', { class: 'link-btn', 'data-goto': 'services', text: 'Ändern' })),
+            el('div', {}, el('h2', { text: tx('Starts automatically') }), el('span', { class: 'muted small', text: tx('Follows the autostart checkbox in Apps & Services') })),
+            el('button', { class: 'link-btn', 'data-goto': 'services', text: tx('Change') })),
         el('div', { class: 'ov-app-grid' }, ...(apps.length ? apps.map(s => appTileCard(s, false))
-            : [el('p', { class: 'muted small', text: 'Keine App startet automatisch.' })]))];
+            : [el('p', { class: 'muted small', text: tx('No app starts automatically.') })]))];
 }
 
 function widgetPinned() {
     const byId = new Map(overviewData.services.map(s => [s.id, s]));
     const apps = overviewLayout.pinned.map(id => byId.get(id)).filter(Boolean);
     const head = el('div', { class: 'widget-head' },
-        el('div', {}, el('h2', { text: 'Angeheftete Apps' }), el('span', { class: 'muted small', text: 'Von dir gewählt' })),
+        el('div', {}, el('h2', { text: tx('Pinned apps') }), el('span', { class: 'muted small', text: tx('Chosen by you') })),
         el('button', { class: `btn btn-sm ${overviewPicking ? 'btn-primary' : 'btn-secondary'}`, 'aria-pressed': String(overviewPicking),
-                       text: overviewPicking ? 'Fertig' : 'Auswählen',
+                       text: overviewPicking ? tx('Done') : tx('Choose'),
                        onclick: () => { overviewPicking = !overviewPicking; renderOverview(); } }));
     const parts = [head];
     if (overviewPicking) {
-        const fs = el('fieldset', { class: 'picker' }, el('legend', { text: 'Angeheftete Apps' }));
+        const fs = el('fieldset', { class: 'picker' }, el('legend', { text: tx('Pinned apps') }));
         for (const s of overviewData.services) {
             const box = el('input', { type: 'checkbox', onchange: (e) => {
                 const p = overviewLayout.pinned.filter(x => x !== s.id);
@@ -281,17 +282,17 @@ function widgetPinned() {
         parts.push(fs);
     }
     parts.push(el('div', { class: 'ov-app-grid' }, ...(apps.length ? apps.map(s => appTileCard(s, true))
-        : [el('p', { class: 'muted small', text: 'Noch nichts angeheftet -- „Auswählen“.' })])));
+        : [el('p', { class: 'muted small', text: tx('Nothing pinned yet -- “Choose”.') })])));
     return parts;
 }
 
 function widgetEvents() {
     const ev = overviewData.events;
-    const time = (t) => new Date(t * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    return [el('h2', { text: 'Zuletzt passiert' }),
+    const time = (t) => new Date(t * 1000).toLocaleTimeString(I18N.locale, { hour: '2-digit', minute: '2-digit' });
+    return [el('h2', { text: tx('Recent events') }),
         el('div', { class: 'events' }, ...(ev.length ? ev.map(e => el('div', { class: `event event-${e.level}` },
-            el('span', { class: 'mono small muted', text: time(e.t) }), el('span', { text: e.text })))
-            : [el('p', { class: 'muted small', text: 'Seit dem letzten Neustart ist noch nichts passiert.' })]))];
+            el('span', { class: 'mono small muted', text: time(e.t) }), el('span', { text: e.template ? tx(e.template, e.vars) : e.text })))
+            : [el('p', { class: 'muted small', text: tx('Nothing has happened since the last restart.') })]))];
 }
 
 document.addEventListener('DOMContentLoaded', () => {

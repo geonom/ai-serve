@@ -63,11 +63,11 @@ def create_app() -> FastAPI:
         MOSS children for theirs."""
         out = []
         if state.whisperx_model is not None or state.diarize_pipeline is not None or state.align_model is not None:
-            out.append({"id": "stt-serve", "label": "WhisperX / Sprechertrennung", "pid": os.getpid(), "loaded": True,
+            out.append({"id": "stt-serve", "label": "WhisperX / diarization", "pid": os.getpid(), "loaded": True,
                         "busy": state.whisperx_status == "transcribing" or state.diarize_status == "diarizing"
                                 or bool(state.live_stt_sessions)})
         if _nemotron_running():
-            out.append({"id": "nemotron", "label": "Nemotron-Sprechertrennung", "pid": state.nemotron_diarize_pid,
+            out.append({"id": "nemotron", "label": "Nemotron diarization", "pid": state.nemotron_diarize_pid,
                         "loaded": True, "busy": state.nemotron_diarize_status == "diarizing"})
         if _moss_running():
             out.append({"id": "moss", "label": "MOSS-Transcribe", "pid": state.moss_transcribe_pid, "loaded": True,

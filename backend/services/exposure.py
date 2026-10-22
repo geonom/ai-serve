@@ -85,8 +85,8 @@ def plan_exposure(m: ServiceManifest, level: Exposure, owner: Optional[str]) -> 
     if level == Exposure.TAILNET and m.identity == "single":
         # docs/identity.md 4: one person's data -- the whole tailnet includes other users'
         # shared-in devices
-        raise ExposureError(f"{m.name} speichert Daten nur für eine Person (\"identity\": \"single\") -- "
-                            f"freigeben nur mit „Nur ich (Tailscale)“, bis die App Daten pro Person trennt")
+        raise ExposureError(f"{m.name} keeps data for one person only (\"identity\": \"single\") -- "
+                            f"share it only with \"Only me (Tailscale)\" until the app separates data per person")
     tport = tailnet_port(m)
     if level == Exposure.TAILNET:
         return ExposurePlan(level, ServeRoute(tport, f"http://127.0.0.1:{m.port}"), None, m.open_path, warning)

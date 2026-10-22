@@ -42,8 +42,8 @@
   "modes": [
     {
       "variant": "zero_shot",
-      "label": "Stimme klonen",
-      "description": "Klont die Stimme aus der Aufnahme; mit Transkript am genauesten (ohne: wie 'Sprachübergreifend').",
+      "label": "Clone a voice",
+      "description": "Clones the voice from the recording; most accurate with a transcript (without: like 'Cross-lingual').",
       "inputs": {
         "reference": "required",
         "ref_text": "optional"
@@ -51,7 +51,7 @@
       "params": [
         {
           "name": "speed",
-          "label": "Tempo",
+          "label": "Speed",
           "min": 0.5,
           "max": 2.0,
           "step": 0.05,
@@ -61,25 +61,25 @@
     },
     {
       "variant": "instruct",
-      "label": "Klonen mit Stil",
-      "description": "Klont die Stimme und spricht im beschriebenen Stil.",
+      "label": "Clone with a style",
+      "description": "Clones the voice and speaks in the described style.",
       "inputs": {
         "reference": "required",
         "instruct": "required"
       },
       "instruct": {
         "kind": "text",
-        "hint": "Wie soll gesprochen werden?",
+        "hint": "How should it be spoken?",
         "examples": [
-          "Sprich langsam und ruhig.",
-          "Sprich fröhlich und aufgeregt.",
-          "Sprich wie ein ärgerlicher alter Mann."
+          "Speak slowly and calmly.",
+          "Speak cheerfully and excitedly.",
+          "Speak like a grumpy old man."
         ]
       },
       "params": [
         {
           "name": "speed",
-          "label": "Tempo",
+          "label": "Speed",
           "min": 0.5,
           "max": 2.0,
           "step": 0.05,
@@ -89,15 +89,15 @@
     },
     {
       "variant": "cross_lingual",
-      "label": "Sprachübergreifend",
-      "description": "Klont nur den Klang der Stimme, ohne Transkript; gut, wenn Aufnahme und Text verschiedene Sprachen haben.",
+      "label": "Cross-lingual",
+      "description": "Clones only the sound of the voice, without a transcript; good when the recording and the text are in different languages.",
       "inputs": {
         "reference": "required"
       },
       "params": [
         {
           "name": "speed",
-          "label": "Tempo",
+          "label": "Speed",
           "min": 0.5,
           "max": 2.0,
           "step": 0.05,

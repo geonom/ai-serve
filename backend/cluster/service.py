@@ -124,7 +124,7 @@ class ClusterService:
         key = (rec.id, iid)
         if key not in self.sessions:
             from backend import events
-            events.record("device", f"{os.path.basename(model)} läuft auf {rec.id} (hier war kein Platz)")
+            events.record("device", "{model} runs on {node} (no room here)", model=os.path.basename(model), node=rec.id)
         s = self.sessions.setdefault(key, {"active": 0, "owned": owned, "model": model})
         s.update(last_used=time.time(), keep_alive=keep_alive)
         return Upstream(kind="node", base=f"{rec.url}/v1/instances/{iid}/proxy",

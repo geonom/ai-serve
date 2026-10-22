@@ -60,7 +60,7 @@ function serviceBestUrl(s) {
     return { url, unreachable };
 }
 
-// "Öffnen" for a running app. From another device a loopback-only app has no working
+// "Open" for a running app. From another device a loopback-only app has no working
 // address -- instead of a dead localhost link, offer to make it reachable for the
 // owner via Tailscale (an explicit, confirmed choice; never automatic).
 function serviceOpenControl(s, cls = 'btn btn-primary btn-sm') {
@@ -68,25 +68,25 @@ function serviceOpenControl(s, cls = 'btn btn-primary btn-sm') {
     const best = serviceBestUrl(s);
     if (!best) return null;
     if (!best.unreachable) {
-        return el('a', { class: cls, href: best.url, target: '_blank', rel: 'noopener', title: best.url, text: 'Öffnen' });
+        return el('a', { class: cls, href: best.url, target: '_blank', rel: 'noopener', title: best.url, text: tx('Open') });
     }
     if (!servicesTailscale.available) {
-        return el('button', { class: cls, disabled: true, text: 'Öffnen',
-                              title: 'Nur auf dem Rechner selbst erreichbar (lauscht auf 127.0.0.1); Tailscale ist hier nicht verfügbar.' });
+        return el('button', { class: cls, disabled: true, text: tx('Open'),
+                              title: tx('Only reachable on the machine itself (listens on 127.0.0.1); Tailscale isn\'t available here.') });
     }
     return el('button', {
-        class: cls, text: 'Für mich freigeben',
-        title: 'Lauscht nur auf 127.0.0.1 -- von diesem Gerät aus nur über Tailscale erreichbar',
+        class: cls, text: tx('Share with me'),
+        title: tx('Listens on 127.0.0.1 only -- from this device only reachable through Tailscale'),
         onclick: async (e) => {
-            const who = servicesTailscale.owner ? `nur für ${servicesTailscale.owner}` : 'nur für dich';
-            if (!window.confirm(`${s.name} läuft nur auf dem Rechner selbst. Über Tailscale ${who} erreichbar machen (nie öffentlich)?`)) return;
+            const who = servicesTailscale.owner ? tx('only for {owner}', { owner: servicesTailscale.owner }) : tx('only for you');
+            if (!window.confirm(tx('{name} only runs on the machine itself. Make it reachable through Tailscale {who} (never public)?', { name: s.name, who }))) return;
             e.target.disabled = true;
             try {
                 await api(`/api/services/${encodeURIComponent(s.id)}/exposure`, 'POST', { level: 'owner' });
-                addLog(`App ${s.id}: für ${servicesTailscale.owner || 'dich'} über Tailscale erreichbar`, 'system');
+                addLog(tx('App {id}: reachable through Tailscale for {who}', { id: s.id, who: servicesTailscale.owner || tx('you') }), 'system');
             } catch (err) {
                 alertServiceError(err.message);
-                addLog(`App ${s.id}: Freigabe fehlgeschlagen -- ${err.message}`, 'error');
+                addLog(tx('App {id}: sharing failed -- {err}', { id: s.id, err: err.message }), 'error');
             }
             fetchServices();
             if (typeof refreshOverview === 'function') refreshOverview();
@@ -95,15 +95,15 @@ function serviceOpenControl(s, cls = 'btn btn-primary btn-sm') {
 }
 
 const SERVICE_STATUS = {
-    running: ['läuft', 'ok'], starting: ['startet…', 'busy'], stopped: ['gestoppt', 'off'], exited: ['abgestürzt', 'bad'],
+    running: [tx('running'), 'ok'], starting: [tx('starting…'), 'busy'], stopped: [tx('stopped'), 'off'], exited: [tx('crashed'), 'bad'],
 };
 
 async function serviceAction(id, action, body = null) {
     try {
         await api(`/api/services/${encodeURIComponent(id)}/${action}`, 'POST', body || {});
-        addLog(`App ${id}: ${action === 'start' ? 'Start' : 'Stopp'} angefordert`, 'system');
+        addLog(action === 'start' ? tx('App {id}: start requested', { id }) : tx('App {id}: stop requested', { id }), 'system');
     } catch (err) {
-        addLog(`App ${id}: ${action} fehlgeschlagen -- ${err.message}`, 'error');
+        addLog(tx('App {id}: {action} failed -- {err}', { id, action, err: err.message }), 'error');
         alertServiceError(err.message);
     }
     fetchServices();
@@ -131,10 +131,10 @@ async function toggleServiceLog(id, pre) {
 async function loadServiceLog(id, pre) {
     try {
         const data = await api(`/api/services/${encodeURIComponent(id)}/log?tail=200`);
-        pre.textContent = data.log || '(leer)';
+        pre.textContent = data.log || tx('(empty)');
         pre.scrollTop = pre.scrollHeight;
     } catch (err) {
-        pre.textContent = `Protokoll nicht lesbar: ${err.message}`;
+        pre.textContent = tx('Log not readable: {err}', { err: err.message });
     }
 }
 
@@ -145,15 +145,15 @@ function statusPill(s) {
 }
 
 const IDENTITY_TEXT = {
-    none: 'Personen: speichert keine Daten pro Person -- kann mit anderen geteilt werden.',
-    single: 'Personen: speichert Daten nur für eine Person -- nur für dich, bis die App Daten pro Person trennt (docs/identity.md).',
-    multi: 'Personen: trennt Daten pro Person -- kann mit anderen geteilt werden.',
+    none: tx('People: keeps no data per person -- can be shared with others.'),
+    single: tx('People: keeps data for one person only -- only for you until the app separates data per person (docs/identity.md).'),
+    multi: tx('People: keeps data separate per person -- can be shared with others.'),
 };
 
 const EXPOSURE_LABELS = {
-    local: 'Nur dieser Rechner',
-    tailnet: 'Ganzes Tailnet',
-    owner: 'Nur ich (Tailscale)',
+    local: tx('This machine only'),
+    tailnet: tx('Whole tailnet'),
+    owner: tx('Only me (Tailscale)'),
 };
 let servicesTailscale = { available: false, owner: null };
 
@@ -170,18 +170,18 @@ function renderServiceCard(s) {
 
     const ex = (s.exposure && s.exposure.level) || 'local';
     parts.push(el('div', { class: 'pill-row' }, statusPill(s), maturityPill(s),
-        el('span', { class: 'pill', text: s.ui === false ? 'Dienst ohne eigene Seite' : (EXPOSURE_LABELS[ex] || ex) }),
-        doorShare(s) ? el('span', { class: 'pill pill-accent', text: 'Mit Login geteilt', title: doorShare(s).url }) : null,
+        el('span', { class: 'pill', text: s.ui === false ? tx('Service without its own page') : (EXPOSURE_LABELS[ex] || ex) }),
+        doorShare(s) ? el('span', { class: 'pill pill-accent', text: tx('Shared with login'), title: doorShare(s).url }) : null,
         el('span', { class: 'mono muted', text: `:${s.port}` })));
     const facts = servicesFacts[s.id] || [];
-    if (facts.length) parts.push(el('dl', { class: 'facts' }, ...facts.flatMap(f => [el('dt', { text: f.label }), el('dd', { text: f.value })])));
+    if (facts.length) parts.push(el('dl', { class: 'facts' }, ...facts.flatMap(f => [el('dt', { text: tx(f.label) }), el('dd', { text: tx(f.value) })])));
 
     for (const inst of s.instances) {
         if (inst.exposed && inst.exposed.length) {
             parts.push(el('div', { class: 'service-hint service-error', text:
-                `Lauscht auf ${inst.exposed.join(', ')} -- im LAN/Tailnet erreichbar, am Dashboard vorbei. Hier stoppen und von hier neu starten.` }));
+                tx('Listens on {addr} -- reachable in the LAN/tailnet, bypassing the dashboard. Stop it here and start it again from here.', { addr: inst.exposed.join(', ') }) }));
         }
-        if (inst.healthy === false) parts.push(el('div', { class: 'service-hint', text: `Kopie auf :${inst.ports.join(', :')} antwortet nicht gesund.` }));
+        if (inst.healthy === false) parts.push(el('div', { class: 'service-hint', text: tx('The copy on :{ports} doesn\'t answer healthy.', { ports: inst.ports.join(', :') }) }));
     }
 
     const actions = [];
@@ -190,25 +190,25 @@ function renderServiceCard(s) {
         if (open) actions.push(open);
         if (s.instances.length === 1) {
             const inst = s.instances[0];
-            actions.push(el('button', { class: 'btn btn-secondary btn-sm', text: 'Stoppen',
+            actions.push(el('button', { class: 'btn btn-secondary btn-sm', text: tx('Stop'),
                 onclick: () => { if (confirmStop(s, inst)) serviceAction(s.id, 'stop', { pid: inst.pid }); } }));
         }
     }
     const portBusy = s.instances.some(i => i.ports.includes(s.port));
     if (!portBusy) {
         actions.push(el('button', { class: 'btn btn-outline btn-sm', disabled: s.status === 'starting',
-                                    text: s.status === 'starting' ? 'Startet…' : 'Starten',
+                                    text: s.status === 'starting' ? tx('Starting…') : tx('Start'),
                                     onclick: () => serviceAction(s.id, 'start') }));
     }
     const more = el('button', { class: 'btn-icon-sm', 'aria-expanded': String(servicesOpenDetails.has(s.id)),
-                                title: 'Erreichbarkeit, Kopien, Protokoll', 'aria-label': `Mehr zu ${s.name}`, text: '⋯',
+                                title: tx('Reachability, copies, log'), 'aria-label': tx('More about {name}', { name: s.name }), text: '⋯',
                                 onclick: () => {
                                     if (servicesOpenDetails.has(s.id)) servicesOpenDetails.delete(s.id);
                                     else servicesOpenDetails.add(s.id);
                                     fetchServices();
                                 } });
     parts.push(el('div', { class: 'app-actions' }, ...actions, renderServiceAutostart(s), more));
-    if (s.instances.length > 1) parts.push(el('div', { class: 'service-hint', text: `${s.instances.length} Kopien laufen -- Details unter „⋯“.` }));
+    if (s.instances.length > 1) parts.push(el('div', { class: 'service-hint', text: tx('{n} copies running -- details under “⋯”.', { n: s.instances.length }) }));
     if (servicesOpenDetails.has(s.id)) parts.push(renderServiceDetails(s));
     return el('article', { class: 'app-card', 'data-service': s.id }, ...parts);
 }
@@ -219,23 +219,23 @@ function renderServiceDetails(s) {
         return el('div', { class: 'service-instance' },
             el('span', { class: 'mono', text: `:${inst.ports.join(', :')}` }),
             el('span', { text: `PID ${inst.pid}` }),
-            el('span', { text: `seit ${serviceUptime(inst.started_at)}` }),
-            inst.managed ? el('span', { class: 'pill', text: 'von hier gestartet' }) : null,
+            el('span', { text: tx('for {t}', { t: serviceUptime(inst.started_at) }) }),
+            inst.managed ? el('span', { class: 'pill', text: tx('started from here') }) : null,
             el('span', { class: 'spacer' }),
-            unreachable ? null : el('a', { class: 'btn btn-secondary btn-sm', href: url, target: '_blank', rel: 'noopener', text: 'Öffnen', title: url }),
-            el('button', { class: 'btn btn-danger btn-sm', text: 'Stoppen',
+            unreachable ? null : el('a', { class: 'btn btn-secondary btn-sm', href: url, target: '_blank', rel: 'noopener', text: tx('Open'), title: url }),
+            el('button', { class: 'btn btn-danger btn-sm', text: tx('Stop'),
                            onclick: () => { if (confirmStop(s, inst)) serviceAction(s.id, 'stop', { pid: inst.pid }); } }));
     });
     const pre = el('pre', { class: 'code-snippet service-log', hidden: !servicesOpenLogs.has(s.id) });
     if (servicesOpenLogs.has(s.id)) loadServiceLog(s.id, pre);
     return el('div', { class: 'app-details' },
         ...rows,
-        s.ui === false ? el('div', { class: 'muted small', text: 'Ein Dienst für andere Apps, ohne eigene Seite -- bleibt auf diesem Rechner (keine Tailscale-Freigabe).' })
+        s.ui === false ? el('div', { class: 'muted small', text: tx('A service for other apps, without a page of its own -- stays on this machine (no Tailscale sharing).') })
                        : renderServiceExposure(s),
         s.ui === false ? null : renderServiceDoor(s),
         el('div', { class: 'muted small', text: IDENTITY_TEXT[s.identity] || '' }),
-        el('div', { class: 'service-dir', text: s.project_dir, title: `gefunden über ${s.source}` }),
-        s.has_log ? el('button', { class: 'btn btn-secondary btn-sm', text: 'Protokoll', onclick: () => toggleServiceLog(s.id, pre) }) : null,
+        el('div', { class: 'service-dir', text: s.project_dir, title: tx('found through {src}', { src: s.source }) }),
+        s.has_log ? el('button', { class: 'btn btn-secondary btn-sm', text: tx('Log'), onclick: () => toggleServiceLog(s.id, pre) }) : null,
         pre);
 }
 
@@ -246,34 +246,34 @@ function renderServiceAutostart(s) {
             box.disabled = true;
             try {
                 await api(`/api/services/${encodeURIComponent(s.id)}/autostart`, 'POST', { enabled: e.target.checked });
-                addLog(`App ${s.id}: Autostart ${e.target.checked ? 'an' : 'aus'}`, 'system');
+                addLog(e.target.checked ? tx('App {id}: autostart on', { id: s.id }) : tx('App {id}: autostart off', { id: s.id }), 'system');
             } catch (err) {
-                addLog(`App ${s.id}: Autostart-Änderung fehlgeschlagen -- ${err.message}`, 'error');
+                addLog(tx('App {id}: changing autostart failed -- {err}', { id: s.id, err: err.message }), 'error');
                 alertServiceError(err.message);
             }
             fetchServices();
         },
     });
     box.checked = !!s.autostart;
-    return el('label', { class: 'app-autostart', title: 'Startet mit dem ai-serve-Backend' }, box, el('span', { text: 'Autostart' }));
+    return el('label', { class: 'app-autostart', title: tx('Starts with the ai-serve backend') }, box, el('span', { text: tx('Autostart') }));
 }
 
 function renderServiceExposure(s) {
     const ex = s.exposure || { level: 'local' };
     const select = el('select', {
         class: 'service-exposure-select',
-        title: 'Wer die App über Tailscale erreicht (nie das öffentliche Internet)',
+        title: tx('Who reaches the app through Tailscale (never the public internet)'),
         onchange: (e) => setServiceExposure(s, e.target.value, select, ex.level),
     });
     for (const [value, label] of Object.entries(EXPOSURE_LABELS)) {
         // docs/identity.md: an app that keeps one person's data is only for the owner
         const single = value === 'tailnet' && s.identity === 'single';
         const disabled = (value !== 'local' && !servicesTailscale.available) || single;
-        const opt = el('option', { value, text: single ? `${label} (nur mit Daten pro Person)` : label, disabled });
+        const opt = el('option', { value, text: single ? tx('{label} (only with data per person)', { label }) : label, disabled });
         if (value === ex.level) opt.selected = true;
         select.append(opt);
     }
-    const parts = [el('div', { class: 'service-exposure-row' }, el('span', { text: 'Erreichbar für' }), select)];
+    const parts = [el('div', { class: 'service-exposure-row' }, el('span', { text: tx('Reachable for') }), select)];
     if (ex.url) parts.push(el('a', { class: 'service-exposure-url', href: ex.url, target: '_blank', rel: 'noopener', text: ex.url }));
     if (ex.warning) parts.push(el('div', { class: 'service-hint', text: ex.warning }));
     if (ex.error) parts.push(el('div', { class: 'service-hint service-error', text: ex.error }));
@@ -283,9 +283,9 @@ function renderServiceExposure(s) {
 async function setServiceExposure(s, level, select, previous) {
     if (level !== 'local') {
         const who = level === 'owner'
-            ? `nur die Geräte von ${servicesTailscale.owner}`
-            : 'jedes Gerät im Tailnet (auch von anderen geteilte Geräte)';
-        if (!window.confirm(`${s.name} erreichbar machen für ${who}?`)) {
+            ? tx('only the devices of {owner}', { owner: servicesTailscale.owner })
+            : tx('every device in the tailnet (including devices shared by others)');
+        if (!window.confirm(tx('Make {name} reachable for {who}?', { name: s.name, who }))) {
             select.value = previous;
             return;
         }
@@ -293,9 +293,9 @@ async function setServiceExposure(s, level, select, previous) {
     select.disabled = true;
     try {
         await api(`/api/services/${encodeURIComponent(s.id)}/exposure`, 'POST', { level });
-        addLog(`App ${s.id}: Erreichbarkeit ${level}`, 'system');
+        addLog(tx('App {id}: reachability {level}', { id: s.id, level }), 'system');
     } catch (err) {
-        addLog(`App ${s.id}: Erreichbarkeit nicht geändert -- ${err.message}`, 'error');
+        addLog(tx('App {id}: reachability not changed -- {err}', { id: s.id, err: err.message }), 'error');
         alertServiceError(err.message);
     }
     fetchServices();
@@ -314,7 +314,7 @@ function doorShare(s) {
 }
 
 function doorPeopleLabel(sub) {
-    if (servicesDoor && sub === servicesDoor.owner) return 'Ich';
+    if (servicesDoor && sub === servicesDoor.owner) return tx('Me');
     const p = (servicesDoor?.people || []).find(x => x.sub === sub);
     return p && p.name ? `${p.name} (${sub})` : sub;
 }
@@ -322,10 +322,10 @@ function doorPeopleLabel(sub) {
 function renderServiceDoor(s) {
     if (servicesDoor && servicesDoor.configured === false) return document.createDocumentFragment();   // optional extension, not set up
     const box = el('div', { class: 'service-exposure door-share' },
-        el('div', { class: 'service-exposure-row' }, el('strong', { text: 'Von außen, mit Nextcloud-Login' })));
+        el('div', { class: 'service-exposure-row' }, el('strong', { text: tx('From outside, with Nextcloud login') })));
     if (!servicesDoor) return box;
     if (!servicesDoor.available) {
-        box.append(el('div', { class: 'muted small', text: 'Der Türsteher (edge-door) läuft gerade nicht.' }));
+        box.append(el('div', { class: 'muted small', text: tx('The door (edge-door) isn\'t running right now.') }));
     }
     const share = doorShare(s);
     const draft = servicesDoorDrafts.get(s.id);
@@ -334,21 +334,21 @@ function renderServiceDoor(s) {
         return box;
     }
     if (share) {
-        const who = [...share.groups.map(g => `Gruppe ${g}`), ...share.users.map(doorPeopleLabel)].join(', ');
+        const who = [...share.groups.map(g => tx('group {g}', { g })), ...share.users.map(doorPeopleLabel)].join(', ');
         box.append(el('a', { class: 'service-exposure-url', href: share.url, target: '_blank', rel: 'noopener', text: share.url }),
-                   el('div', { class: 'small', text: `Für: ${who}` }));
-        if (share.error) box.append(el('div', { class: 'service-hint service-error', text: `Nicht aktiv: ${share.error}` }));
+                   el('div', { class: 'small', text: tx('For: {who}', { who }) }));
+        if (share.error) box.append(el('div', { class: 'service-hint service-error', text: tx('Not active: {err}', { err: share.error }) }));
         box.append(el('div', { class: 'app-actions' },
-            el('button', { class: 'btn btn-secondary btn-sm', text: 'Ändern', onclick: () => {
+            el('button', { class: 'btn btn-secondary btn-sm', text: tx('Change'), onclick: () => {
                 servicesDoorDrafts.set(s.id, { name: share.name, groups: new Set(share.groups), users: new Set(share.users) });
                 doorRerender();
             } }),
-            el('button', { class: 'btn btn-danger btn-sm', text: 'Nicht mehr teilen', onclick: () => deleteDoorShare(s) })));
+            el('button', { class: 'btn btn-danger btn-sm', text: tx('Stop sharing'), onclick: () => deleteDoorShare(s) })));
     } else {
         box.append(el('div', { class: 'muted small', text: s.identity === 'single'
-            ? 'Diese App trennt Daten nicht pro Person – sie lässt sich nur für dich selbst von unterwegs freigeben.'
-            : 'Bekannte melden sich mit ihrem Nextcloud-Konto an und haben hier ihre eigenen Daten.' }),
-            el('div', { class: 'app-actions' }, el('button', { class: 'btn btn-outline btn-sm', text: 'Freigeben …',
+            ? tx('This app doesn\'t separate data per person – it can only be shared for yourself, to use on the go.')
+            : tx('People you know sign in with their Nextcloud account and have their own data here.') }),
+            el('div', { class: 'app-actions' }, el('button', { class: 'btn btn-outline btn-sm', text: tx('Share …'),
                 disabled: s.identity === 'single' && !servicesDoor.owner,
                 onclick: () => {
                     const single = s.identity === 'single';
@@ -365,7 +365,7 @@ function renderServiceDoor(s) {
 function renderDoorEditor(s, draft) {
     const single = s.identity === 'single';
     const name = el('input', { type: 'text', class: 'door-name', value: draft.name, maxlength: '31',
-                               'aria-label': 'Adresse', oninput: (e) => { draft.name = e.target.value.trim().toLowerCase(); } });
+                               'aria-label': tx('Address'), oninput: (e) => { draft.name = e.target.value.trim().toLowerCase(); } });
     const parts = [el('label', { class: 'door-address' }, el('span', { class: 'mono', text: 'https://' }), name,
                       el('span', { class: 'mono', text: `.${servicesDoor.domain}/` }))];
     const check = (set, value, label, disabled = false) => {
@@ -374,7 +374,7 @@ function renderDoorEditor(s, draft) {
         return el('label', { class: 'door-check' }, c, el('span', { text: label }));
     };
     if (single) {
-        parts.push(el('div', { class: 'small', text: `Nur für dich (${servicesDoor.owner}) – die App trennt Daten nicht pro Person.` }));
+        parts.push(el('div', { class: 'small', text: tx('Only for you ({owner}) – the app doesn\'t separate data per person.', { owner: servicesDoor.owner }) }));
     } else {
         const groups = new Set(['apps', ...draft.groups]);
         for (const p of servicesDoor.people || []) for (const g of p.groups || []) groups.add(g);
@@ -384,42 +384,42 @@ function renderDoorEditor(s, draft) {
             return el('span', { class: 'door-add-row' }, input, el('button', { class: 'btn btn-secondary btn-sm', text: '+', type: 'button',
                 onclick: () => { const v = input.value.trim(); if (v) { set.add(v); doorRerender(); } } }));
         };
-        parts.push(el('div', { class: 'door-col' }, el('div', { class: 'muted small', text: 'Nextcloud-Gruppen' }),
-                      ...[...groups].sort().map(g => check(draft.groups, g, g)), addField('weitere Gruppe', draft.groups)),
-                   el('div', { class: 'door-col' }, el('div', { class: 'muted small', text: 'Personen (Nextcloud-Konto)' }),
-                      ...[...people].sort().map(u => check(draft.users, u, doorPeopleLabel(u))), addField('Kontoname', draft.users),
-                      el('div', { class: 'muted small', text: 'Hier erscheint, wer sich schon einmal angemeldet hat; andere per Kontoname hinzufügen.' })));
+        parts.push(el('div', { class: 'door-col' }, el('div', { class: 'muted small', text: tx('Nextcloud groups') }),
+                      ...[...groups].sort().map(g => check(draft.groups, g, g)), addField(tx('another group'), draft.groups)),
+                   el('div', { class: 'door-col' }, el('div', { class: 'muted small', text: tx('People (Nextcloud account)') }),
+                      ...[...people].sort().map(u => check(draft.users, u, doorPeopleLabel(u))), addField(tx('account name'), draft.users),
+                      el('div', { class: 'muted small', text: tx('Everyone who has signed in before shows up here; add others by account name.') })));
     }
     parts.push(el('div', { class: 'app-actions' },
-        el('button', { class: 'btn btn-primary btn-sm', text: 'Speichern', onclick: () => saveDoorShare(s, draft) }),
-        el('button', { class: 'btn btn-secondary btn-sm', text: 'Abbrechen', onclick: () => { servicesDoorDrafts.delete(s.id); doorRerender(); } })));
+        el('button', { class: 'btn btn-primary btn-sm', text: tx('Save'), onclick: () => saveDoorShare(s, draft) }),
+        el('button', { class: 'btn btn-secondary btn-sm', text: tx('Cancel'), onclick: () => { servicesDoorDrafts.delete(s.id); doorRerender(); } })));
     return el('div', { class: 'door-editor' }, ...parts);
 }
 
 async function saveDoorShare(s, draft) {
     const body = { name: draft.name, groups: [...draft.groups], users: [...draft.users] };
-    const who = [...body.groups.map(g => `alle in Gruppe „${g}“`), ...body.users.map(doorPeopleLabel)].join(', ');
-    if (!window.confirm(`${s.name} unter https://${draft.name}.${servicesDoor.domain}/ freigeben für: ${who || 'niemand'}?`)) return;
+    const who = [...body.groups.map(g => tx('everyone in group “{g}”', { g })), ...body.users.map(doorPeopleLabel)].join(', ');
+    if (!window.confirm(tx('Share {name} at https://{host}/ for: {who}?', { name: s.name, host: `${draft.name}.${servicesDoor.domain}`, who: who || tx('nobody') }))) return;
     try {
         const r = await api(`/api/door/shares/${encodeURIComponent(s.id)}`, 'PUT', body);
         servicesDoorDrafts.delete(s.id);
-        addLog(`App ${s.id}: von außen freigegeben (${r.share.url})`, 'system');
+        addLog(tx('App {id}: shared from outside ({url})', { id: s.id, url: r.share.url }), 'system');
         if (r.door_error) alertServiceError(r.door_error);
         if (r.restart_needed && s.instances.length) {
-            alertServiceError(`${s.name} bitte einmal stoppen und neu starten, damit sie Anmeldungen unter der neuen Adresse erkennt.`);
+            alertServiceError(tx('Please stop and start {name} once so it recognises sign-ins at the new address.', { name: s.name }));
         }
     } catch (err) {
-        addLog(`App ${s.id}: Freigabe nicht gespeichert -- ${err.message}`, 'error');
+        addLog(tx('App {id}: share not saved -- {err}', { id: s.id, err: err.message }), 'error');
         alertServiceError(err.message);
     }
     fetchServices();
 }
 
 async function deleteDoorShare(s) {
-    if (!window.confirm(`${s.name} nicht mehr von außen freigeben? Wer gerade angemeldet ist, kommt danach nicht mehr hinein.`)) return;
+    if (!window.confirm(tx('Stop sharing {name} from outside? Whoever is signed in right now won\'t get in afterwards.', { name: s.name }))) return;
     try {
         await api(`/api/door/shares/${encodeURIComponent(s.id)}`, 'DELETE');
-        addLog(`App ${s.id}: Freigabe von außen beendet`, 'system');
+        addLog(tx('App {id}: no longer shared from outside', { id: s.id }), 'system');
     } catch (err) {
         alertServiceError(err.message);
     }
@@ -429,7 +429,7 @@ async function deleteDoorShare(s) {
 function confirmStop(s, inst) {
     // Instances not started from here may belong to someone's terminal session.
     if (inst.managed) return true;
-    return window.confirm(`${s.name} (PID ${inst.pid}, Port ${inst.ports.join(', ')}) wurde nicht von diesem Dashboard gestartet. Trotzdem stoppen?`);
+    return window.confirm(tx('{name} (PID {pid}, port {ports}) wasn\'t started from this dashboard. Stop it anyway?', { name: s.name, pid: inst.pid, ports: inst.ports.join(', ') }));
 }
 
 function renderServices(data) {
@@ -446,10 +446,10 @@ function renderServices(data) {
         class: `chip${key === servicesFilter ? ' chip-active' : ''}`, 'aria-pressed': String(key === servicesFilter),
         onclick: () => { servicesFilter = key; renderServices(servicesLast); } },
         el('span', { text: label }), el('span', { class: 'chip-count', text: String(count) }));
-    filters.replaceChildren(chip('all', 'Alle', services.length), ...groups.map(g => chip(g.key, g.label, g.items.length)));
+    filters.replaceChildren(chip('all', tx('All'), services.length), ...groups.map(g => chip(g.key, g.label, g.items.length)));
 
     if (!data.services.length) {
-        list.replaceChildren(el('div', { class: 'empty-state', text: 'Noch keine Apps -- ein Projekt mit llama-serve.service.json in einem Service-Ordner anlegen.' }));
+        list.replaceChildren(el('div', { class: 'empty-state', text: tx('No apps yet -- put a project with a llama-serve.service.json into a service folder.') }));
         return;
     }
     // keep a card the user is working in (open dropdown, focused field)
@@ -463,7 +463,7 @@ function renderServices(data) {
             const busy = prev && ((prev.contains(active) && active !== document.body) || prev.querySelector('.door-editor input:focus'));
             return busy ? prev : renderServiceCard(s);
         })))));
-    if (!shown.length) list.replaceChildren(el('div', { class: 'empty-state', text: 'Keine App passt zur Suche.' }));
+    if (!shown.length) list.replaceChildren(el('div', { class: 'empty-state', text: tx('No app matches the search.') }));
 }
 
 async function fetchServices() {
@@ -490,7 +490,7 @@ async function fetchServices() {
             errors.replaceChildren();
         }
     } catch (err) {
-        list.replaceChildren(el('div', { class: 'empty-state', text: `Apps nicht ladbar: ${err.message}` }));
+        list.replaceChildren(el('div', { class: 'empty-state', text: tx('Couldn\'t load apps: {err}', { err: err.message }) }));
     }
 }
 

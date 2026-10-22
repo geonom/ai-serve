@@ -207,7 +207,7 @@ class LocalGpuManager:
             raise PermissionError(f"{c.label} can't be unloaded from here")
         logger.info(f"GPU manager: unloaded {c.label} ({c.id})")
         from backend import events
-        events.record("gpu", f"{c.label} aus dem GPU-Speicher entladen")
+        events.record("gpu", "{label} unloaded from GPU memory", label=c.label)
 
     async def room(self) -> Dict[int, int]:
         """MB that could be had on each GPU right now without unloading anyone: hardware-free minus what

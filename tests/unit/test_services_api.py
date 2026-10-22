@@ -412,5 +412,5 @@ def test_single_app_refused_for_whole_tailnet(client, project, exposure):
     s, _ = _service(client)
     assert s["identity"] == "single"
     r = _set(client, "tailnet")
-    assert r.status_code == 400 and "Nur ich" in r.json()["detail"]
+    assert r.status_code == 400 and "Only me" in r.json()["detail"]
     assert _set(client, "owner").status_code == 200

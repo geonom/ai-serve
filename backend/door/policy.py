@@ -49,13 +49,13 @@ def _principals(value: Any) -> Tuple[str, ...]:
     if value is None:
         return ()
     if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) and _PRINCIPAL.match(v) for v in value):
-        raise DoorError("Gruppen und Personen: nur Buchstaben, Ziffern und _ . @ -")
+        raise DoorError("Groups and people: only letters, digits and _ . @ -")
     return tuple(dict.fromkeys(value))
 
 
 def make_share(app: str, name: Any, groups: Any, users: Any) -> Share:
     if not isinstance(name, str) or not _NAME.match(name) or name in RESERVED:
-        raise DoorError("Adresse: nur Kleinbuchstaben, Ziffern und Bindestrich (nicht login/www)")
+        raise DoorError("Address: only lowercase letters, digits and hyphens (not login/www)")
     return Share(app=app, name=name, groups=_principals(groups), users=_principals(users))
 
 
@@ -63,16 +63,16 @@ def check_share(m: ServiceManifest, s: Share, *, owner: Optional[str], taken: Ma
     """Raises DoorError if the share must not exist. `taken`: name -> app id of the other shares."""
     make_share(s.app, s.name, list(s.groups), list(s.users))  # shape (also for Share built elsewhere)
     if not m.ui:
-        raise DoorError(f"{m.name} hat keine eigene Seite und wird nicht nach außen freigegeben.")
+        raise DoorError(f"{m.name} has no page of its own and is never shared outside.")
     if m.port in FORBIDDEN_PORTS:
-        raise DoorError(f"Port {m.port} wird nie nach außen freigegeben.")
+        raise DoorError(f"Port {m.port} is never shared outside.")
     if taken.get(s.name, s.app) != s.app:
-        raise DoorError(f"Die Adresse {s.name} gehört schon zu {taken[s.name]}.")
+        raise DoorError(f"The address {s.name} already belongs to {taken[s.name]}.")
     if not s.groups and not s.users:
-        raise DoorError("Wähle mindestens eine Gruppe oder Person.")
+        raise DoorError("Choose at least one group or person.")
     if m.identity == "single":
         if not owner or s.groups or s.users != (owner,):
-            raise DoorError(f"{m.name} trennt Daten nicht pro Person – nur für dich freigebbar.")
+            raise DoorError(f"{m.name} doesn't separate data per person – it can only be shared with you.")
 
 
 def parse_shares(data: Any) -> Tuple[Dict[str, Share], List[str]]:
@@ -99,7 +99,7 @@ def routes_doc(shares: Mapping[str, Share], manifests: Mapping[str, ServiceManif
     for app, s in sorted(shares.items()):
         m = manifests.get(app)
         if m is None:
-            errors[app] = "App nicht mehr registriert"
+            errors[app] = "App no longer registered"
             continue
         try:
             check_share(m, s, owner=owner, taken=taken)

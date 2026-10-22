@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
+createRequire(import.meta.url)('../static/i18n.js');   // tx() -- English in node
 const M = createRequire(import.meta.url)('../static/models.js');
 const row = (id, over = {}) => ({ id, label: id, quant: null, kind: 'chat', vision: false, thinking: false, mtp: false,
                                   exclusive: false, loaded: false, context_length: 8192, where: [{ place: 'local', loaded: false }], ...over });
@@ -18,11 +19,11 @@ const MODELS = [
 test('groups: running, Strata, here, devices -- and no embedding or base models', () => {
     const g = M.groups(MODELS);
     assert.deepEqual(g.map(x => [x.label, x.options.map(o => o.value)]), [
-        ['Läuft gerade', ['gemma']], ['Exklusiv (belegt alle Grafikkarten)', ['strata']],
-        ['Auf dem Gateway-Rechner', ['granite']], ['Auf anderen Rechnern im Netzwerk', ['qwen-mac', 'tiny-pi']]]);
+        ['Running now', ['gemma']], ['Exclusive (takes all graphics cards)', ['strata']],
+        ['On the gateway machine', ['granite']], ['On other machines in the network', ['qwen-mac', 'tiny-pi']]]);
     assert.equal(g[3].options[1].disabled, true);      // only on an offline device
     assert.equal(g[3].options[0].text, 'qwen-mac @ macbook');
-    assert.equal(g[0].options[0].text, 'gemma · Q4_K_M (Bild, Denken)');
+    assert.equal(g[0].options[0].text, 'gemma · Q4_K_M (image, thinking)');
 });
 
 test('context: the running instance first, else what the model was trained for', () => {
@@ -32,7 +33,7 @@ test('context: the running instance first, else what the model was trained for',
 });
 
 test('notes for Strata and device-only models', () => {
-    assert.match(M.note(MODELS[1]), /Strata belegt alle Grafikkarten/);
-    assert.match(M.note(MODELS[3]), /nur auf macbook/);
+    assert.match(M.note(MODELS[1]), /Strata takes all graphics cards/);
+    assert.match(M.note(MODELS[3]), /Only on macbook/);
     assert.equal(M.note(MODELS[2]), '');
 });

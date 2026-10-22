@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
+createRequire(import.meta.url)('../static/i18n.js');   // tx() -- English in node
 const R = createRequire(import.meta.url)('../static/overview.js');
 const local = { place: 'local', loaded: false };
 const LLM = [
@@ -22,17 +23,17 @@ const AUDIO = { tts: { available: true, engines: [{ label: 'CosyVoice 3' }] },
 
 test('cards describe what the gateway offers now', () => {
     const c = Object.fromEntries(R.cards(LLM, IMG, AUDIO).map(x => [x.tab, x]));
-    assert.deepEqual(c.gateway.facts, ['4 Chat-Modelle', '2 verstehen Bilder', 'Strata (sehr groß, belegt alle Grafikkarten)',
-                                       '1 nur auf anderen Rechnern im Netzwerk', 'geladen: gemma']);     // pi offline: not counted
-    assert.deepEqual(c.texts.facts, ['1 Embedding-Modell', '0 Rerank-Modelle']);
+    assert.deepEqual(c.gateway.facts, ['4 chat models', '2 understand images', 'Strata (very large, takes all graphics cards)',
+                                       '1 only on other machines in the network', 'loaded: gemma']);     // pi offline: not counted
+    assert.deepEqual(c.texts.facts, ['1 embedding model', '0 rerank models']);
     assert.equal(c.docs.ok, true);
-    assert.deepEqual(c['image-gen'].facts, ['2 Bildmodelle', '1 zum Bearbeiten', '1 für Stil']);   // not installed: out
+    assert.deepEqual(c['image-gen'].facts, ['2 image models', '1 for editing', '1 for style']);   // not installed: out
     assert.equal(c.layout.ok, true);
-    assert.deepEqual(c.speech.facts, ['Sprechen: CosyVoice 3', 'Abschreiben: WhisperX']);
+    assert.deepEqual(c.speech.facts, ['Speaking: CosyVoice 3', 'Transcribing: WhisperX']);
 });
 
 test('a gateway that does not answer', () => {
     const c = R.cards(null, null, null);
     assert.ok(c.filter(x => x.tab !== 'mine').every(x => !x.ok));
-    assert.deepEqual(c[0].facts, ['Gateway gerade nicht erreichbar.']);
+    assert.deepEqual(c[0].facts, ['Gateway unreachable right now.']);
 });

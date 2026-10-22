@@ -1,88 +1,89 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="light">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ai-serve</title>
     <link rel="stylesheet" href="style.css?v=1.4">
-    <link rel="stylesheet" href="redesign.css?v=1">
+    <link rel="stylesheet" href="redesign.css?v=2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <div class="app-shell">
-    <aside class="side-nav" aria-label="Hauptnavigation">
+    <aside class="side-nav" aria-label="Main navigation">
         <div class="side-brand">
             <div class="side-brand-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></div>
-            <div class="side-brand-text"><span class="side-brand-name">ai-serve</span><span id="side-host" class="side-brand-host">Koordinator</span></div>
+            <div class="side-brand-text"><span class="side-brand-name">ai-serve</span><span id="side-host" class="side-brand-host">Coordinator</span></div>
         </div>
         <nav class="tabs side-tabs">
-            <button class="tab-link active" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>Übersicht</button>
-            <span class="side-group">Ressourcen</span>
-            <button class="tab-link" data-tab="compute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>Rechner &amp; Modelle<span id="side-count-compute" class="side-count"></span></button>
+            <button class="tab-link active" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></svg>Overview</button>
+            <span class="side-group">Resources</span>
+            <button class="tab-link" data-tab="compute"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>Compute &amp; models<span id="side-count-compute" class="side-count"></span></button>
             <span class="side-group">Apps</span>
             <button class="tab-link" data-tab="services"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Apps &amp; Services<span id="side-count-services" class="side-count"></span></button>
             <span class="side-group">System</span>
-            <button class="tab-link" data-tab="api-doc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg>Zugang &amp; API</button>
-            <button class="tab-link" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>Protokolle</button>
+            <button class="tab-link" data-tab="api-doc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg>Access &amp; API</button>
+            <button class="tab-link" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>Logs</button>
         </nav>
         <div class="side-footer">
             <div class="status-indicators-container">
                 <div id="status-backend" class="status-indicator offline" title="Backend"><span class="dot"></span><span class="status-label">Gateway</span></div>
                 <div id="status-comfyui" class="status-indicator offline" title="ComfyUI"><span class="dot"></span><span class="status-label">ComfyUI</span></div>
             </div>
-            <button id="theme-toggle" class="side-theme" title="Hell/Dunkel umschalten">Hell / Dunkel</button>
+            <button id="theme-toggle" class="side-theme" title="Switch light/dark">Light / dark</button>
         </div>
     </aside>
     <main class="container">
+        <div class="lang-bar" id="lang-bar"></div>
 
         <section id="overview-tab" class="tab-content active">
             <header class="page-head">
                 <div>
-                    <h1>Übersicht</h1>
-                    <p class="page-sub" id="overview-sub">Alles, was gerade läuft &mdash; auf einen Blick.</p>
+                    <h1>Overview</h1>
+                    <p class="page-sub" id="overview-sub">Everything that's running right now &mdash; at a glance.</p>
                 </div>
                 <div class="page-actions">
-                    <button id="overview-arrange-btn" class="btn btn-secondary" aria-pressed="false">Anordnen</button>
-                    <button class="btn btn-secondary" data-goto="services">Zur App-Übersicht</button>
-                    <button class="btn btn-primary" data-goto="compute">Modell laden</button>
+                    <button id="overview-arrange-btn" class="btn btn-secondary" aria-pressed="false">Arrange</button>
+                    <button class="btn btn-secondary" data-goto="services">Go to the apps</button>
+                    <button class="btn btn-primary" data-goto="compute">Load a model</button>
                 </div>
             </header>
             <div id="overview-arrange-bar" class="arrange-bar" hidden></div>
-            <div id="overview-widgets" class="widget-flow"><div class="empty-state">Lade…</div></div>
+            <div id="overview-widgets" class="widget-flow"><div class="empty-state">Loading…</div></div>
         </section>
 
         <section id="compute-tab" class="tab-content">
             <header class="page-head">
                 <div>
-                    <h1>Rechner &amp; Modelle</h1>
-                    <p class="page-sub">Alle Beschleuniger an einem Ort: dieser Rechner und die anderen Geräte im privaten Netz. Eine Anfrage läuft hier, wenn Platz ist, sonst auf einem anderen Gerät. Braucht etwas Platz, wird der am längsten untätige Verbraucher entladen &mdash; festgehaltene und beschäftigte nie, Dateien nie.</p>
+                    <h1>Compute &amp; models</h1>
+                    <p class="page-sub">All accelerators in one place: this machine and the other devices in your private network. A request runs here when there's room, otherwise on another device. When something needs room, the consumer that has been idle longest is unloaded &mdash; never pinned or busy ones, never files.</p>
                 </div>
                 <div class="page-actions">
-                    <button id="devices-add-btn" class="btn btn-secondary">Rechner hinzufügen</button>
-                    <button id="compute-launch-btn" class="btn btn-primary">Modell laden</button>
+                    <button id="devices-add-btn" class="btn btn-secondary">Add a machine</button>
+                    <button id="compute-launch-btn" class="btn btn-primary">Load a model</button>
                 </div>
             </header>
-            <div id="compute-filters" class="chip-row" role="group" aria-label="Anzeigen"></div>
+            <div id="compute-filters" class="chip-row" role="group" aria-label="Show"></div>
             <div id="devices-messages"></div>
             <div id="devices-enroll"></div>
             <div id="compute-local"></div>
             <div id="devices-list" class="machine-list"></div>
             <div id="devices-copies"></div>
-            <section class="r-card" aria-label="Modelle">
-                <div class="r-card-head"><h2>Modelle <span class="muted">auf allen Rechnern</span></h2>
-                    <input id="compute-model-search" type="search" class="r-input" placeholder="Modell suchen" aria-label="Modell suchen"></div>
-                <div id="compute-models"><div class="empty-state">Lade…</div></div>
+            <section class="r-card" aria-label="Models">
+                <div class="r-card-head"><h2 data-i18n>Models <span class="muted">on all machines</span></h2>
+                    <input id="compute-model-search" type="search" class="r-input" placeholder="Search models" aria-label="Search models"></div>
+                <div id="compute-models"><div class="empty-state">Loading…</div></div>
                 <div id="devices-place"></div>
             </section>
-            <section class="r-card" aria-label="Weitere Modellserver">
-                <div class="r-card-head"><h2>Weitere Modellserver <span class="muted">Ollama, LM Studio, llama-server …</span></h2></div>
-                <p class="muted">Läuft auf diesem Rechner schon ein OpenAI-kompatibler Server, kann ai-serve seine Modelle mitbenutzen: Sie erscheinen in den Modelllisten aller Apps, Anfragen gehen direkt dorthin. Der Server bleibt deiner &mdash; ai-serve startet, stoppt und entlädt ihn nie.</p>
-                <div id="model-servers"><div class="empty-state">Lade…</div></div>
+            <section class="r-card" aria-label="More model servers">
+                <div class="r-card-head"><h2 data-i18n>More model servers <span class="muted">Ollama, LM Studio, llama-server …</span></h2></div>
+                <p class="muted">If an OpenAI-compatible server already runs on this machine, ai-serve can use its models too: they show up in every app's model lists, and requests go straight there. The server stays yours &mdash; ai-serve never starts, stops or unloads it.</p>
+                <div id="model-servers"><div class="empty-state">Loading…</div></div>
             </section>
             <details id="compute-launch" class="r-details">
-                <summary>Modell manuell starten (Port, GPU, Kontext, Vision, MTP)</summary>
+                <summary>Start a model by hand (port, GPU, context, vision, MTP)</summary>
                 <div class="card add-card">
                         <div class="card-header">
                             <h2>Launch Model Server</h2>
@@ -150,7 +151,7 @@
                     </div>
             </details>
             <details class="r-details">
-                <summary>Laufende Modell-Server im Detail</summary>
+                <summary>Running model servers in detail</summary>
                 <div class="card gpu-status-card">
                         <div class="card-header">
                             <h2>GPU Resources</h2>
@@ -169,7 +170,7 @@
                     </div>
             </details>
             <details class="r-details">
-                <summary>Funktioniert alles? (Selbsttest)</summary>
+                <summary>Does everything work? (self-test)</summary>
                 <div class="card" style="margin-top: 1.5rem;">
                 <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center;">
                     <div>
@@ -228,16 +229,16 @@
             <header class="page-head">
                 <div>
                     <h1>Apps &amp; Services</h1>
-                    <p class="page-sub">Alle Projekte, die den Gateway nutzen &mdash; gefunden über ihr <code>llama-serve.service.json</code> in <span id="services-roots">den Service-Ordnern</span> (<a href="/api/services/manifest-schema" target="_blank">Schema</a>, Anleitung in <code>docs/service-manifest.md</code>). Auch im Terminal gestartete Kopien werden erkannt. Erreichbarkeit über Tailscale nur privat, nie öffentlich.</p>
+                    <p class="page-sub" data-i18n>All projects that use the gateway &mdash; found through their <code>llama-serve.service.json</code> in <span id="services-roots">the service folders</span> (<a href="/api/services/manifest-schema" target="_blank">schema</a>, guide in <code>docs/service-manifest.md</code>). Copies started in a terminal are recognised too. Reachability through Tailscale is private only, never public.</p>
                 </div>
                 <div class="page-actions">
-                    <input id="services-search" type="search" class="r-input" placeholder="App suchen" aria-label="App suchen">
-                    <button id="services-refresh-btn" class="btn btn-secondary">Aktualisieren</button>
+                    <input id="services-search" type="search" class="r-input" placeholder="Search apps" aria-label="Search apps">
+                    <button id="services-refresh-btn" class="btn btn-secondary">Refresh</button>
                 </div>
             </header>
-            <div id="services-filters" class="chip-row" role="group" aria-label="Kategorie"></div>
+            <div id="services-filters" class="chip-row" role="group" aria-label="Category"></div>
             <div id="services-errors"></div>
-            <div id="services-list"><div class="empty-state">Lade…</div></div>
+            <div id="services-list"><div class="empty-state">Loading…</div></div>
         </section>
 
 
@@ -246,10 +247,10 @@
             <div class="card" id="door-security-card">
                 <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
                     <div>
-                        <h2>Tür: Zugriffe und Abweisungen</h2>
-                        <p class="subtitle">Was apps.example.org pro Tag durchgelassen und abgewiesen hat – aus dem Log des Türstehers.</p>
+                        <h2>Door: access and refusals</h2>
+                        <p class="subtitle">What the door let through and turned away per day – from its log.</p>
                     </div>
-                    <button type="button" id="door-sec-reload" class="btn btn-secondary btn-sm">Aktualisieren</button>
+                    <button type="button" id="door-sec-reload" class="btn btn-secondary btn-sm">Refresh</button>
                 </div>
                 <div id="door-sec-alarm" class="door-sec-alarm" role="status"></div>
                 <div id="door-sec-table" style="overflow-x:auto;"></div>
@@ -273,10 +274,10 @@
         </section>
 
         <section id="logs-tab" class="tab-content">
-            <header class="page-head"><div><h1>Protokolle</h1><p class="page-sub">Was dieses Dashboard getan hat. Die vollständigen Logs liegen in <code>logs/</code>.</p></div></header>
+            <header class="page-head"><div><h1>Logs</h1><p class="page-sub" data-i18n>What this dashboard has done. The full logs are in <code>logs/</code>.</p></div></header>
             <div class="logs-section">
             <div class="card-header" style="padding: 0 0.5rem 0.5rem 0.5rem;">
-                <h3 style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Konsole</h3>
+                <h3 style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Console</h3>
             </div>
             <div id="logs-viewport" class="logs-viewport">
                 <!-- System logs will stream here -->
@@ -307,13 +308,16 @@
         </div>
     </div>
 
-    <script src="app.js?v=3.16"></script>
-    <script src="services.js?v=10"></script>
-    <script src="devices.js?v=8"></script>
-    <script src="icons.js?v=2"></script>
-    <script src="compute.js?v=2"></script>
-    <script src="modelservers.js?v=2"></script>
-    <script src="overview.js?v=3"></script>
-    <script src="doorsec.js?v=1"></script>
+    <script src="i18n.js?v=1"></script>
+    <script src="i18n.de.js?v=1"></script>
+    <script src="app.js?v=3.17"></script>
+    <script src="services.js?v=11"></script>
+    <script src="devices.js?v=9"></script>
+    <script src="icons.js?v=4"></script>
+    <script src="compute.js?v=3"></script>
+    <script src="modelservers.js?v=3"></script>
+    <script src="overview.js?v=4"></script>
+    <script src="doorsec.js?v=2"></script>
+    <script>document.getElementById('lang-bar').append(I18N.switcher());</script>
 </body>
 </html>

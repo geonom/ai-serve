@@ -388,7 +388,7 @@ async def start_service(service_id: str):
     proc = runtime.launch(plan, log_path)
     _launched[m.id] = proc
     logger.info(f"Started service {m.id} (pid {proc.pid}) on port {m.port}")
-    events.record("service", f"{m.name} gestartet")
+    events.record("service", "{name} started", name=m.name)
     return {"status": "starting", "pid": proc.pid, "port": m.port}
 
 
@@ -406,7 +406,7 @@ async def stop_service(service_id: str, req: Optional[StopRequest] = None):
         launched.poll()  # reap
         del _launched[m.id]  # stopped on purpose -> "stopped", not "exited" (= crashed)
     logger.info(f"Stopped service {m.id}: {result}")
-    events.record("service", f"{m.name} gestoppt")
+    events.record("service", "{name} stopped", name=m.name)
     return {"status": "stopped", **result}
 
 

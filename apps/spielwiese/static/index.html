@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="light">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=1">
     <link rel="stylesheet" href="redesign.css?v=1">
-    <link rel="stylesheet" href="spielwiese.css?v=15">
+    <link rel="stylesheet" href="spielwiese.css?v=16">
 </head>
 <body>
     <header class="sw-bar">
@@ -17,61 +17,60 @@
             <span class="sw-brand-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4zM10 8.5v4l3.5-2z"/></svg></span>
             <span class="sw-brand-name">Spielwiese</span>
         </div>
-        <nav class="tabs sw-tabs" role="tablist" aria-label="Was ausprobieren">
+        <nav class="tabs sw-tabs" role="tablist" aria-label="What to try">
             <div class="sw-tab-group" role="group" aria-label="Start">
-                <button class="tab-link active" role="tab" aria-selected="true" data-tab="overview">Übersicht</button>
+                <button class="tab-link active" role="tab" aria-selected="true" data-tab="overview">Overview</button>
             </div>
             <div class="sw-tab-group" role="group" aria-label="Text"><span class="sw-tab-group-label">Text</span>
                 <button class="tab-link" role="tab" aria-selected="false" data-tab="gateway">Chat</button>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="texts">Texte vergleichen</button>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="docs">Dokumente lesen</button>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="texts">Compare texts</button>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="docs">Read documents</button>
             </div>
-            <div class="sw-tab-group" role="group" aria-label="Bild"><span class="sw-tab-group-label">Bild</span>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="image-gen">Bild erstellen</button>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="layout">Mit Positionen</button>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="compare">Modelle vergleichen</button>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="mine">Meine Bilder</button>
+            <div class="sw-tab-group" role="group" aria-label="Image"><span class="sw-tab-group-label">Image</span>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="image-gen">Create images</button>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="layout">With positions</button>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="compare">Compare models</button>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="mine">My images</button>
             </div>
-            <div class="sw-tab-group" role="group" aria-label="Ton"><span class="sw-tab-group-label">Ton</span>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="speech">Sprache</button>
+            <div class="sw-tab-group" role="group" aria-label="Sound"><span class="sw-tab-group-label">Sound</span>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="speech">Speech</button>
             </div>
-            <div class="sw-tab-group" role="group" aria-label="Verwaltung" id="quota-tab-group" hidden><span class="sw-tab-group-label">Verwaltung</span>
-                <button class="tab-link" role="tab" aria-selected="false" data-tab="quota" id="quota-tab-link">Kontingente</button>
+            <div class="sw-tab-group" role="group" aria-label="Admin" id="quota-tab-group" hidden><span class="sw-tab-group-label">Admin</span>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="quota" id="quota-tab-link">Quotas</button>
             </div>
         </nav>
         <div class="sw-actions">
-            <span id="quota-badge" class="quota-badge" hidden title="Dein Tageskontingent auf der Spielwiese"></span>
+            <span id="quota-badge" class="quota-badge" hidden title="Your daily quota on the Spielwiese"></span>
             <div id="status-backend" class="status-indicator offline" title="ai-serve-ui Gateway"><span class="dot"></span><span class="status-label">Gateway</span></div>
             <div id="status-comfyui" class="status-indicator offline" title="ComfyUI"><span class="dot"></span><span class="status-label">ComfyUI</span></div>
-            <button id="help-btn" class="btn-icon-sm" title="Hilfe zu dieser Seite" aria-label="Hilfe zu dieser Seite">?</button>
+            <button id="help-btn" class="btn-icon-sm" title="Help for this page" aria-label="Help for this page">?</button>
+            <span id="lang-slot"></span>
             <a id="dashboard-link" class="btn btn-secondary btn-sm" href="http://localhost:8030/" target="_blank" rel="noopener">Dashboard</a>
-            <button id="theme-toggle" class="btn-icon-sm" title="Hell/Dunkel umschalten" aria-label="Hell/Dunkel umschalten">◐</button>
+            <button id="theme-toggle" class="btn-icon-sm" title="Switch light/dark" aria-label="Switch light/dark">◐</button>
         </div>
     </header>
     <!-- Help per page (help.js): opens on someone's first visit to a page, and from the "?" in the bar -->
     <dialog id="help-dialog" class="sw-help" aria-labelledby="help-title">
         <form method="dialog" class="sw-help-inner">
-            <div class="sw-help-head"><h2 id="help-title"></h2><button class="btn-icon-sm" value="close" aria-label="Schließen">×</button></div>
+            <div class="sw-help-head"><h2 id="help-title"></h2><button class="btn-icon-sm" value="close" aria-label="Close">×</button></div>
             <p id="help-intro" class="sw-help-intro"></p>
             <figure id="help-figure" class="sw-help-figure"><img id="help-img" alt=""><figcaption id="help-caption" class="muted small"></figcaption></figure>
-            <h3 class="sw-help-steps-title">Erste Schritte</h3>
+            <h3 class="sw-help-steps-title">First steps</h3>
             <ol id="help-steps" class="sw-help-steps"></ol>
             <p id="help-tip" class="sw-help-tip muted small"></p>
-            <div class="sw-help-foot"><button class="btn btn-primary" value="close">Los geht’s</button></div>
+            <div class="sw-help-foot"><button class="btn btn-primary" value="close">Let’s go</button></div>
         </form>
     </dialog>
     <main class="container sw-main">
-        <!-- Übersicht: start page, built from what the gateway offers right now (overview.js) -->
+        <!-- Overview: start page, built from what the gateway offers right now (overview.js) -->
         <section id="overview-tab" class="tab-content active">
             <div class="card ov-intro">
                 <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 1rem;">
                     <div>
-                        <h2>Willkommen auf der Spielwiese</h2>
-                        <p class="subtitle">Hier lässt sich ausprobieren, was das KI-Gateway kann – Sprachmodelle, Bilder, Sprache und
-                            Dokumente. Alles läuft auf privaten Rechnern, die dem Netzwerk hinzugefügt wurden. Was hier angeboten
-                            wird, fragt die Spielwiese beim Gateway ab: kommt dort ein Modell oder eine Engine dazu, erscheint sie auch hier.</p>
+                        <h2>Welcome to the Spielwiese</h2>
+                        <p class="subtitle">Try out what the AI gateway can do – language models, images, speech and documents. Everything runs on private machines that were added to the network. The Spielwiese asks the gateway what it offers: when a model or an engine is added there, it shows up here too.</p>
                     </div>
-                    <button id="ov-reload" class="btn btn-secondary btn-sm">Neu abfragen</button>
+                    <button id="ov-reload" class="btn btn-secondary btn-sm">Ask again</button>
                 </div>
                 <div id="ov-status" class="muted small"></div>
             </div>
@@ -84,48 +83,48 @@
                 <div class="sidebar">
                     <div class="card config-card">
                         <div class="card-header">
-                            <h2>Einstellungen</h2>
+                            <h2>Settings</h2>
                         </div>
                         <div class="controls">
                             <div class="input-group">
-                                <label for="gateway-model-select">Modell</label>
+                                <label for="gateway-model-select">Model</label>
                                 <select id="gateway-model-select">
-                                    <option value="">Auto (Gemma 4 12B / aktiv)</option>
+                                    <option value="">Auto (default model / running one)</option>
                                 </select>
                                 <div id="gateway-model-hint" class="muted small"></div>
                             </div>
 
                             <div class="toggle-group" style="margin-bottom: 1rem;">
                                 <input type="checkbox" id="gateway-thinking" checked>
-                                <label for="gateway-thinking">Nachdenken lassen (Denken)</label>
+                                <label for="gateway-thinking">Let it think (thinking)</label>
                             </div>
 
                             <div class="config-grid">
                                 <div class="input-group">
-                                    <label for="gateway-temp">Temperatur</label>
+                                    <label for="gateway-temp">Temperature</label>
                                     <input type="number" id="gateway-temp" value="0.7" step="0.1" min="0" max="2">
                                 </div>
                                 <div class="input-group">
-                                    <label for="gateway-max-tokens">Max. Tokens</label>
+                                    <label for="gateway-max-tokens">Max. tokens</label>
                                     <input type="number" id="gateway-max-tokens" value="2048" step="256">
                                 </div>
                             </div>
 
                             <div class="config-grid">
                                 <div class="input-group">
-                                    <label for="gateway-retries">Wiederholungen (JSON-Schema)</label>
+                                    <label for="gateway-retries">Retries (JSON schema)</label>
                                     <input type="number" id="gateway-retries" value="3" min="0" max="3">
                                 </div>
                                 <div class="input-group">
-                                    <label for="gateway-keepalive">Geladen halten (Sek.)</label>
+                                    <label for="gateway-keepalive">Keep loaded (sec.)</label>
                                     <input type="number" id="gateway-keepalive" value="300" step="60">
                                 </div>
                             </div>
 
                             <div class="input-group">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <label for="gateway-schema" style="margin: 0;">Antwort als JSON-Schema (optional)</label>
-                                    <button type="button" id="open-schema-helper-btn" class="btn-text" style="font-size: 0.8rem; padding: 0;">❓ Schema bauen</button>
+                                    <label for="gateway-schema" style="margin: 0;">Answer as JSON schema (optional)</label>
+                                    <button type="button" id="open-schema-helper-btn" class="btn-text" style="font-size: 0.8rem; padding: 0;">❓ Build a schema</button>
                                 </div>
                                 <textarea id="gateway-schema" rows="3" placeholder='{"type": "object", "properties": {...}}' style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; margin-top: 0.2rem;"></textarea>
                             </div>
@@ -134,10 +133,10 @@
 
                     <div class="card upload-card">
                         <div class="card-header">
-                            <h2>Bild oder Ton anhängen</h2>
+                            <h2>Attach an image or audio</h2>
                         </div>
                         <div class="controls" style="gap: 0.75rem;">
-                            <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Bild oder Audio für die nächste Nachricht</label>
+                            <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Image or audio for the next message</label>
                             <div id="multimodal-upload-zone" class="image-upload-zone">
                                 <input type="file" id="multimodal-input" accept="image/*,audio/*" style="display: none;">
                                 <div id="multimodal-preview-container" style="display: none; position: relative;">
@@ -147,7 +146,7 @@
                                     <button id="remove-multimodal" class="btn-remove">×</button>
                                 </div>
                                 <div id="multimodal-placeholder" class="upload-placeholder">
-                                    <span>📸 Bild/Audio hierher ziehen oder klicken</span>
+                                    <span>📸 Drop an image/audio here or click</span>
                                 </div>
                             </div>
                         </div>
@@ -155,8 +154,8 @@
 
                     <div class="card active-models-card" id="gateway-active-models-card" style="display: none; margin-top: 1rem;">
                         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                            <h2>Geladene Modelle</h2>
-                            <button id="unload-all-btn" class="btn btn-danger" style="padding: 0.2rem 0.5rem; font-size: 0.7rem; min-height: 0;" onclick="stopAllInstances()">Alle entladen</button>
+                            <h2>Loaded models</h2>
+                            <button id="unload-all-btn" class="btn btn-danger" style="padding: 0.2rem 0.5rem; font-size: 0.7rem; min-height: 0;" onclick="stopAllInstances()">Unload all</button>
                         </div>
                         <div class="controls" id="gateway-active-models-list" style="gap: 0.75rem; padding: 0.5rem 0;">
                             <!-- Active models will be rendered here dynamically -->
@@ -168,43 +167,43 @@
                     <div class="card chat-card">
                         <div class="card-header chat-header">
                             <div>
-                                <h2>Gespräch</h2>
-                                <p class="subtitle">Das Gateway leitet jede Nachricht weiter und lädt das Modell bei Bedarf.</p>
+                                <h2>Conversation</h2>
+                                <p class="subtitle">The gateway passes on every message and loads the model when needed.</p>
                             </div>
-                            <button id="clear-chat-btn" class="btn-text">Chat leeren</button>
+                            <button id="clear-chat-btn" class="btn-text">Clear chat</button>
                         </div>
                         
                         <div class="input-group" style="padding: 0 1.5rem;">
-                            <label for="gateway-system-prompt">Systemanweisung</label>
-                            <textarea id="gateway-system-prompt" rows="1" placeholder="Du bist ein hilfreicher Assistent …" style="margin-bottom: 0.5rem;"></textarea>
+                            <label for="gateway-system-prompt">System prompt</label>
+                            <textarea id="gateway-system-prompt" rows="1" placeholder="You are a helpful assistant …" style="margin-bottom: 0.5rem;"></textarea>
                         </div>
 
                         <div id="chat-messages" class="chat-viewport">
                             <div class="chat-system-message">
-                                🤖 Schreib unten eine Nachricht – das gewählte Modell wird beim ersten Mal automatisch geladen.
+                                🤖 Write a message below – the chosen model is loaded automatically the first time.
                             </div>
                         </div>
 
                         <div class="chat-input-area-wrapper">
                             <div class="chat-input-area">
-                                <textarea id="chat-user-input" placeholder="Schreib eine Nachricht …" rows="2"></textarea>
-                                <button id="chat-send-btn" class="btn btn-primary">Senden</button>
+                                <textarea id="chat-user-input" placeholder="Write a message …" rows="2"></textarea>
+                                <button id="chat-send-btn" class="btn btn-primary">Send</button>
                             </div>
                             <div id="token-estimate-bar" class="token-estimate-bar">
                                 <div class="token-stats">
-                                    <span class="token-badge input-badge">Eingabe: <strong id="token-input-count">0</strong> Tokens</span>
-                                    <span class="token-badge history-badge">Verlauf: <strong id="token-history-count">0</strong> / <span id="token-max-limit">32000</span> Tokens</span>
+                                    <span class="token-badge input-badge">Input: <strong id="token-input-count">0</strong> Tokens</span>
+                                    <span class="token-badge history-badge">History: <strong id="token-history-count">0</strong> / <span id="token-max-limit">32000</span> Tokens</span>
                                     <div class="token-progress-track">
                                         <div id="token-progress-fill" class="token-progress-fill" style="width: 0%"></div>
                                     </div>
                                 </div>
                                 <div id="token-warning-actions" class="token-warning-actions" style="display: none;">
-                                    <span id="token-warning-msg" class="token-warning-msg">⚠️ Limit bald überschritten!</span>
+                                    <span id="token-warning-msg" class="token-warning-msg">⚠️ Limit almost reached!</span>
                                     <div class="strategy-buttons">
-                                        <button type="button" id="strategy-prune-btn" class="btn-strategy" title="Älteste Nachrichten aus dem Chat-Verlauf löschen.">✂️ Älteste kürzen</button>
-                                        <button type="button" id="strategy-clear-btn" class="btn-strategy" title="Chat-Verlauf komplett zurücksetzen.">🗑️ Chat leeren</button>
-                                        <button type="button" id="strategy-autoshrink-btn" class="btn-strategy" title="Nachrichten automatisch kürzen, wenn der Kontext voll ist.">🤖 Auto-Kürzen: Aus</button>
-                                        <button type="button" id="strategy-autosummarize-btn" class="btn-strategy" title="Ältere Nachrichten automatisch zusammenfassen, wenn der Kontext voll ist.">📝 Auto-Zusammenfassen: Aus</button>
+                                        <button type="button" id="strategy-prune-btn" class="btn-strategy" title="Delete the oldest messages from the chat history.">✂️ Trim oldest</button>
+                                        <button type="button" id="strategy-clear-btn" class="btn-strategy" title="Reset the whole chat history.">🗑️ Clear chat</button>
+                                        <button type="button" id="strategy-autoshrink-btn" class="btn-strategy" title="Trim messages automatically when the context is full.">🤖 Auto-trim: off</button>
+                                        <button type="button" id="strategy-autosummarize-btn" class="btn-strategy" title="Summarise older messages automatically when the context is full.">📝 Auto-summarise: off</button>
                                     </div>
                                 </div>
                             </div>
@@ -222,56 +221,56 @@
                 <div class="sidebar">
                     <div class="card comfy-settings-card">
                         <div class="card-header">
-                            <h2>Einstellungen</h2>
+                            <h2>Settings</h2>
                         </div>
                         <div class="controls">
                             <div class="sub-tabs" style="margin-bottom: 0.5rem;">
-                                <button type="button" id="comfy-mode-generate-btn" class="sub-tab-link active">Erzeugen</button>
-                                <button type="button" id="comfy-mode-edit-btn" class="sub-tab-link">Bearbeiten</button>
-                                <button type="button" id="comfy-mode-style-btn" class="sub-tab-link">Stil übertragen</button>
-                                <button type="button" id="comfy-mode-batch-btn" class="sub-tab-link">Stapel</button>
+                                <button type="button" id="comfy-mode-generate-btn" class="sub-tab-link active">Generate</button>
+                                <button type="button" id="comfy-mode-edit-btn" class="sub-tab-link">Edit</button>
+                                <button type="button" id="comfy-mode-style-btn" class="sub-tab-link">Transfer style</button>
+                                <button type="button" id="comfy-mode-batch-btn" class="sub-tab-link">Batch</button>
                             </div>
                             <div id="comfy-generate-only-fields">
                                 <div class="input-group">
-                                    <label for="comfy-model">Modell</label>
+                                    <label for="comfy-model">Model</label>
                                     <!-- filled from the gateway's GET /v1/images/models (loadImageModels in app.js) -->
                                     <select id="comfy-model">
                                         <option value="z_image_turbo-Q6_K.gguf">Z-Image Turbo</option>
                                     </select>
                                 </div>
                                 <div class="input-group">
-                                    <label for="comfy-aspect-ratio">Seitenverhältnis</label>
+                                    <label for="comfy-aspect-ratio">Aspect ratio</label>
                                     <select id="comfy-aspect-ratio">
-                                        <option value="1:1">1:1 (quadratisch)</option>
-                                        <option value="4:3">4:3 (quer)</option>
-                                        <option value="3:4">3:4 (hoch)</option>
-                                        <option value="16:9">16:9 (breit)</option>
-                                        <option value="9:16">9:16 (senkrecht)</option>
+                                        <option value="1:1">1:1 (square)</option>
+                                        <option value="4:3">4:3 (landscape)</option>
+                                        <option value="3:4">3:4 (portrait)</option>
+                                        <option value="16:9">16:9 (wide)</option>
+                                        <option value="9:16">9:16 (vertical)</option>
                                     </select>
                                 </div>
                                 <div class="input-group">
-                                    <label for="comfy-resolution">Längste Seite (Pixel)</label>
+                                    <label for="comfy-resolution">Longest side (pixels)</label>
                                     <input type="number" id="comfy-resolution" value="1024" step="64" min="256" max="2048">
                                 </div>
                                 <div class="input-group">
-                                    <label for="comfy-lora">LoRA (optional – nur ERNIE Turbo / Z-Image Turbo)</label>
+                                    <label for="comfy-lora">LoRA (optional – only ERNIE Turbo / Z-Image Turbo)</label>
                                     <select id="comfy-lora">
-                                        <option value="">keine</option>
+                                        <option value="">none</option>
                                     </select>
                                 </div>
                                 <div class="input-group" id="comfy-lora-strength-group" style="display: none;">
-                                    <label for="comfy-lora-strength">LoRA-Stärke</label>
+                                    <label for="comfy-lora-strength">LoRA strength</label>
                                     <input type="number" id="comfy-lora-strength" value="1.0" step="0.05" min="0" max="2">
                                 </div>
                             </div>
                             <div id="comfy-edit-fields" style="display: none;">
                                 <div class="input-group">
-                                    <label for="comfy-edit-model">Modell</label>
+                                    <label for="comfy-edit-model">Model</label>
                                     <select id="comfy-edit-model"><option value="qwen-edit-2511">Qwen-Image-Edit 2511 (Q2_K)</option></select>
                                     <div id="comfy-edit-model-note" class="muted small"></div>
                                 </div>
                                 <div class="input-group">
-                                    <label>Bild zum Bearbeiten</label>
+                                    <label>Image to edit</label>
                                     <div id="comfy-edit-upload-zone" class="image-upload-zone">
                                         <input type="file" id="comfy-edit-input" accept="image/*" style="display: none;">
                                         <div id="comfy-edit-preview-container" style="display: none; position: relative;">
@@ -279,19 +278,19 @@
                                             <button id="comfy-edit-remove-btn" class="btn-remove">×</button>
                                         </div>
                                         <div id="comfy-edit-placeholder" class="upload-placeholder">
-                                            <span>🖼️ Bild hierher ziehen oder klicken</span>
+                                            <span>🖼️ Drop an image here or click</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                             <div id="comfy-style-fields" style="display: none;">
                                 <div class="input-group">
-                                    <label for="comfy-style-model">Modell</label>
+                                    <label for="comfy-style-model">Model</label>
                                     <select id="comfy-style-model"><option value="qwen-edit-2511">Qwen-Image-Edit 2511 (Q2_K)</option></select>
                                     <div id="comfy-style-model-note" class="muted small"></div>
                                 </div>
                                 <div class="input-group">
-                                    <label>Inhaltsbild</label>
+                                    <label>Content image</label>
                                     <div id="comfy-style-content-upload-zone" class="image-upload-zone">
                                         <input type="file" id="comfy-style-content-input" accept="image/*" style="display: none;">
                                         <div id="comfy-style-content-preview-container" style="display: none; position: relative;">
@@ -299,12 +298,12 @@
                                             <button id="comfy-style-content-remove-btn" class="btn-remove">×</button>
                                         </div>
                                         <div id="comfy-style-content-placeholder" class="upload-placeholder">
-                                            <span>🖼️ Inhaltsbild hierher ziehen oder klicken</span>
+                                            <span>🖼️ Drop the content image here or click</span>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="input-group">
-                                    <label>Stilvorlage</label>
+                                    <label>Style reference</label>
                                     <div id="comfy-style-ref-upload-zone" class="image-upload-zone">
                                         <input type="file" id="comfy-style-ref-input" accept="image/*" style="display: none;">
                                         <div id="comfy-style-ref-preview-container" style="display: none; position: relative;">
@@ -312,7 +311,7 @@
                                             <button id="comfy-style-ref-remove-btn" class="btn-remove">×</button>
                                         </div>
                                         <div id="comfy-style-ref-placeholder" class="upload-placeholder">
-                                            <span>🎨 Stilvorlage hierher ziehen oder klicken</span>
+                                            <span>🎨 Drop the style reference here or click</span>
                                         </div>
                                     </div>
                                 </div>
@@ -326,11 +325,11 @@
                                     GET /api/comfyui/images/{filename}.
                                 </p>
                                 <div class="input-group">
-                                    <label for="comfy-batch-file-input">JSON-Datei hochladen</label>
+                                    <label for="comfy-batch-file-input">Upload a JSON file</label>
                                     <input type="file" id="comfy-batch-file-input" accept="application/json,.json">
                                 </div>
                                 <div class="input-group full">
-                                    <label for="comfy-batch-json">Stapel als JSON</label>
+                                    <label for="comfy-batch-json">Batch as JSON</label>
                                     <textarea id="comfy-batch-json" rows="16" style="font-family: monospace; font-size: 0.75rem;">{
   "defaults": {
     "model_name": "z_image_turbo-Q6_K.gguf",
@@ -345,27 +344,27 @@
   ]
 }</textarea>
                                 </div>
-                                <button id="comfy-batch-start-btn" class="btn btn-primary btn-full">Stapel starten</button>
+                                <button id="comfy-batch-start-btn" class="btn btn-primary btn-full">Start batch</button>
                             </div>
                             <div class="config-grid" id="comfy-single-config-grid">
                                 <div class="input-group">
-                                    <label for="comfy-steps">Schritte</label>
-                                    <input type="number" id="comfy-steps" placeholder="Standard" min="1" max="100">
+                                    <label for="comfy-steps">Steps</label>
+                                    <input type="number" id="comfy-steps" placeholder="default" min="1" max="100">
                                 </div>
                                 <div class="input-group">
                                     <label for="comfy-seed">Seed</label>
-                                    <input type="number" id="comfy-seed" placeholder="zufällig">
+                                    <input type="number" id="comfy-seed" placeholder="random">
                                 </div>
                                 <div class="input-group" id="comfy-denoise-group" style="display: none;">
-                                    <label for="comfy-denoise" title="Wie stark verändert wird (0,0 = Inhalt bleibt, 1,0 = Stil voll übertragen)">Veränderung</label>
+                                    <label for="comfy-denoise" title="How much changes (0.0 = content stays, 1.0 = style fully transferred)">Change</label>
                                     <input type="number" id="comfy-denoise" placeholder="1.0" min="0.0" max="1.0" step="0.05">
                                 </div>
                             </div>
                             <div class="input-group" id="comfy-single-filename-group">
-                                <label for="comfy-filename" title="Optional – speichert das Bild zusätzlich unter diesem Namen (.png) auf dem Server, abrufbar über GET /api/comfyui/images/{filename}.">Als Datei speichern (optional)</label>
-                                <input type="text" id="comfy-filename" placeholder="z. B. berge-1">
+                                <label for="comfy-filename" title="Optional – also saves the image under this name (.png) on the server, retrievable through GET /api/comfyui/images/{filename}.">Save as a file (optional)</label>
+                                <input type="text" id="comfy-filename" placeholder="e.g. mountains-1">
                             </div>
-                            <button id="comfy-generate-btn" class="btn btn-primary">Bild erzeugen</button>
+                            <button id="comfy-generate-btn" class="btn btn-primary">Generate image</button>
                         </div>
                     </div>
                 </div>
@@ -374,14 +373,14 @@
                     <div id="comfy-single-results">
                         <div class="card comfy-prompt-card">
                             <div class="card-header">
-                                <h2>Beschreibung</h2>
+                                <h2>Description</h2>
                             </div>
                             <div class="input-group full">
-                                <label for="comfy-prompt" id="comfy-prompt-label">Was soll zu sehen sein?</label>
-                                <textarea id="comfy-prompt" rows="3" placeholder="Was soll sich ändern bzw. wie soll der Stil übertragen werden (beim Stil übertragen optional)">cute cat playing with a ball of yarn, highly detailed</textarea>
+                                <label for="comfy-prompt" id="comfy-prompt-label">What should be in the picture?</label>
+                                <textarea id="comfy-prompt" rows="3" placeholder="What should change, or how the style should be transferred (optional when transferring a style)">cute cat playing with a ball of yarn, highly detailed</textarea>
                             </div>
                             <div class="input-group full" id="comfy-negative-prompt-group">
-                                <label for="comfy-negative-prompt">Was soll nicht zu sehen sein?</label>
+                                <label for="comfy-negative-prompt">What should not be in the picture?</label>
                                 <textarea id="comfy-negative-prompt" rows="2">ugly, deformed, bad anatomy, blurry</textarea>
                             </div>
                         </div>
@@ -389,7 +388,7 @@
                         <!-- Async Task Timeline -->
                         <div id="comfy-progress-panel" class="card progress-timeline-card" style="display: none; margin-top: 1.5rem;">
                             <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center;">
-                                <h2>Fortschritt</h2>
+                                <h2>Progress</h2>
                                 <span id="comfy-progress-percentage" class="timeline-percentage">0%</span>
                             </div>
                             <div class="timeline-wrapper">
@@ -397,7 +396,7 @@
                                     <div id="comfy-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
                                 </div>
                                 <div class="timeline-nodes">
-                                    <span class="node-label">Gerade:</span>
+                                    <span class="node-label">Now:</span>
                                     <code id="comfy-progress-node" class="node-code">Starte …</code>
                                 </div>
                                 <div class="timeline-warning">
@@ -409,7 +408,7 @@
                         <div class="card image-viewer-card" style="margin-top: 1.5rem; text-align: center; justify-content: center; min-height: 300px;">
                             <div id="comfy-loading" style="display: none;" class="loading-state">
                                 <div class="spinner"></div>
-                                <span>Bild wird erzeugt …</span>
+                                <span>Generating the image …</span>
                             </div>
                             <div id="image-placeholder-box" class="image-placeholder-box">
                                 🖼️ Generated image will appear here
@@ -421,27 +420,27 @@
                     <div id="comfy-batch-results" style="display: none;">
                         <div class="card progress-timeline-card">
                             <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center;">
-                                <h2>Stapel-Fortschritt</h2>
-                                <span id="comfy-batch-status-label" class="badge success">Bereit</span>
+                                <h2>Batch progress</h2>
+                                <span id="comfy-batch-status-label" class="badge success">Ready</span>
                             </div>
                             <div class="timeline-wrapper">
                                 <div class="progress-bar-container">
                                     <div id="comfy-batch-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
                                 </div>
                                 <div class="timeline-nodes">
-                                    <span class="node-label">Eintrag:</span>
+                                    <span class="node-label">Item:</span>
                                     <code id="comfy-batch-progress-text" class="node-code">0 / 0</code>
                                 </div>
                             </div>
                             <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-                                <button id="comfy-batch-pause-btn" class="btn btn-secondary" style="display: none;">Anhalten</button>
-                                <button id="comfy-batch-resume-btn" class="btn btn-secondary" style="display: none;">Fortsetzen</button>
-                                <button id="comfy-batch-cancel-btn" class="btn btn-danger" style="display: none;">Abbrechen</button>
+                                <button id="comfy-batch-pause-btn" class="btn btn-secondary" style="display: none;">Pause</button>
+                                <button id="comfy-batch-resume-btn" class="btn btn-secondary" style="display: none;">Resume</button>
+                                <button id="comfy-batch-cancel-btn" class="btn btn-danger" style="display: none;">Cancel</button>
                             </div>
                         </div>
                         <div class="card" style="margin-top: 1.5rem;">
                             <div class="card-header">
-                                <h2>Ergebnis</h2>
+                                <h2>Result</h2>
                             </div>
                             <div id="comfy-batch-gallery" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem;"></div>
                         </div>
@@ -454,13 +453,13 @@
              tts-serve and stt-serve offer, with the inputs each one describes for itself -->
         <section id="speech-tab" class="tab-content">
             <div class="sub-tabs" style="margin-bottom: 1rem;">
-                <button class="sub-tab-link active" id="speech-tts-btn">Sprechen lassen</button>
-                <button class="sub-tab-link" id="speech-stt-btn">Abschreiben</button>
+                <button class="sub-tab-link active" id="speech-tts-btn">Speak</button>
+                <button class="sub-tab-link" id="speech-stt-btn">Transcribe</button>
             </div>
             <div id="speech-tts" class="dashboard multi">
                 <div class="sidebar">
                     <div class="card">
-                        <div class="card-header"><h2>Stimme</h2><p class="subtitle" id="tts-engine-note">Lade Engines…</p></div>
+                        <div class="card-header"><h2>Voice</h2><p class="subtitle" id="tts-engine-note">Loading engines…</p></div>
                         <div class="controls" id="tts-form"></div>
                     </div>
                 </div>
@@ -468,13 +467,13 @@
                     <div class="card">
                         <div class="card-header"><h2>Text</h2></div>
                         <div class="input-group full">
-                            <textarea id="tts-text" rows="6" placeholder="Was soll gesprochen werden?"></textarea>
+                            <textarea id="tts-text" rows="6" placeholder="What should be spoken?"></textarea>
                         </div>
-                        <button id="tts-generate-btn" class="btn btn-primary" style="margin-top: 1rem;">Sprechen</button>
+                        <button id="tts-generate-btn" class="btn btn-primary" style="margin-top: 1rem;">Speak</button>
                         <div id="tts-status" class="muted small" style="margin-top: 0.75rem;"></div>
                         <div id="tts-result" hidden style="margin-top: 1rem;">
                             <audio id="tts-result-audio" controls style="width: 100%;"></audio>
-                            <a id="tts-download" class="btn btn-secondary btn-sm" download="sprache.wav" style="margin-top: 0.5rem;">Herunterladen</a>
+                            <a id="tts-download" class="btn btn-secondary btn-sm" download="sprache.wav" style="margin-top: 0.5rem;">Download</a>
                         </div>
                     </div>
                 </div>
@@ -482,17 +481,17 @@
             <div id="speech-stt" class="dashboard multi" hidden>
                 <div class="sidebar">
                     <div class="card">
-                        <div class="card-header"><h2>Aufnahme</h2><p class="subtitle" id="stt-engine-note">Lade Engines…</p></div>
+                        <div class="card-header"><h2>Recording</h2><p class="subtitle" id="stt-engine-note">Loading engines…</p></div>
                         <div class="controls" id="stt-form"></div>
                     </div>
                 </div>
                 <div class="main-content">
                     <div class="card">
                         <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center;">
-                            <h2>Ergebnis</h2>
+                            <h2>Result</h2>
                             <div style="display: flex; gap: 0.5rem;">
-                                <button id="stt-copy-btn" class="btn btn-secondary btn-sm" disabled>Kopieren</button>
-                                <button id="stt-srt-btn" class="btn btn-secondary btn-sm" disabled>Untertitel (SRT)</button>
+                                <button id="stt-copy-btn" class="btn btn-secondary btn-sm" disabled>Copy</button>
+                                <button id="stt-srt-btn" class="btn btn-secondary btn-sm" disabled>Subtitles (SRT)</button>
                             </div>
                         </div>
                         <div id="stt-status" class="muted small"></div>
@@ -508,40 +507,40 @@
             <div class="dashboard multi">
                 <div class="sidebar">
                     <div class="card">
-                        <div class="card-header"><h2>Ähnlichkeit</h2><p class="subtitle">Ein Embedding-Modell macht aus jedem Text einen Vektor; ähnliche Bedeutung = ähnliche Richtung.</p></div>
+                        <div class="card-header"><h2>Similarity</h2><p class="subtitle">An embedding model turns every text into a vector; similar meaning = similar direction.</p></div>
                         <div class="controls">
-                            <div class="input-group"><label for="emb-model">Embedding-Modell</label><select id="emb-model"></select></div>
-                            <div class="input-group"><label for="emb-texts">Texte (einer pro Zeile)</label>
-                                <textarea id="emb-texts" rows="7">Der Hund spielt im Garten.
-Ein Welpe tobt draußen auf dem Rasen.
-Die Börse schloss heute mit Verlusten.
-Aktienkurse sind am Nachmittag gefallen.</textarea></div>
-                            <button id="emb-run" class="btn btn-primary">Vergleichen</button>
+                            <div class="input-group"><label for="emb-model">Embedding model</label><select id="emb-model"></select></div>
+                            <div class="input-group"><label for="emb-texts">Texts (one per line)</label>
+                                <textarea id="emb-texts" rows="7">The dog is playing in the garden.
+A puppy romps around outside on the lawn.
+The stock market closed with losses today.
+Share prices fell in the afternoon.</textarea></div>
+                            <button id="emb-run" class="btn btn-primary">Compare</button>
                             <div id="emb-status" class="muted small"></div>
                         </div>
                     </div>
                     <div class="card">
-                        <div class="card-header"><h2>Nach Frage sortieren</h2><p class="subtitle">Ein Rerank-Modell bewertet, wie gut jeder Text zur Frage passt.</p></div>
+                        <div class="card-header"><h2>Sort by question</h2><p class="subtitle">A rerank model scores how well each text answers the question.</p></div>
                         <div class="controls">
-                            <div class="input-group"><label for="rr-model">Modell</label><select id="rr-model"></select><div id="rr-note" class="muted small"></div></div>
-                            <div class="input-group"><label for="rr-query">Frage</label><input id="rr-query" type="text" value="Was ist die Hauptstadt von Frankreich?"></div>
-                            <div class="input-group"><label for="rr-docs">Texte (einer pro Zeile)</label>
-                                <textarea id="rr-docs" rows="5">Berlin ist die Hauptstadt Deutschlands.
-Paris ist die Hauptstadt Frankreichs.
-Der Eiffelturm steht in Paris.
-Frankreich ist für seinen Käse bekannt.</textarea></div>
-                            <button id="rr-run" class="btn btn-primary">Sortieren</button>
+                            <div class="input-group"><label for="rr-model">Model</label><select id="rr-model"></select><div id="rr-note" class="muted small"></div></div>
+                            <div class="input-group"><label for="rr-query">Question</label><input id="rr-query" type="text" value="What is the capital of France?"></div>
+                            <div class="input-group"><label for="rr-docs">Texts (one per line)</label>
+                                <textarea id="rr-docs" rows="5">Berlin is the capital of Germany.
+Paris is the capital of France.
+The Eiffel Tower is in Paris.
+France is known for its cheese.</textarea></div>
+                            <button id="rr-run" class="btn btn-primary">Sort</button>
                             <div id="rr-status" class="muted small"></div>
                         </div>
                     </div>
                 </div>
                 <div class="main-content">
                     <div class="card">
-                        <div class="card-header"><h2>Ähnlichkeit</h2></div>
-                        <div id="emb-result" class="sw-matrix-wrap"><p class="muted small">Noch nichts verglichen.</p></div>
+                        <div class="card-header"><h2>Similarity</h2></div>
+                        <div id="emb-result" class="sw-matrix-wrap"><p class="muted small">Nothing compared yet.</p></div>
                     </div>
                     <div class="card">
-                        <div class="card-header"><h2>Sortiert</h2></div>
+                        <div class="card-header"><h2>Sorted</h2></div>
                         <pre id="rr-result" class="sw-result">Noch nichts sortiert.</pre>
                     </div>
                 </div>
@@ -553,41 +552,41 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
             <div class="dashboard multi">
                 <div class="sidebar">
                     <div class="card">
-                        <div class="card-header"><h2>Dokument</h2><p class="subtitle">Bild oder PDF (bis 50 Seiten). Jede Seite wird einzeln gelesen.</p></div>
+                        <div class="card-header"><h2>Document</h2><p class="subtitle">Image or PDF (up to 50 pages). Every page is read on its own.</p></div>
                         <div class="controls">
                             <div class="input-group">
-                                <label for="ocr-file">Datei</label>
+                                <label for="ocr-file">File</label>
                                 <input type="file" id="ocr-file" accept="image/*,application/pdf">
                             </div>
                             <div class="input-group">
-                                <label for="ocr-mode">Art</label>
+                                <label for="ocr-mode">Kind</label>
                                 <select id="ocr-mode">
-                                    <option value="markdown">Als Markdown abschreiben</option>
-                                    <option value="content">Inhalt (freier Text)</option>
-                                    <option value="structured">Felder nach Vorlage (JSON)</option>
-                                    <option value="document-detection">Dokumentart erkennen</option>
-                                    <option value="template-generation">Vorlage vorschlagen</option>
+                                    <option value="markdown">Transcribe as Markdown</option>
+                                    <option value="content">Content (free text)</option>
+                                    <option value="structured">Fields from a template (JSON)</option>
+                                    <option value="document-detection">Recognise the document type</option>
+                                    <option value="template-generation">Suggest a template</option>
                                 </select>
                             </div>
                             <div class="input-group" id="ocr-template-group" hidden>
-                                <label for="ocr-template">Vorlage (JSON)</label>
-                                <textarea id="ocr-template" rows="5" placeholder='{"name": "string", "betrag": "number"}'></textarea>
-                                <label for="ocr-instructions">Hinweise (optional)</label>
-                                <textarea id="ocr-instructions" rows="3" placeholder="z. B. Zahlen nur aus Tabellen übernehmen"></textarea>
+                                <label for="ocr-template">Template (JSON)</label>
+                                <textarea id="ocr-template" rows="5" placeholder='{"name": "string", "amount": "number"}'></textarea>
+                                <label for="ocr-instructions">Instructions (optional)</label>
+                                <textarea id="ocr-instructions" rows="3" placeholder="e.g. take numbers from tables only"></textarea>
                             </div>
                             <div class="input-group">
-                                <label for="ocr-model">Modell</label>
-                                <select id="ocr-model"><option value="">NuExtract3 (Standard)</option></select>
+                                <label for="ocr-model">Model</label>
+                                <select id="ocr-model"><option value="">NuExtract3 (default)</option></select>
                             </div>
-                            <button id="ocr-run-btn" class="btn btn-primary">Lesen</button>
+                            <button id="ocr-run-btn" class="btn btn-primary">Read</button>
                         </div>
                     </div>
                 </div>
                 <div class="main-content">
                     <div class="card">
                         <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center;">
-                            <h2>Ergebnis</h2>
-                            <button id="ocr-copy-btn" class="btn btn-secondary btn-sm" disabled>Kopieren</button>
+                            <h2>Result</h2>
+                            <button id="ocr-copy-btn" class="btn btn-secondary btn-sm" disabled>Copy</button>
                         </div>
                         <div id="ocr-status" class="muted small"></div>
                         <pre id="ocr-result" class="sw-result">Noch nichts gelesen.</pre>
@@ -600,45 +599,45 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
             <div class="dashboard multi">
                 <div class="sidebar">
                     <div class="card">
-                        <div class="card-header"><h2>Bild mit Positionen</h2>
-                            <p class="subtitle">MOSS-Image: auf der Fläche Rahmen aufziehen und beschreiben, was wohin soll – auch Text, der genau so ins Bild kommt.</p></div>
+                        <div class="card-header"><h2>Image with positions</h2>
+                            <p class="subtitle">MOSS-Image: draw boxes on the canvas and describe what goes where – including text that appears in the image exactly as written.</p></div>
                         <div class="controls">
                             <div class="input-group">
-                                <label for="lay-prompt">Ganzes Bild</label>
-                                <textarea id="lay-prompt" rows="4" placeholder="z. B. Gemütliche Bäckerei am Morgen, warmes Licht, Aquarell"></textarea>
+                                <label for="lay-prompt">Whole image</label>
+                                <textarea id="lay-prompt" rows="4" placeholder="e.g. Cosy bakery in the morning, warm light, watercolour"></textarea>
                             </div>
                             <div class="input-group lay-row">
                                 <label for="lay-size">Format</label>
                                 <select id="lay-size">
-                                    <option value="1024x1024">Quadrat 1024×1024</option>
-                                    <option value="1152x896">Quer 1152×896</option>
-                                    <option value="896x1152">Hoch 896×1152</option>
-                                    <option value="1344x768">Breit 1344×768</option>
-                                    <option value="768x1344">Schmal 768×1344</option>
+                                    <option value="1024x1024">Square 1024×1024</option>
+                                    <option value="1152x896">Landscape 1152×896</option>
+                                    <option value="896x1152">Portrait 896×1152</option>
+                                    <option value="1344x768">Wide 1344×768</option>
+                                    <option value="768x1344">Tall 768×1344</option>
                                 </select>
                             </div>
                             <div class="input-group">
-                                <label for="lay-variant">Variante</label>
+                                <label for="lay-variant">Variant</label>
                                 <select id="lay-variant">
-                                    <option value="moss">Original int8 (30 Schritte)</option>
-                                    <option value="moss-bf16">Original bf16 (30 Schritte, Referenz)</option>
+                                    <option value="moss">Original int8 (30 steps)</option>
+                                    <option value="moss-bf16">Original bf16 (30 steps, reference)</option>
                                     <option value="moss-turbo-8">Turbo 8 int8 (lodestones)</option>
                                     <option value="moss-turbo-8-bf16">Turbo 8 bf16 (lodestones)</option>
                                     <option value="moss-turbo-4">Turbo 4 v2.0 int8 (akhaliq)</option>
-                                    <option value="moss-turbo-4-bf16">Turbo 4 v2.0 bf16 (akhaliq, empfohlen)</option>
+                                    <option value="moss-turbo-4-bf16">Turbo 4 v2.0 bf16 (akhaliq, recommended)</option>
                                 </select>
                             </div>
                             <div class="input-group lay-row">
-                                <label for="lay-steps">Schritte</label>
-                                <input type="number" id="lay-steps" min="1" max="60" placeholder="Standard">
+                                <label for="lay-steps">Steps</label>
+                                <input type="number" id="lay-steps" min="1" max="60" placeholder="default">
                                 <label for="lay-seed">Seed</label>
-                                <input type="number" id="lay-seed" placeholder="zufällig">
+                                <input type="number" id="lay-seed" placeholder="random">
                             </div>
                             <div class="input-group">
-                                <label>Elemente <span class="muted small">(auf der Fläche rechts aufziehen)</span></label>
+                                <label>Elements <span class="muted small">(draw them on the canvas on the right)</span></label>
                                 <div id="lay-elements" class="lay-elements"></div>
                             </div>
-                            <button id="lay-run-btn" class="btn btn-primary">Bild erzeugen</button>
+                            <button id="lay-run-btn" class="btn btn-primary">Generate image</button>
                             <div id="lay-status" class="muted small"></div>
                         </div>
                     </div>
@@ -646,15 +645,15 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
                 <div class="main-content">
                     <div class="card">
                         <div class="card-header" style="flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <h2>Fläche</h2>
+                            <h2>Canvas</h2>
                             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                <label class="small"><input type="checkbox" id="lay-show-boxes" checked> Rahmen zeigen</label>
-                                <button id="lay-clear-btn" class="btn btn-secondary btn-sm">Alle Rahmen löschen</button>
-                                <button id="lay-api-btn" class="btn btn-secondary btn-sm">API-Aufruf</button>
-                                <a id="lay-download" class="btn btn-secondary btn-sm" hidden download="moss.png">Bild speichern</a>
+                                <label class="small"><input type="checkbox" id="lay-show-boxes" checked> Show boxes</label>
+                                <button id="lay-clear-btn" class="btn btn-secondary btn-sm">Delete all boxes</button>
+                                <button id="lay-api-btn" class="btn btn-secondary btn-sm">API call</button>
+                                <a id="lay-download" class="btn btn-secondary btn-sm" hidden download="moss.png">Save image</a>
                             </div>
                         </div>
-                        <div id="lay-canvas" class="lay-canvas" aria-label="Zeichenfläche: Rahmen mit der Maus aufziehen"></div>
+                        <div id="lay-canvas" class="lay-canvas" aria-label="Canvas: draw boxes with the mouse"></div>
                         <pre id="lay-api" class="sw-result" hidden></pre>
                     </div>
                 </div>
@@ -665,53 +664,53 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
             <div class="dashboard multi">
                 <div class="sidebar">
                     <div class="card">
-                        <div class="card-header"><h2>Bildmodelle vergleichen</h2>
-                            <p class="subtitle">Derselbe Prompt und Seed durch mehrere Modelle – wahlweise auch mit verschiedenen Schrittzahlen. Läuft auf dem Server weiter, auch wenn du die Seite schließt.</p></div>
+                        <div class="card-header"><h2>Compare image models</h2>
+                            <p class="subtitle">The same prompt and seed through several models – optionally with different step counts too. Keeps running on the server even if you close the page.</p></div>
                         <div class="controls">
                             <div class="input-group">
                                 <label for="cmp-prompt">Prompt</label>
-                                <textarea id="cmp-prompt" rows="4" maxlength="4000" placeholder="z. B. A cozy bookshop window at night with a neon sign that reads &quot;OPEN LATE&quot;"></textarea>
+                                <textarea id="cmp-prompt" rows="4" maxlength="4000" placeholder="e.g. A cozy bookshop window at night with a neon sign that reads &quot;OPEN LATE&quot;"></textarea>
                             </div>
                             <div class="input-group">
-                                <label>Modelle</label>
-                                <div id="cmp-models" class="cmp-models"><span class="muted small">Lade Modelle …</span></div>
+                                <label>Models</label>
+                                <div id="cmp-models" class="cmp-models"><span class="muted small">Loading models …</span></div>
                             </div>
                             <div class="input-group">
-                                <label for="cmp-aspect">Seitenverhältnis</label>
+                                <label for="cmp-aspect">Aspect ratio</label>
                                 <select id="cmp-aspect">
-                                    <option value="1:1">1:1 Quadrat</option>
-                                    <option value="4:3">4:3 Quer</option>
-                                    <option value="3:4">3:4 Hoch</option>
-                                    <option value="16:9">16:9 Breit</option>
-                                    <option value="9:16">9:16 Schmal</option>
+                                    <option value="1:1">1:1 square</option>
+                                    <option value="4:3">4:3 landscape</option>
+                                    <option value="3:4">3:4 portrait</option>
+                                    <option value="16:9">16:9 wide</option>
+                                    <option value="9:16">9:16 tall</option>
                                 </select>
                             </div>
                             <div class="input-group">
-                                <label for="cmp-steps">Schrittzahlen <span class="muted small">(leer = Standard je Modell)</span></label>
+                                <label for="cmp-steps">Step counts <span class="muted small">(empty = each model's default)</span></label>
                                 <input type="text" id="cmp-steps" placeholder="z. B. 4, 8, 20" inputmode="numeric">
                             </div>
                             <div class="input-group">
-                                <label for="cmp-seeds">Seeds <span class="muted small">(leer = ein zufälliger für alle)</span></label>
+                                <label for="cmp-seeds">Seeds <span class="muted small">(empty = one random seed for all)</span></label>
                                 <input type="text" id="cmp-seeds" placeholder="z. B. 7, 42" inputmode="numeric">
                             </div>
                             <div id="cmp-count" class="cmp-count" aria-live="polite"></div>
                             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                                <button id="cmp-run" class="btn btn-primary">Vergleich starten</button>
-                                <button id="cmp-cancel" class="btn btn-secondary" hidden>Abbrechen</button>
+                                <button id="cmp-run" class="btn btn-primary">Start comparison</button>
+                                <button id="cmp-cancel" class="btn btn-secondary" hidden>Cancel</button>
                             </div>
                             <div id="cmp-status" class="cmp-status" role="status" aria-live="polite" hidden></div>
                         </div>
                     </div>
                     <div class="card">
-                        <div class="card-header"><h2>Frühere Vergleiche</h2></div>
-                        <div id="cmp-history" class="cmp-history"><span class="muted small">Noch keine.</span></div>
+                        <div class="card-header"><h2>Earlier comparisons</h2></div>
+                        <div id="cmp-history" class="cmp-history"><span class="muted small">None yet.</span></div>
                     </div>
                 </div>
                 <div class="main-content">
                     <div class="card">
-                        <div class="card-header"><h2 id="cmp-title">Ergebnis</h2>
+                        <div class="card-header"><h2 id="cmp-title">Result</h2>
                             <p id="cmp-subtitle" class="subtitle"></p></div>
-                        <div id="cmp-grid" class="cmp-grid"><p class="muted">Wähle links Modelle und starte einen Vergleich.</p></div>
+                        <div id="cmp-grid" class="cmp-grid"><p class="muted">Choose models on the left and start a comparison.</p></div>
                     </div>
                 </div>
             </div>
@@ -720,46 +719,46 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
         <section id="mine-tab" class="tab-content">
             <div class="card">
                 <div class="card-header mine-head">
-                    <div><h2>Meine Bilder</h2><p class="subtitle">Alles, was du hier erzeugt hast – nur für dich sichtbar.</p></div>
+                    <div><h2>My images</h2><p class="subtitle">Everything you've made here – visible only to you.</p></div>
                     <div class="mine-tools">
-                        <label for="mine-filter" class="small">Modell</label>
-                        <select id="mine-filter"><option value="">alle</option></select>
-                        <button id="mine-reload" class="btn btn-secondary btn-sm">Neu laden</button>
+                        <label for="mine-filter" class="small">Model</label>
+                        <select id="mine-filter"><option value="">all</option></select>
+                        <button id="mine-reload" class="btn btn-secondary btn-sm">Reload</button>
                     </div>
                 </div>
                 <div id="mine-grid" class="mine-grid"></div>
-                <div style="text-align:center; margin-top:12px;"><button id="mine-more" class="btn btn-secondary" hidden>Mehr laden</button></div>
+                <div style="text-align:center; margin-top:12px;"><button id="mine-more" class="btn btn-secondary" hidden>Load more</button></div>
             </div>
         </section>
 
         <section id="quota-tab" class="tab-content">
             <div class="card">
-                <div class="card-header"><h2>Kontingente</h2>
-                    <p class="subtitle">Wie viel Rechenzeit und wie viele Bilder Gäste pro Tag nutzen dürfen (ab Mitternacht neu). Du selbst bist nicht begrenzt. Batch-Läufe sind nur für dich.</p></div>
+                <div class="card-header"><h2>Quotas</h2>
+                    <p class="subtitle">How much compute time and how many images guests may use per day (resets at midnight). You yourself aren't limited. Batch runs are for you only.</p></div>
                 <div class="quota-defaults">
-                    <label>Rechenzeit pro Tag (Minuten) <input type="number" id="q-def-minutes" min="0" step="1"></label>
-                    <label>Bilder pro Tag <input type="number" id="q-def-images" min="0" step="1"></label>
-                    <label>Gleichzeitige Anfragen <input type="number" id="q-def-concurrent" min="1" step="1"></label>
+                    <label>Compute time per day (minutes) <input type="number" id="q-def-minutes" min="0" step="1"></label>
+                    <label>Images per day <input type="number" id="q-def-images" min="0" step="1"></label>
+                    <label>Concurrent requests <input type="number" id="q-def-concurrent" min="1" step="1"></label>
                 </div>
-                <h3 class="cmp-block-title">Personen</h3>
-                <p class="muted small">Leere Felder = Standard. „unbegrenzt“ hebt die Grenze für diese Person auf.</p>
+                <h3 class="cmp-block-title">People</h3>
+                <p class="muted small">Empty fields = default. “unlimited” lifts the limit for this person.</p>
                 <div id="quota-people" class="quota-people"></div>
                 <div style="display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap;">
-                    <button id="q-save" class="btn btn-primary">Speichern</button>
+                    <button id="q-save" class="btn btn-primary">Save</button>
                     <span id="q-status" class="muted small" role="status"></span>
                 </div>
             </div>
         </section>
 
-        <div id="sw-lightbox" class="sw-lightbox" hidden role="dialog" aria-modal="true" aria-label="Bilder ansehen und vergleichen">
+        <div id="sw-lightbox" class="sw-lightbox" hidden role="dialog" aria-modal="true" aria-label="View and compare images">
             <div class="sw-lb-main">
                 <div class="sw-lb-toolbar">
-                    <div class="sw-seg" role="group" aria-label="Ansicht">
-                        <button type="button" data-mode="flip" class="active">Umschalten</button>
-                        <button type="button" data-mode="slider">Schieber</button>
+                    <div class="sw-seg" role="group" aria-label="View">
+                        <button type="button" data-mode="flip" class="active">Toggle</button>
+                        <button type="button" data-mode="slider">Slider</button>
                     </div>
                     <span id="sw-lb-pos" class="sw-lb-pos"></span>
-                    <span id="sw-lb-hint" class="sw-lb-hint">← → wechseln · Leertaste: zum vorigen · 1–9 direkt</span>
+                    <span id="sw-lb-hint" class="sw-lb-hint">← → switch · space: to the previous one · 1–9 directly</span>
                 </div>
                 <div id="sw-lb-stage" class="sw-lb-stage">
                     <div id="sw-lb-frame" class="sw-lb-frame">
@@ -771,25 +770,25 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
                     </div>
                 </div>
                 <div id="sw-lb-slider-row" class="sw-lb-slider-row" hidden>
-                    <label>Links <select id="sw-lb-a"></select></label>
-                    <input type="range" id="sw-lb-range" min="0" max="100" step="0.5" value="50" aria-label="Trennlinie">
-                    <label>Rechts <select id="sw-lb-b"></select></label>
+                    <label>Left <select id="sw-lb-a"></select></label>
+                    <input type="range" id="sw-lb-range" min="0" max="100" step="0.5" value="50" aria-label="Divider">
+                    <label>Right <select id="sw-lb-b"></select></label>
                 </div>
                 <div id="sw-lb-thumbs" class="sw-lb-thumbs"></div>
             </div>
             <div class="sw-lb-side">
                 <div id="sw-lb-meta" class="sw-lb-meta"></div>
                 <div class="sw-lb-actions">
-                    <a id="sw-lb-download" class="btn btn-secondary btn-sm" download>Speichern</a>
-                    <button id="sw-lb-reuse" class="btn btn-secondary btn-sm">Prompt im Vergleich nutzen</button>
-                    <button id="sw-lb-delete" class="btn btn-danger-outline btn-sm">Löschen</button>
-                    <button id="sw-lb-close" class="btn btn-primary btn-sm">Schließen (Esc)</button>
+                    <a id="sw-lb-download" class="btn btn-secondary btn-sm" download>Save</a>
+                    <button id="sw-lb-reuse" class="btn btn-secondary btn-sm">Use the prompt in a comparison</button>
+                    <button id="sw-lb-delete" class="btn btn-danger-outline btn-sm">Delete</button>
+                    <button id="sw-lb-close" class="btn btn-primary btn-sm">Close (Esc)</button>
                 </div>
             </div>
         </div>
 
         <details class="r-details sw-log">
-            <summary>Protokoll</summary>
+            <summary>Log</summary>
             <div class="logs-section"><div id="logs-viewport" class="logs-viewport"></div></div>
         </details>
     </main>
@@ -798,13 +797,13 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
     <div id="schema-helper-modal" class="modal-overlay" style="display: none;">
         <div class="modal-container">
             <div class="modal-header">
-                <h2>JSON-Schema bauen</h2>
+                <h2>Build a JSON schema</h2>
                 <button id="close-schema-helper-btn" class="modal-close-btn">&times;</button>
             </div>
             <div class="modal-body">
                 <!-- Top Section: Guide (Full Width) -->
                 <div class="modal-row-top">
-                    <div class="modal-section-title">1. So schicken es verschiedene Server</div>
+                    <div class="modal-section-title">1. How different servers send it</div>
                     <div class="provider-tabs">
                         <button type="button" class="provider-tab-link active" data-provider="llamacpp">llama.cpp / OpenAI</button>
                         <button type="button" class="provider-tab-link" data-provider="ollama">Ollama</button>
@@ -819,36 +818,36 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
                 <div class="modal-row-bottom">
                     <!-- Left Column: Properties Builder -->
                     <div class="modal-column-left">
-                        <div class="modal-section-title">2. Felder</div>
+                        <div class="modal-section-title">2. Fields</div>
                         <div class="presets-container" style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap;">
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Vorlagen:</span>
-                            <button type="button" class="btn-preset" data-preset="character">Spielfigur</button>
-                            <button type="button" class="btn-preset" data-preset="sentiment">Stimmung</button>
-                            <button type="button" class="btn-preset" data-preset="simple">Einfaches Profil</button>
-                            <button type="button" class="btn-preset" data-preset="catalog">Produktkatalog</button>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Templates:</span>
+                            <button type="button" class="btn-preset" data-preset="character">Game character</button>
+                            <button type="button" class="btn-preset" data-preset="sentiment">Mood</button>
+                            <button type="button" class="btn-preset" data-preset="simple">Simple profile</button>
+                            <button type="button" class="btn-preset" data-preset="catalog">Product catalogue</button>
                         </div>
                         <div id="builder-fields-list" class="builder-fields-list">
                             <!-- Dynamic list of added fields -->
                         </div>
-                        <button type="button" id="builder-add-field-btn" class="btn btn-primary" style="margin-top: 0.75rem; padding: 0.4rem 0.8rem; font-size: 0.8rem;">+ Feld hinzufügen</button>
+                        <button type="button" id="builder-add-field-btn" class="btn btn-primary" style="margin-top: 0.75rem; padding: 0.4rem 0.8rem; font-size: 0.8rem;">+ Add field</button>
                     </div>
 
                     <!-- Right Column: Code & Payloads Preview -->
                     <div class="modal-column-right">
-                        <div class="modal-section-title">3. Das Schema</div>
+                        <div class="modal-section-title">3. The schema</div>
                         <div class="api-live-data" style="height: 180px; margin-bottom: 1rem;">
                             <pre id="schema-preview-code">{}</pre>
                         </div>
 
-                        <div class="modal-section-title">4. Die vollständige Anfrage</div>
+                        <div class="modal-section-title">4. The complete request</div>
                         <div class="api-live-data" style="height: 180px; margin-bottom: 1rem;">
                             <pre id="payload-preview-code">{}</pre>
                         </div>
 
                         <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: auto;">
-                            <button type="button" id="copy-schema-only-btn" class="btn-copy">Schema kopieren</button>
-                            <button type="button" id="copy-payload-btn" class="btn-copy">cURL kopieren</button>
-                            <button type="button" id="apply-schema-btn" class="btn btn-primary">In den Chat übernehmen</button>
+                            <button type="button" id="copy-schema-only-btn" class="btn-copy">Copy schema</button>
+                            <button type="button" id="copy-payload-btn" class="btn-copy">Copy cURL</button>
+                            <button type="button" id="apply-schema-btn" class="btn btn-primary">Use in the chat</button>
                         </div>
                     </div>
                 </div>
@@ -857,16 +856,19 @@ Frankreich ist für seinen Käse bekannt.</textarea></div>
     </div>
 
 
+    <script src="i18n.js?v=1"></script>
+    <script src="i18n.de.js?v=1"></script>
     <script src="door-session.js?v=1"></script>
-    <script src="models.js?v=2"></script>
-    <script src="app.js?v=14"></script>
-    <script src="docs.js?v=1"></script>
-    <script src="layout.js?v=4"></script>
-    <script src="compare.js?v=13"></script>
-    <script src="quota.js?v=1"></script>
-    <script src="speech.js?v=1"></script>
-    <script src="texts.js?v=1"></script>
-    <script src="overview.js?v=2"></script>
-    <script src="help.js?v=4"></script>
+    <script src="models.js?v=3"></script>
+    <script src="app.js?v=15"></script>
+    <script src="docs.js?v=2"></script>
+    <script src="layout.js?v=5"></script>
+    <script src="compare.js?v=14"></script>
+    <script src="quota.js?v=2"></script>
+    <script src="speech.js?v=2"></script>
+    <script src="texts.js?v=2"></script>
+    <script src="overview.js?v=3"></script>
+    <script src="help.js?v=5"></script>
+    <script>document.getElementById('lang-slot').replaceWith(I18N.switcher());</script>
 </body>
 </html>

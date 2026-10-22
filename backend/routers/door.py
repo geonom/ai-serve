@@ -110,7 +110,7 @@ async def sync_door() -> Dict[str, Any]:
             out["pushed"] = True
             logger.info(f"door routes updated: {[r['name'] for r in doc['routes']]}")
     except (httpx.HTTPError, DoorError, ValueError) as e:
-        out["door_error"] = f"Türsteher nicht erreichbar: {e}" if isinstance(e, httpx.HTTPError) else str(e)
+        out["door_error"] = f"The door is unreachable: {e}" if isinstance(e, httpx.HTTPError) else str(e)
     return out
 
 
@@ -126,7 +126,7 @@ async def _require_owner_device(request: Request) -> None:
     peer = request.client.host if request.client else None
     login = await asyncio.to_thread(tailscale.whois, peer) if peer and info else None
     if not may_change_exposure(peer, login, info.owner if info else None):
-        raise HTTPException(status_code=403, detail="Freigaben nur an diesem Rechner oder von deinen Geräten ändern.")
+        raise HTTPException(status_code=403, detail="Shares can only be changed on this machine or from your own devices.")
 
 
 @router.get("/api/door/security", summary="What the door turned away, per day -- and whether anything got through unsigned")
@@ -137,7 +137,7 @@ async def door_security(days: int = 14):
     try:
         data = await _door("security", params={"days": days})
     except (httpx.HTTPError, DoorError, ValueError) as e:
-        return {"available": False, "detail": f"Türsteher nicht erreichbar oder zu alt ({type(e).__name__})"}
+        return {"available": False, "detail": f"The door is unreachable or too old ({type(e).__name__})"}
     return {"available": True, **data}
 
 

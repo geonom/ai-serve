@@ -191,3 +191,10 @@
 .sw-tab-group-label { margin-right: 2px; letter-spacing: .05em; }
 .sw-main .sub-tabs { flex-wrap: wrap; }
 @media (max-width: 1280px) { .sw-tab-group-label { display: none; } }
+
+/* Language switcher (i18n.js) in the top bar */
+.lang-switch { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; background: var(--card-bg); }
+.lang-switch button { min-height: 30px; min-width: 38px; padding: 0 9px; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.lang-switch button + button { border-left: 1px solid var(--border-strong); }
+.lang-switch button[aria-pressed="true"] { background: var(--text-main); color: var(--bg-dark); cursor: default; }
+.lang-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }

@@ -482,6 +482,7 @@ I18N.add({
     "Step counts": "Schrittzahlen",
     "This model has a fixed {n}-step schedule – other step counts aren't possible.": "Dieses Modell rechnet immer mit {n} Schritten – andere Schrittzahlen gehen nicht.",
     "default {n}": "Standard {n}",
+    "– by language –": "– passend zur Sprache –",
     "Steps": "Schritte",
     "Steps: {n}": "Schritte: {n}",
     "Still missing: {what}.": "Es fehlt noch: {what}.",

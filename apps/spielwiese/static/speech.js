@@ -195,9 +195,11 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
             form.append(group(tx('Transcript of the recording') + need(inp.ref_text), ta));
         }
         if (inp.speaker) {
-            const sp = h('select', { on: { change: () => { tts.speaker = sp.value; } } },
-                (m.speakers || []).map(x => h('option', { value: x, text: x.replace(/_/g, ' ') })));
-            if (m.speakers.includes(tts.speaker)) sp.value = tts.speaker; else tts.speaker = sp.value;
+            // an optional speaker gets "by language" first (e.g. Piper picks the voice for the language)
+            const opts = (inp.speaker === 'optional' ? [h('option', { value: '', text: tx('– by language –') })] : [])
+                .concat((m.speakers || []).map(x => h('option', { value: x, text: x.replace(/_/g, ' ') })));
+            const sp = h('select', { on: { change: () => { tts.speaker = sp.value || null; } } }, opts);
+            if ((m.speakers || []).includes(tts.speaker)) sp.value = tts.speaker; else tts.speaker = sp.value || null;
             form.append(group(tx('Speaker') + need(inp.speaker), sp));
         }
         if (inp.instruct) form.append(instructInput(m.instruct || { kind: 'text' }, inp.instruct));

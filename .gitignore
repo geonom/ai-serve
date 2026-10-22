@@ -43,3 +43,4 @@ runtimes/
 data/
 model_servers.json
 venv.*/
+services.json

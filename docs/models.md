@@ -73,6 +73,9 @@ OmniVoice, Qwen3-TTS and VoxCPM2. Each lives in `providers/<id>/` with its own P
 - **Set up an engine:** *Downloads* in the dashboard or the Spielwiese, or `plugins/tts-serve/providers/<id>/setup.sh`.
   Some need an NVIDIA GPU (the Downloads list only offers what fits the machine). OmniVoice is for non-commercial use
   only.
+- **Without a GPU** (a Mac, a Raspberry Pi, an older PC): the Piper plugin speaks fast on the CPU, one voice per
+  language, no cloning – `./ai-serve plugin add https://github.com/geonom/ai-serve-piper`, then a voice from
+  *Downloads*.
 - **Default engine:** `DEFAULT_TTS_ENGINE` (else the first one installed).
 - **Voices to clone:** put a short clean recording (5–15 s) into `voices/` as `<name>.wav`, its exact words as
   `<name>.txt`; then `"voice": "<name>"` on `/v1/audio/speech`. Only use voices you have the right to clone.

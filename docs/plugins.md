@@ -143,6 +143,11 @@ result files are videos (`video/mp4`).
   tts-serve uses, see its provider manifests).
 - `generate`: tts-serve's request (`engine, text, language, variant, instruct, speaker, ref_audio_base64, ref_text,
   params, keep_alive, response_format`); answers audio. Optional `unload`, `status`, `jobs` (long texts).
+- Several `tts` plugins at once: their engines are merged into one list (a duplicate engine id stays with the plugin
+  whose id sorts first, the other is reported); every request goes to the plugin that lists its engine. The default
+  engine is `DEFAULT_TTS_ENGINE`, else the first installed plugin default in plugin-id order.
+- A complete, small example to copy (MIT): [ai-serve-piper](https://github.com/geonom/ai-serve-piper) -- manifest,
+  catalog, generate, status, downloads with sha256, tests, CI.
 
 ### stt -- transcription
 
@@ -238,7 +243,9 @@ missing model should be downloadable from the Spielwiese and the dashboard inste
 ## Which plugins exist
 
 Bundled with this release: tts-serve (`tts`), stt-serve (`stt`), sd-serve and image-serve (`image`; image-serve also
-carries MOSS-Image). Built and used on the developer's machine but **not part of this release**: an `access` plugin
+carries MOSS-Image). In repositories of their own, added with `./ai-serve plugin add <url>`:
+[ai-serve-piper](https://github.com/geonom/ai-serve-piper) (`tts`, CPU, MIT -- also the template for new plugins) and
+[ai-serve-strata](https://github.com/geonom/ai-serve-strata) (`llm`, `gpu: exclusive`). Built and used on the developer's machine but **not part of this release**: an `access` plugin
 (the "door" for letting other people in, see `docs/identity.md`) and an `llm` adapter for Strata. Document reading
 (NuExtract3) still lives in the gateway; it could become a `documents` plugin. No plugin exists yet for video, audio, 3D, translation, moderation,
 tools or realtime -- the contracts are there so the first ones fit.

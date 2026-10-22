@@ -68,6 +68,9 @@ from any git repository:
 ```
 
 A plugin is someone else's code: `plugin add` checks its manifest, and runs its `setup.sh` only after you confirm.
+Two plugins live in repositories of their own, as examples: [ai-serve-piper](https://github.com/geonom/ai-serve-piper)
+(fast speech on the CPU – and a template to copy for your own plugin, MIT) and
+[ai-serve-strata](https://github.com/geonom/ai-serve-strata).
 
 Existing OpenAI-compatible model servers such as **Ollama** or **LM Studio** can be added in the dashboard
 (*Compute & models → More model servers*), on custom ports too. The other way round, the Spielwiese can talk to such a
@@ -105,7 +108,7 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | ComfyUI (image-serve): Z-Image, Qwen-Image-Edit, style transfer, MOSS | ✅ clean setup | not tried (int8/fp8 weights are made for CUDA; may be slow or fail) | – |
 | Downloads from the Spielwiese / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
 | More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |
-| `./ai-serve plugin add <git-url>` | unit-tested; not yet with a real third-party repo | – | – |
+| `./ai-serve plugin add <git-url>` | ✅ with [ai-serve-strata](https://github.com/geonom/ai-serve-strata) (cloned, manifest checked, setup.sh) | – | – |
 | Strata through the ai-serve-strata plugin | ✅ (two NVIDIA cards, 96 GB RAM) | not tried | – |
 
 Everything else listed in the docs (other TTS engines, diarization, OCR, the GPU manager …) runs daily on the

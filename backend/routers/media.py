@@ -731,6 +731,9 @@ async def openai_audio_speech(req: OpenAISpeechRequest):
     eng = (engine or "").strip().lower()
     variant = None
     ref_text = None
+    speaker, speaker_mode = await _engine_speaker(engine, req.voice)
+    if speaker:   # `voice` names one of the engine's own speakers (Piper's voices, Qwen3's presets ...)
+        ref_voice_path, instruct, variant = None, None, speaker_mode
     if ref_voice_path:
         # Transcript from the preset's .txt sidecar, for every engine: CosyVoice
         # zero_shot and Qwen3 base REQUIRE it (Qwen3 400s without), OmniVoice uses
@@ -751,10 +754,27 @@ async def openai_audio_speech(req: OpenAISpeechRequest):
         variant = "voice_design"
     tts_req = TTSGenerateRequest(
         text=req.input, language=(req.language or "en"), engine=engine, variant=variant,
-        ref_voice_path=ref_voice_path, ref_text=ref_text, instruct=instruct,
-        response_format="binary",
+        ref_voice_path=ref_voice_path, ref_text=ref_text if not speaker else None, instruct=instruct,
+        speaker=speaker, response_format="binary",
     )
     return await generate_tts(tts_req)
+
+
+async def _engine_speaker(engine: Optional[str], voice: Optional[str]):
+    """(speaker, mode variant) when `voice` is one of the engine's own speakers per its catalog, else (None, None)."""
+    if not voice:
+        return None, None
+    view = await tts_client.engines() if await tts_client.ensure_running() else None
+    name = (engine or DEFAULT_TTS_ENGINE or (view or {}).get("default_engine") or "").strip().lower()
+    want = voice.strip().lower()
+    for e in (view or {}).get("engines", []):
+        if e.get("id") != name and name not in (e.get("aliases") or []):
+            continue
+        for m in e.get("modes") or []:
+            for sp in m.get("speakers") or []:
+                if isinstance(sp, str) and sp.lower() == want:
+                    return sp, m.get("variant")
+    return None, None
 
 
 async def _speech_engine(model: Optional[str]) -> Optional[str]:

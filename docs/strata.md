@@ -3,7 +3,7 @@
 [Strata](https://github.com/Niko1221/Strata) (a separate open-source project, its own license) runs one very large
 mixture-of-experts model – 125 billion parameters – on a gaming PC: the most-used experts sit on the graphics card,
 all of them in RAM, the rest is read from the SSD. ai-serve can offer it as a model next to its own llama.cpp ones
-through a small adapter, `extras/strata-plugin`.
+through a small adapter, the plugin [ai-serve-strata](https://github.com/geonom/ai-serve-strata).
 
 ## Is it for your machine?
 
@@ -29,14 +29,14 @@ stop it in the dashboard (or set `STRATA_KEEP_ALIVE`).
 
 1. **Install Strata** by its own instructions (its installer on a PC, `./setup.sh` on a Mac) and check that it
    answers on its own (`http://127.0.0.1:8080/v1/models`). Then stop it – ai-serve will start it when needed.
-2. **Move the adapter** where ai-serve looks for plugins:
+2. **Add the adapter** – a plugin in its own repository,
+   [geonom/ai-serve-strata](https://github.com/geonom/ai-serve-strata):
 
    ```bash
-   mv extras/strata-plugin plugins/
-   cd plugins/strata-plugin && ./setup.sh
+   ./ai-serve plugin add https://github.com/geonom/ai-serve-strata   # clones into plugins/, runs its setup.sh after you confirm
    ```
 
-3. **Point it at Strata** in `plugins/strata-plugin/.env`:
+3. **Point it at Strata** in `plugins/ai-serve-strata/.env`:
 
    ```bash
    STRATA_DIR=/path/to/Strata

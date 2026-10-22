@@ -36,7 +36,7 @@ jobs:
       - name: Plugins with their own requirements
         run: |
           set -e
-          for d in plugins/image-serve plugins/sd-serve extras/strata-plugin; do
+          for d in plugins/image-serve plugins/sd-serve; do
             echo "::group::$d"
             req=requirements.txt; [ -f "$d/requirements-dev.txt" ] && req=requirements-dev.txt
             (cd "$d" && uv venv -q --python 3.12 .ci && uv pip install -q --python .ci/bin/python -r "$req" pytest \

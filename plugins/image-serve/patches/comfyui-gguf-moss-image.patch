@@ -1,0 +1,50 @@
+From cb08154a4f0f6ae31a329c1a8ecc3f86a843e696 Mon Sep 17 00:00:00 2001
+From: owner <1165081+geonom@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 10:27:12 +0200
+Subject: [PATCH] Add moss_image (MOSS-Image GGUF): IMG_ARCH_LIST and
+ detect_arch() for files without general.architecture
+
+Needed for leejet/MOSS-Image-SFT-GGUF (stable-diffusion.cpp conversions carry no
+general.architecture, so the loader falls back to detect_arch()). Detection keys are the
+ones ComfyUI's own model_detection.py uses for MOSS-Image.
+---
+ loader.py        | 2 +-
+ tools/convert.py | 8 +++++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/loader.py b/loader.py
+index 0abeace..4958f17 100644
+--- a/loader.py
++++ b/loader.py
+@@ -9,7 +9,7 @@ import os
+ from .ops import GGMLTensor
+ from .dequant import is_quantized, dequantize_tensor
+ 
+-IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image", "qwen_image21"}
++IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image", "qwen_image21", "moss_image"}
+ TXT_ARCH_LIST = {"t5", "t5encoder", "llama", "qwen2vl", "qwen3", "qwen3vl", "gemma3"}
+ VIS_TYPE_LIST = {"clip-vision", "mmproj"}
+ 
+diff --git a/tools/convert.py b/tools/convert.py
+index 9d75f0b..5d4bba1 100644
+--- a/tools/convert.py
++++ b/tools/convert.py
+@@ -151,8 +151,14 @@ class ModelQwenImage21(ModelTemplate):
+         ("txt_in.text_norm.weight",)
+     ]
+ 
++class ModelMossImage(ModelTemplate):
++    arch = "moss_image"  # MOSS-Image (OpenMOSS); same keys ComfyUI's own model_detection.py checks
++    keys_detect = [
++        ("shared_block_modulation.weight", "layers.0.proj.ffn_up_gate.weight"),
++    ]
++
+ arch_list = [ModelFlux, ModelSD3, ModelAura, ModelHiDream, CosmosPredict2,
+-             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2, ModelQwenImage21]
++             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2, ModelQwenImage21, ModelMossImage]
+ 
+ def is_model_arch(model, state_dict):
+     # check if model is correct
+-- 
+2.43.0
+

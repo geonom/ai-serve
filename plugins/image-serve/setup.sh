@@ -52,6 +52,11 @@ if [ ! -d "$GGUF" ]; then
     run git -C "$GGUF" checkout -q "$GGUF_COMMIT"
     run git -C "$GGUF" apply "$HERE/patches/comfyui-gguf-qwen-image21.patch"
 fi
+# MOSS-Image GGUF (machines without NVIDIA): also into a ComfyUI-GGUF cloned before this patch existed
+if [ "$(cd "$COMFYUI_DIR" 2>/dev/null && pwd -P)" = "$HERE/ComfyUI" ] && ! grep -q '"moss_image"' "$GGUF/loader.py" 2>/dev/null; then
+    if [ -n "$DRY" ] && [ ! -d "$GGUF" ]; then echo "  would run: git -C $GGUF apply patches/comfyui-gguf-moss-image.patch"
+    else run git -C "$GGUF" apply "$HERE/patches/comfyui-gguf-moss-image.patch"; fi
+fi
 
 PY="${COMFYUI_PYTHON:-$COMFYUI_DIR/venv/bin/python}"
 if [ ! -x "$PY" ]; then

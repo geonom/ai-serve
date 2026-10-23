@@ -169,3 +169,81 @@ def test_bf16_download_brings_the_shared_files_first(monkeypatch):
     plugin._install["moss-bf16"] = {"state": "downloading", "done": 0}
     plugin._run_install("moss-bf16")
     assert got == ["moss", "moss-bf16"] and plugin._install["moss-bf16"]["state"] == "installed"
+
+
+def test_without_nvidia_moss_runs_on_the_gguf(monkeypatch, tmp_path):
+    """A Mac (no CUDA): the compact MOSS variants use the Q5 GGUF through ComfyUI-GGUF's loader, are listed as such,
+    and the download offered is moss-gguf, not int8."""
+    monkeypatch.setattr(config, "has_cuda", lambda: False)
+    monkeypatch.setattr(config, "moss_possible", lambda: True)
+    monkeypatch.setattr(plugin, "_models_root", lambda: str(tmp_path))
+    for rel in moss.needed_files("moss-turbo-4", moss.GGUF):
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x")
+    assert plugin.moss_unet("moss-turbo-4") == moss.GGUF and plugin.moss_installed("moss-turbo-4")
+    rows = {r["id"]: r for r in client.get("/v1/images/models").json()["data"]}
+    assert rows["moss-turbo-4"]["available"] and rows["moss-turbo-4"]["label"] == "MOSS Turbo 4 v2.0 (GGUF Q5)"
+    monkeypatch.setattr(config, "gguf_knows_moss", lambda: False)       # ComfyUI-GGUF not patched yet
+    assert not plugin.moss_installed("moss-turbo-4")
+    seen = {}
+
+    async def run(fn, *a, **kw):
+        seen["wf"] = fn.__defaults__[0] if fn.__defaults__ else None
+        return "aGk="
+    monkeypatch.setattr(config, "gguf_knows_moss", lambda: True)
+    monkeypatch.setattr(plugin, "_run", run)
+    r = client.post("/v1/images/generations", json={"prompt": "a sign", "model": "moss-turbo-4"})
+    assert r.status_code == 200, r.text
+    assert seen["wf"]["1"]["class_type"] == "UnetLoaderGGUF"
+    from image_serve import bundles
+    monkeypatch.setattr(bundles, "present", lambda b, root: False)
+    ids = {i["id"] for i in client.get("/plugin/install").json()["items"]}
+    assert "moss-gguf" in ids and "moss" not in ids and "moss-bf16" in ids
+
+
+def test_with_nvidia_the_int8_download_is_offered(monkeypatch):
+    from image_serve import bundles
+    monkeypatch.setattr(config, "moss_possible", lambda: True)
+    monkeypatch.setattr(bundles, "present", lambda b, root: False)
+    ids = {i["id"] for i in client.get("/plugin/install").json()["items"]}
+    assert "moss" in ids and "moss-gguf" not in ids
+
+
+def test_gguf_download_patches_comfyui_gguf_and_bf16_builds_on_it(monkeypatch):
+    from image_serve import bundles
+    steps = []
+    monkeypatch.setattr(config, "has_cuda", lambda: False)
+    monkeypatch.setattr(config, "moss_needs_upgrade", lambda: False)
+    monkeypatch.setattr(config, "teach_gguf_moss", lambda: steps.append("patch") or True)
+    monkeypatch.setattr(plugin, "_restart_comfy_if_idle", lambda: steps.append("restart"))
+    monkeypatch.setattr(bundles, "present", lambda b, root: False)
+    monkeypatch.setattr(bundles, "download", lambda b, root, progress=None, opener=None: steps.append(b))
+    plugin._install["moss-gguf"] = {"state": "downloading", "done": 0}
+    plugin._run_install("moss-gguf")
+    assert steps == ["patch", "restart", "moss-gguf"] and plugin._install["moss-gguf"]["state"] == "installed"
+    steps.clear()
+    plugin._install["moss-bf16"] = {"state": "downloading", "done": 0}
+    plugin._run_install("moss-bf16")
+    assert steps == ["moss-gguf", "moss-bf16"]          # the shared files come with this machine's MOSS bundle
+
+
+def test_gguf_patch_applies_on_top_of_the_qwen_patch(tmp_path, monkeypatch):
+    """patches/comfyui-gguf-moss-image.patch applies to ComfyUI-GGUF at the pinned commit + the Qwen-Image 2.1 patch,
+    and only to our own ComfyUI. Needs the pinned ComfyUI-GGUF checkout from setup.sh; skipped without network."""
+    import subprocess
+    own = tmp_path / "ComfyUI"
+    g = own / "custom_nodes" / "ComfyUI-GGUF"
+    r = subprocess.run(["git", "clone", "-q", "https://github.com/city96/ComfyUI-GGUF.git", str(g)], capture_output=True)
+    if r.returncode != 0:
+        pytest.skip("no network")
+    subprocess.run(["git", "-C", str(g), "checkout", "-q", "6ea2651e7"], check=True)
+    subprocess.run(["git", "-C", str(g), "apply", str(config.HERE / "patches" / "comfyui-gguf-qwen-image21.patch")], check=True)
+    monkeypatch.undo()                                   # the real gguf_knows_moss / own_comfy
+    monkeypatch.setattr(config, "HERE", tmp_path)
+    monkeypatch.setattr(config, "COMFYUI_DIR", str(own))
+    monkeypatch.setattr(config, "GGUF_MOSS_PATCH", config.GGUF_MOSS_PATCH)
+    assert not config.gguf_knows_moss()
+    assert config.teach_gguf_moss() is True and config.gguf_knows_moss()
+    assert config.teach_gguf_moss() is False             # already in
+    assert "ModelMossImage" in (g / "tools" / "convert.py").read_text()

@@ -77,3 +77,48 @@ def moss_possible() -> bool:
 def comfy_ready() -> bool:
     """ComfyUI and its Python are there (setup.sh ran, or an existing ComfyUI is configured in .env)."""
     return os.path.isfile(os.path.join(COMFYUI_DIR, "main.py")) and os.access(COMFYUI_PYTHON, os.X_OK)
+
+
+_cuda = None
+
+
+def has_cuda() -> bool:
+    """An NVIDIA GPU this machine can use (nvidia-smi lists one) -- decides int8 vs. the GGUF for MOSS. Cached."""
+    global _cuda
+    if _cuda is None:
+        import shutil
+        import subprocess
+        try:
+            _cuda = bool(shutil.which("nvidia-smi")) and subprocess.run(
+                ["nvidia-smi", "-L"], capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _cuda = False
+    return _cuda
+
+
+GGUF_MOSS_PATCH = HERE / "patches" / "comfyui-gguf-moss-image.patch"
+
+
+def gguf_dir() -> str:
+    return os.path.join(COMFYUI_DIR, "custom_nodes", "ComfyUI-GGUF")
+
+
+def gguf_knows_moss() -> bool:
+    """ComfyUI-GGUF here loads MOSS-Image GGUF files (our patch is in, or a release that has it)."""
+    try:
+        with open(os.path.join(gguf_dir(), "loader.py"), encoding="utf-8", errors="replace") as f:
+            return '"moss_image"' in f.read()
+    except OSError:
+        return False
+
+
+def teach_gguf_moss() -> bool:
+    """Apply patches/comfyui-gguf-moss-image.patch to our own ComfyUI's ComfyUI-GGUF (cloned by setup.sh). True when
+    it changed something (a running ComfyUI then needs a restart). A ComfyUI configured elsewhere is never changed."""
+    import subprocess
+    if gguf_knows_moss() or not own_comfy() or not os.path.isdir(gguf_dir()):
+        return False
+    r = subprocess.run(["git", "-C", gguf_dir(), "apply", str(GGUF_MOSS_PATCH)], capture_output=True, text=True)
+    if r.returncode != 0 or not gguf_knows_moss():
+        raise RuntimeError(f"couldn't patch ComfyUI-GGUF for MOSS: {(r.stderr or r.stdout).strip()[:200]}")
+    return True

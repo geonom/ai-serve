@@ -72,7 +72,7 @@ async def models(task: str = "all"):
                                           "aspect_ratios", "text_in_image", "layout", "steps")},
                      "license": lic, "commercial_use": commercial})
     if config.moss_possible() and task in ("all", "generate"):
-        for r in moss.catalog(lambda v: config.comfy_ready() and moss_installed(v))["data"]:
+        for r in moss.catalog(lambda v: config.comfy_ready() and moss_installed(v), moss_unet)["data"]:
             rows.append({**r, "default": False, "aliases": []})
     return {"object": "list", "data": rows}
 
@@ -85,9 +85,19 @@ def _models_root() -> str:
     return config.COMFYUI_MODELS_ROOT
 
 
+def moss_unet(variant: str) -> str:
+    """The main model file this variant runs on here: int8 with an NVIDIA GPU, else the Q5 GGUF (moss.main_model)."""
+    root = _models_root()
+    return moss.main_model(variant, lambda f: os.path.isfile(os.path.join(root, "diffusion_models", f)),
+                           cuda=config.has_cuda())
+
+
 def moss_installed(variant: str) -> bool:
     root = _models_root()
-    return all(os.path.isfile(os.path.join(root, rel)) for rel in moss.needed_files(variant))
+    unet = moss_unet(variant)
+    if unet.endswith(".gguf") and not config.gguf_knows_moss():
+        return False
+    return all(os.path.isfile(os.path.join(root, rel)) for rel in moss.needed_files(variant, unet))
 
 
 async def _moss_generate(body: Dict[str, Any], rid: Optional[str]) -> Dict[str, Any]:
@@ -104,7 +114,7 @@ async def _moss_generate(body: Dict[str, Any], rid: Optional[str]) -> Dict[str, 
     data = []
     for i in range(n):
         wf = moss.build_workflow(prompt, elements, width, height, seed=None if seed is None else seed + i,
-                                 steps=steps, variant=variant)
+                                 steps=steps, variant=variant, unet=moss_unet(variant))
         data.append({"b64_json": await _run(lambda _r, wf=wf: comfy.queue_workflow(wf, variant), None, rid)})
     return {"created": int(time.time()), "data": data}
 
@@ -285,7 +295,34 @@ def _setup_comfy() -> None:
         raise RuntimeError(f"setup.sh exited with {code} -- {tail[:250]}")
 
 
-MOSS_BUNDLES = ("moss", "moss-bf16")
+MOSS_BUNDLES = ("moss", "moss-gguf", "moss-bf16")
+
+
+def moss_main_bundle() -> str:
+    """The MOSS download for this machine: int8 needs CUDA kernels, without NVIDIA the GGUF (moss.GGUF)."""
+    return "moss" if config.has_cuda() else "moss-gguf"
+
+
+def _needs(bundle: str) -> Optional[str]:
+    from image_serve import bundles
+    needs = bundles.BUNDLES[bundle].get("needs")
+    return moss_main_bundle() if needs == "moss" else needs
+
+
+def _bundle_ready(bundle: str) -> bool:
+    """Files there and runnable: ComfyUI set up, and for the GGUF a ComfyUI-GGUF that knows MOSS (else a download
+    click patches it -- nothing is fetched twice)."""
+    from image_serve import bundles
+    return (bundles.present(bundle, config.COMFYUI_MODELS_ROOT) and comfy_ready()
+            and (bundle != "moss-gguf" or config.gguf_knows_moss()))
+
+
+def _listed(bundle: str) -> bool:
+    """Only this machine's MOSS main bundle is offered (the other one only when it's already there)."""
+    from image_serve import bundles
+    if bundle in ("moss", "moss-gguf") and bundle != moss_main_bundle():
+        return bundles.present(bundle, config.COMFYUI_MODELS_ROOT)
+    return True
 
 
 def _offered(bundle: str) -> bool:
@@ -322,12 +359,12 @@ def _install_item(bundle: str) -> Dict[str, Any]:
     from image_serve import bundles
     from image_serve.config import COMFYUI_MODELS_ROOT
     st = _install.get(bundle, {})
-    there = bundles.present(bundle, COMFYUI_MODELS_ROOT) and comfy_ready()
+    there = _bundle_ready(bundle)
     state = "installed" if there and st.get("state") != "downloading" else (st.get("state") or "missing")
     info = bundles.BUNDLES[bundle]
     return {"id": bundle, "label": info["label"], "description": info["description"], "license": info["license"],
-            "size_mb": bundles.size_mb(bundle) + (bundles.size_mb(info["needs"])
-                                                  if info.get("needs") and not bundles.present(info["needs"], COMFYUI_MODELS_ROOT) else 0),
+            "size_mb": bundles.size_mb(bundle) + (bundles.size_mb(_needs(bundle))
+                                                  if _needs(bundle) and not bundles.present(_needs(bundle), COMFYUI_MODELS_ROOT) else 0),
             "state": state,
             "done_mb": (st.get("done", 0) >> 20) if state == "downloading" else None,
             "error": st.get("error", "") if state == "failed" else ""}
@@ -345,7 +382,9 @@ def _run_install(bundle: str) -> None:
         elif bundle in MOSS_BUNDLES and config.moss_needs_upgrade():   # our own ComfyUI, older than MOSS needs
             _setup_comfy()                         # setup.sh brings it to the pinned release
             _restart_comfy_if_idle()
-        needs = bundles.BUNDLES[bundle].get("needs")
+        if bundle == "moss-gguf" and config.teach_gguf_moss():   # ComfyUI-GGUF learns MOSS (patches/)
+            _restart_comfy_if_idle()
+        needs = _needs(bundle)
         if needs and not bundles.present(needs, COMFYUI_MODELS_ROOT):   # e.g. MOSS bf16 on top of MOSS's shared files
             bundles.download(needs, COMFYUI_MODELS_ROOT, progress)
         bundles.download(bundle, COMFYUI_MODELS_ROOT, progress)
@@ -369,7 +408,7 @@ def _run_comfy_setup() -> None:
 async def install_list():
     from image_serve import bundles
     return {"items": [_comfy_item()] + [_install_item(b) if _offered(b) else _moss_blocked_item(b)
-                                        for b in bundles.BUNDLES]}
+                                        for b in bundles.BUNDLES if _listed(b)]}
 
 
 @app.post("/plugin/install", status_code=202)
@@ -388,8 +427,7 @@ async def install_start(body: Any = Body(...)):
     if not _offered(bundle):
         raise HTTPException(status_code=409, detail=_moss_blocked_reason())
     with _install_lock:
-        if not (bundles.present(bundle, COMFYUI_MODELS_ROOT) and comfy_ready()) \
-                and _install.get(bundle, {}).get("state") != "downloading":
+        if not _bundle_ready(bundle) and _install.get(bundle, {}).get("state") != "downloading":
             _install[bundle] = {"state": "downloading", "done": 0}
             threading.Thread(target=_run_install, args=(bundle,), daemon=True).start()
     return _install_item(bundle)

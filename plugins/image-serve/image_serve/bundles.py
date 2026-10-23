@@ -27,14 +27,27 @@ class BundleFile:
     name: str          # saved as
     size: int
     sha256: str
+    rev: str = "main"  # a commit for repos that aren't the model's own (a changed file there fails the hash anyway)
 
     @property
     def url(self) -> str:
-        return f"https://huggingface.co/{self.repo}/resolve/main/{urllib.parse.quote(self.path)}"
+        return f"https://huggingface.co/{self.repo}/resolve/{self.rev}/{urllib.parse.quote(self.path)}"
 
     def target(self, root: str) -> str:
         return os.path.join(root, self.dir, self.name)
 
+
+# MOSS's files besides the main model, shared by `moss` and `moss-gguf`
+_MOSS_SHARED: Tuple[BundleFile, ...] = (
+    BundleFile("moss", "Comfy-Org/MOSS-Image", "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors", "text_encoders",
+               "qwen3.5_9b_w4a8_gptq.safetensors", 7343591088, "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c"),
+    BundleFile("moss", "Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors", "vae",
+               "flux2-vae.safetensors", 336213556, "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"),
+    BundleFile("moss", "akhaliq/MOSS-Image-SFT-4-steps", "moss_image_sft_4step_v2.0.safetensors", "loras/MOSS",
+               "moss_image_sft_4step_v2.0.safetensors", 1189176752, "154c7f1455c3bf9925945c2f1ea2e4f09d0d0c67256081384a094b2b585f913f"),
+    BundleFile("moss", "lodestones/MOSS-Image-SFT-8-steps-dmd", "lora.safetensors", "loras/MOSS",
+               "moss-sft-8step-dmd-lodestones.safetensors", 1189176800, "4abb14e39c1a59018907581e609f43616ec6810126144ec2b1d2e6f8969628fe"),
+)
 
 FILES: Tuple[BundleFile, ...] = (
     BundleFile("z-image-turbo", "jayn7/Z-Image-Turbo-GGUF", "z_image_turbo-Q6_K.gguf", "unet",
@@ -61,14 +74,14 @@ FILES: Tuple[BundleFile, ...] = (
     # FLUX.2's VAE (Apache-2.0 per black-forest-labs/FLUX.2-VAE; ComfyUI's single-file copy), the two turbo LoRAs
     BundleFile("moss", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_int8_convrot.safetensors", "diffusion_models",
                "moss_image_sft_int8_convrot.safetensors", 5413698958, "b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f"),
-    BundleFile("moss", "Comfy-Org/MOSS-Image", "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors", "text_encoders",
-               "qwen3.5_9b_w4a8_gptq.safetensors", 7343591088, "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c"),
-    BundleFile("moss", "Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors", "vae",
-               "flux2-vae.safetensors", 336213556, "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"),
-    BundleFile("moss", "akhaliq/MOSS-Image-SFT-4-steps", "moss_image_sft_4step_v2.0.safetensors", "loras/MOSS",
-               "moss_image_sft_4step_v2.0.safetensors", 1189176752, "154c7f1455c3bf9925945c2f1ea2e4f09d0d0c67256081384a094b2b585f913f"),
-    BundleFile("moss", "lodestones/MOSS-Image-SFT-8-steps-dmd", "lora.safetensors", "loras/MOSS",
-               "moss-sft-8step-dmd-lodestones.safetensors", 1189176800, "4abb14e39c1a59018907581e609f43616ec6810126144ec2b1d2e6f8969628fe"),
+    *_MOSS_SHARED,
+    # MOSS-Image for machines without an NVIDIA GPU (int8 needs CUDA kernels): leejet's Q5_K GGUF of the SFT model
+    # (Apache-2.0; leejet = stable-diffusion.cpp's author; QKV fused like ComfyUI's own MOSS model, so ComfyUI-GGUF
+    # loads it with patches/comfyui-gguf-moss-image.patch) + the same text encoder, VAE and turbo LoRAs as `moss`
+    BundleFile("moss-gguf", "leejet/MOSS-Image-SFT-GGUF", "MOSS-Image-SFT-Q5_K.gguf", "diffusion_models",
+               "MOSS-Image-SFT-Q5_K.gguf", 3921943392, "0f4400bafdf52f08d4ad7d2554564fd41a07964f4e4e98ff13045cd1d212720a",
+               rev="238daf423f0de65316207453591f275407aac9a7"),
+    *(BundleFile("moss-gguf", f.repo, f.path, f.dir, f.name, f.size, f.sha256) for f in _MOSS_SHARED),
     BundleFile("moss-bf16", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_bf16.safetensors", "diffusion_models",
                "moss_image_sft_bf16.safetensors", 10164655808, "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f"),
 )
@@ -82,6 +95,9 @@ BUNDLES: Dict[str, Dict[str, str]] = {
                     "description": "Fast images from text, a bit more illustrative"},
     "moss": {"label": "MOSS-Image", "license": "Apache-2.0",
              "description": "Text in images, long prompts, things placed where you draw them; with the 4- and 8-step turbo LoRAs"},
+    "moss-gguf": {"label": "MOSS-Image (GGUF)", "license": "Apache-2.0",
+                  "description": "MOSS-Image for Macs and machines without an NVIDIA GPU: a Q5 main model (3.7 GB) "
+                                 "instead of int8, with the 4- and 8-step turbo LoRAs"},
     "moss-bf16": {"label": "MOSS-Image bf16 main model", "license": "Apache-2.0", "needs": "moss",
                   "description": "The full-precision main model (10 GB) for the bf16 MOSS variants; needs MOSS-Image"},
 }

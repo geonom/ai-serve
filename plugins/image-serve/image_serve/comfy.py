@@ -856,6 +856,11 @@ async def _track_and_retrieve_comfyui(
                 if hist_resp.status_code == 200:
                     hist_data = hist_resp.json()
                     if prompt_id in hist_data:
+                        failed = history_error(hist_data[prompt_id])
+                        if failed:      # ComfyUI gave up on it: say why now instead of waiting out the timeout
+                            if prompt_id in state.comfyui_tasks:
+                                state.comfyui_tasks[prompt_id].update({"status": "failed", "error": failed})
+                            break
                         outputs = hist_data[prompt_id].get("outputs", {})
                         for _, node_output in outputs.items():
                             if "images" in node_output:
@@ -904,6 +909,21 @@ async def _track_and_retrieve_comfyui(
             })
         elif state.comfyui_tasks[prompt_id]["status"] != "failed":
             state.comfyui_tasks[prompt_id].update({"status": "failed", "error": "Failed to retrieve generated image within timeout."})
+
+
+def history_error(entry: Any) -> Optional[str]:
+    """A ComfyUI /history entry that ended in an error -> a short reason (node type + ComfyUI's message, no
+    traceback -- it carries paths), else None. Before this a failed prompt looked like a missing image and the caller
+    waited 60 s for "Failed to retrieve generated image within timeout" (found 2026-10-23)."""
+    status = entry.get("status") if isinstance(entry, dict) else None
+    if not isinstance(status, dict) or status.get("status_str") != "error":
+        return None
+    for m in status.get("messages") or []:
+        if isinstance(m, (list, tuple)) and len(m) == 2 and m[0] == "execution_error" and isinstance(m[1], dict):
+            d = m[1]
+            msg = " ".join(str(d.get("exception_message") or "").split())[:240]
+            return f"ComfyUI failed in {d.get('node_type') or 'a node'}: {msg or d.get('exception_type') or 'error'}"
+    return "ComfyUI failed on this image (see the plugin's ComfyUI log)"
 
 
 def _extend_lora_chain(workflow: dict, anchor_lora_node_id: str, extra_loras: List[LoraSpec]) -> None:

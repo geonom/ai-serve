@@ -10,8 +10,14 @@ back when idle. ComfyUI's own web interface is passed through as well.
 | Z-Image Turbo (GGUF Q6_K) | fast, photorealistic images -- the default | ~9.1 GB |
 | Qwen-Image-Edit 2511 (GGUF Q2_K + Lightning 4-step LoRA) | editing by instruction, style transfer | ~16.7 GB |
 | ERNIE-Image Turbo (GGUF Q6_K) | fast, a bit more illustrative | ~13.7 GB |
-| MOSS-Image (int8 + 4- and 8-step turbo LoRAs) | text in images, long prompts, placing things where you draw boxes (`layout`) | ~14.4 GB |
+| MOSS-Image (int8 + 4- and 8-step turbo LoRAs) | text in images, long prompts, placing things where you draw boxes (`layout`) -- with an NVIDIA GPU | ~14.4 GB |
+| MOSS-Image (GGUF Q5 + the same LoRAs) | the same, for a Mac or a machine without NVIDIA | ~13.0 GB |
 | MOSS-Image bf16 main model | the full-precision variants (on top of MOSS-Image) | ~9.5 GB |
+
+Only one of the two MOSS-Image downloads is offered: int8 with an NVIDIA GPU (fast CUDA kernels), the GGUF without one
+(int8 is unusably slow there). The GGUF is leejet's Q5_K of MOSS-Image-SFT (pinned to a commit of
+`leejet/MOSS-Image-SFT-GGUF`); ComfyUI-GGUF learns it from `patches/comfyui-gguf-moss-image.patch`, applied by
+`setup.sh` or by the download itself.
 
 All are Apache-2.0. Each file is pinned by Hugging Face repo, size and sha256 (`image_serve/bundles.py`) and
 checked while downloading.
@@ -47,10 +53,11 @@ yourself (`git fetch --depth 1 origin tag v0.42.4 && git checkout v0.42.4`, then
 Python) or remove `COMFYUI_DIR` to let image-serve use its own.
 
 **Status:** tested on Linux with NVIDIA (fresh setup with ComfyUI v0.42.4 and CUDA 13: Z-Image, Qwen-Image 2.1,
-editing, style transfer, MOSS with and without layout, int8 and bf16; a real bundle file downloaded and checked).
-ERNIE runs on the developer's machine but wasn't part of the fresh-setup test. **Apple Silicon: not tried.** setup.sh
-installs PyTorch with Metal there, but expect it to be much slower, and the int8 / fp8 / w4a8 weights (MOSS,
-Qwen-Image-Edit's text encoder) are made for CUDA – they may not work at all. AMD and CPU-only: not tried.
+editing, style transfer, MOSS with and without layout, int8, bf16 and the GGUF; a real bundle file downloaded and
+checked). ERNIE runs on the developer's machine but wasn't part of the fresh-setup test. **Apple Silicon:** Z-Image
+(download and images) works on an M5 Pro. MOSS-Image's GGUF ran without CUDA on a Linux CPU (one image in ~4 min at
+256 px, 1 step -- the int8 file didn't finish one step there in 20 min), including its w4a8 text encoder; on a Mac it
+is **not tried yet**. Qwen-Image-Edit's fp8 text encoder is made for CUDA and may not work on a Mac. AMD: not tried.
 
 ## License
 

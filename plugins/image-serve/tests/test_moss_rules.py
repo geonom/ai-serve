@@ -44,3 +44,26 @@ def test_workflow_turbo_lora_and_base():
     assert (wf["6"]["inputs"]["width"], wf["6"]["inputs"]["height"], wf["7"]["inputs"]["seed"]) == (1024, 768, 7)
     base = rules.build_workflow("a fox", [], 1024, 1024, variant="moss")
     assert "10" not in base and base["7"]["inputs"]["cfg"] == 3.0 and base["7"]["inputs"]["steps"] == 30
+
+
+def test_main_model_int8_with_cuda_gguf_without():
+    """The compact variants run on int8 with an NVIDIA GPU (fast kernels) and on the Q5 GGUF without one (int8 is
+    unusably slow there); when only one of the two files is there, that one."""
+    none = lambda f: False
+    assert rules.main_model("moss", none, cuda=True) == rules.INT8
+    assert rules.main_model("moss-turbo-4", none, cuda=False) == rules.GGUF
+    assert rules.main_model("moss", lambda f: f == rules.GGUF, cuda=True) == rules.GGUF
+    assert rules.main_model("moss", lambda f: f == rules.INT8, cuda=False) == rules.INT8
+    both = lambda f: True
+    assert rules.main_model("moss", both, cuda=True) == rules.INT8 and rules.main_model("moss", both, cuda=False) == rules.GGUF
+    assert rules.main_model("moss-turbo-8-bf16", both, cuda=False) == rules.BF16
+    assert rules.label("moss-turbo-4", rules.GGUF) == "MOSS Turbo 4 v2.0 (GGUF Q5)"
+    assert rules.label("moss", rules.INT8) == "MOSS-Image (int8)" and rules.label("moss-bf16", rules.BF16) == "MOSS-Image bf16"
+    assert rules.files_of("moss-turbo-4", rules.GGUF)[0] == f"diffusion_models/{rules.GGUF}"
+
+
+def test_workflow_on_the_gguf_uses_the_gguf_loader():
+    wf = rules.build_workflow("a fox", [], 1024, 1024, variant="moss-turbo-4", unet=rules.GGUF)
+    assert wf["1"]["class_type"] == "UnetLoaderGGUF" and wf["1"]["inputs"] == {"unet_name": rules.GGUF}
+    assert wf["10"]["inputs"]["model"] == ["1", 0] and wf["7"]["inputs"]["model"] == ["10", 0]
+    assert rules.build_workflow("a fox", [], 1024, 1024, variant="moss")["1"]["class_type"] == "UNETLoader"

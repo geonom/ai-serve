@@ -223,7 +223,7 @@ document.addEventListener('keydown', (ev) => {
 });
 
 // The variants come from the gateway's catalog (models with `layout`); without one the page says what's missing.
-const LAY_DOWNLOADS = ['moss', 'moss-bf16'];   // image-serve's MOSS download bundles
+const LAY_DOWNLOADS = ['moss', 'moss-gguf', 'moss-bf16'];   // image-serve's MOSS bundles (it offers the one for this machine)
 async function layLoadVariants() {
     const sel = document.getElementById('lay-variant'), btn = document.getElementById('lay-run-btn');
     let rows = [];
@@ -236,7 +236,7 @@ async function layLoadVariants() {
         return o;
     }));
     const usable = rows.filter(m => m.available);
-    const pick = usable.find(m => m.id === keep) || usable.find(m => m.id === 'moss-turbo-4-bf16') || usable[0];
+    const pick = usable.find(m => m.id === keep) || usable.find(m => m.id === 'moss-turbo-4-bf16') || usable.find(m => m.id === 'moss-turbo-4') || usable[0];
     if (pick) sel.value = pick.id;
     btn.disabled = !usable.length;
     // Only MOSS can place things: offer exactly its downloads (image-serve, where its ComfyUI is new enough)

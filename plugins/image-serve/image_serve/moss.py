@@ -20,19 +20,24 @@ WORKFLOW = Path(__file__).resolve().parent.parent / "workflows" / "MOSS-Image.js
 # (10 GB, needs more VRAM) is the reference, int8 the faster/smaller one.
 INT8 = "moss_image_sft_int8_convrot.safetensors"
 BF16 = "moss_image_sft_bf16.safetensors"
+# Q5_K GGUF of the SFT model by leejet (stable-diffusion.cpp's author; QKV fused like ComfyUI's own MOSS model, so it
+# loads through ComfyUI-GGUF with patches/comfyui-gguf-moss-image.patch). For machines without an NVIDIA GPU: int8's
+# fast kernels are CUDA-only -- without CUDA, int8 didn't finish one step at 256 px in 20 min on the CPU, this file a
+# whole image in 229 s (2026-10-23). With CUDA int8 stays faster (27 s vs 70 s for 30 steps on a 3090).
+GGUF = "MOSS-Image-SFT-Q5_K.gguf"
 _V2 = "MOSS/moss_image_sft_4step_v2.0.safetensors"
 _L8 = "MOSS/moss-sft-8step-dmd-lodestones.safetensors"
 VARIANTS: Dict[str, Dict[str, Any]] = {
     "moss": {"unet": INT8, "steps": 30, "cfg": 3.0, "lora": None, "label": "MOSS-Image",
-             "description": "Text in images, long prompts, positions (layout); int8, 30 steps, ~30 s."},
+             "description": "Text in images, long prompts, positions (layout); 30 steps."},
     "moss-bf16": {"unet": BF16, "steps": 30, "cfg": 3.0, "lora": None, "label": "MOSS-Image bf16",
                   "description": "Like MOSS-Image, but the full bf16 main model (10 GB) – the reference for comparisons."},
-    "moss-turbo-8": {"unet": INT8, "steps": 8, "cfg": 1.0, "lora": _L8, "strength": 1.0, "label": "MOSS Turbo 8 (int8)",
-                     "description": "lodestones' 8-step LoRA on the int8 main model."},
+    "moss-turbo-8": {"unet": INT8, "steps": 8, "cfg": 1.0, "lora": _L8, "strength": 1.0, "label": "MOSS Turbo 8",
+                     "description": "lodestones' 8-step LoRA on the compact main model."},
     "moss-turbo-8-bf16": {"unet": BF16, "steps": 8, "cfg": 1.0, "lora": _L8, "strength": 1.0, "label": "MOSS Turbo 8 (bf16)",
                           "description": "lodestones' 8-step LoRA on the bf16 main model (as trained)."},
-    "moss-turbo-4": {"unet": INT8, "steps": 4, "cfg": 1.0, "lora": _V2, "strength": 1.0, "label": "MOSS Turbo 4 v2.0 (int8)",
-                     "description": "akhaliq's 4-step LoRA v2.0 on the int8 main model."},
+    "moss-turbo-4": {"unet": INT8, "steps": 4, "cfg": 1.0, "lora": _V2, "strength": 1.0, "label": "MOSS Turbo 4 v2.0",
+                     "description": "akhaliq's 4-step LoRA v2.0 on the compact main model."},
     "moss-turbo-4-bf16": {"unet": BF16, "steps": 4, "cfg": 1.0, "lora": _V2, "strength": 1.0, "label": "MOSS Turbo 4 v2.0 (bf16)",
                           "description": "akhaliq's 4-step LoRA v2.0 on the bf16 main model – as its author recommends."},
 }
@@ -45,25 +50,42 @@ class InputError(ValueError):
     pass
 
 
-def files_of(variant: str) -> List[str]:
+def main_model(variant: str, have=lambda name: False, cuda: bool = True) -> str:
+    """The main model file a variant runs on. bf16 variants: the bf16 file. The others use the compact main model:
+    int8 with an NVIDIA GPU, the Q5 GGUF without one -- or whichever of the two is there when only one is.
+    `have(name)` -> the file is in diffusion_models/."""
+    if VARIANTS[variant]["unet"] == BF16:
+        return BF16
+    order = [INT8, GGUF] if cuda else [GGUF, INT8]
+    return next((f for f in order if have(f)), order[0])
+
+
+def label(variant: str, unet: str) -> str:
+    """bf16 variants say so in their label; the others name the compact file they run on."""
+    v = VARIANTS[variant]
+    return v["label"] if unet == BF16 else f"{v['label']} ({'GGUF Q5' if unet == GGUF else 'int8'})"
+
+
+def files_of(variant: str, unet: Optional[str] = None) -> List[str]:
     """Model files a variant needs, relative to the models root."""
     v = VARIANTS[variant]
-    return [f"diffusion_models/{v['unet']}"] + ([f"loras/{v['lora']}"] if v["lora"] else [])
+    return [f"diffusion_models/{unet or v['unet']}"] + ([f"loras/{v['lora']}"] if v["lora"] else [])
 
 
 TEXT_ENCODER = "qwen3.5_9b_w4a8_gptq.safetensors"
 VAE = "flux2-vae.safetensors"
 
 
-def needed_files(variant: str) -> List[str]:
+def needed_files(variant: str, unet: Optional[str] = None) -> List[str]:
     """Everything a variant loads, relative to the models root: its main model and LoRA, the text encoder, the VAE."""
-    return files_of(variant) + [f"text_encoders/{TEXT_ENCODER}", f"vae/{VAE}"]
+    return files_of(variant, unet) + [f"text_encoders/{TEXT_ENCODER}", f"vae/{VAE}"]
 
 
-def catalog(installed) -> Dict[str, Any]:
-    """`installed(variant)` -> bool. The plugin contract's image catalog."""
+def catalog(installed, unet_of=lambda variant: VARIANTS[variant]["unet"]) -> Dict[str, Any]:
+    """`installed(variant)` -> bool, `unet_of(variant)` -> its main model file here. The contract's image catalog."""
     return {"object": "list", "data": [{
-        "id": vid, "label": v["label"], "description": v["description"], "available": bool(installed(vid)),
+        "id": vid, "label": label(vid, unet_of(vid)), "description": v["description"],
+        "available": bool(installed(vid)),
         "tasks": ["generate"], "aspect_ratios": list(ASPECT_SIZES), "text_in_image": True, "layout": True,
         "steps": {"default": v["steps"], "adjustable": True, "max": MAX_STEPS},
         # MOSS-Image-SFT: Apache-2.0 (OpenMOSS); both turbo LoRAs' repos state Apache-2.0 too (checked 2026-10-22)
@@ -106,10 +128,14 @@ def from_openai(body: Any) -> Tuple[str, str, List[Element], int, int, int, Opti
 
 
 def build_workflow(prompt: str, elements: List[Element], width: int, height: int, *, seed: Optional[int] = None,
-                   steps: Optional[int] = None, variant: str = "moss") -> dict:
+                   steps: Optional[int] = None, variant: str = "moss", unet: Optional[str] = None) -> dict:
     v = VARIANTS[variant]
     wf = copy.deepcopy(json.loads(WORKFLOW.read_text()))
-    wf["1"]["inputs"]["unet_name"] = v["unet"]
+    unet = unet or v["unet"]
+    if unet.endswith(".gguf"):      # ComfyUI-GGUF's loader (with the moss_image patch); no weight_dtype input
+        wf["1"] = {"class_type": "UnetLoaderGGUF", "_meta": {"title": "MOSS-Image GGUF"}, "inputs": {"unet_name": unet}}
+    else:
+        wf["1"]["inputs"]["unet_name"] = unet
     wf["4"]["inputs"]["text"] = moss_prompt(prompt, elements, width, height)
     wf["6"]["inputs"].update(width=width, height=height)
     wf["7"]["inputs"]["seed"] = seed if seed is not None else random.randint(1, 10**14 - 1)

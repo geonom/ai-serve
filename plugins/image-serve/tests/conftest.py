@@ -12,6 +12,8 @@ def _image_models_count_as_installed(monkeypatch):
     monkeypatch.setattr(config, "comfy_ready", lambda: True)            # ComfyUI counts as set up
     monkeypatch.setattr(_catalog, "_on_disk", lambda root, rel: True)
     monkeypatch.setattr(bundles, "present", lambda bundle, root: True)   # download bundles too
+    monkeypatch.setattr(config, "has_cuda", lambda: True)               # an NVIDIA machine unless a test says not
+    monkeypatch.setattr(config, "gguf_knows_moss", lambda: True)
 
 
 @pytest.fixture

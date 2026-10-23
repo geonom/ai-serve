@@ -121,3 +121,18 @@ def test_the_server_does_not_resolve_its_own_name(monkeypatch, tmp_path):
     monkeypatch.setattr(socket, "getfqdn", lambda *a: (_ for _ in ()).throw(AssertionError("getfqdn called")))
     srv = make_server(0, "http://127.0.0.1:9", data_dir=str(tmp_path))
     srv.server_close()
+
+
+def test_status_says_whether_comparisons_run(tmp_path):
+    """status_path for ai-serve: it doesn't restart the Spielwiese for an update while comparisons generate."""
+    import json, threading, urllib.request
+    srv = make_server(0, "http://127.0.0.1:9", data_dir=str(tmp_path))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        got = json.load(urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/sw/status", timeout=5))
+        assert got["busy"] is False and got["facts"][0]["value"] == "0"
+        srv.RequestHandlerClass.runner._running["someone"] = "c1"
+        got = json.load(urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/sw/status", timeout=5))
+        assert got["busy"] is True
+    finally:
+        srv.shutdown(); srv.server_close()

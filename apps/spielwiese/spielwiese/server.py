@@ -296,6 +296,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/sw/backend" and m == "GET":
                 kind = self._backend_kind()
                 return self._json_out(200, {"kind": kind, "features": backends.FEATURES[kind]})
+            if path == "/sw/status" and m == "GET":     # for ai-serve (status_path): busy while comparisons run
+                n = self.runner.running()
+                return self._json_out(200, {"busy": n > 0, "facts": [{"label": "Comparisons running", "value": str(n)}]})
             if path == "/sw/me" and m == "GET":
                 return self._json_out(200, {"name": person.name or "", "is_owner": bool(person.is_owner)})
             if path == "/sw/quota" and m == "GET":

@@ -17,5 +17,6 @@
   "icon": "chat",
   "screenshot": "./docs/llama-serve-screenshot.jpg",
   "identity": "multi",
-  "maturity": "beta"
+  "maturity": "beta",
+  "status_path": "/sw/status"
 }

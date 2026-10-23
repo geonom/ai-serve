@@ -82,6 +82,7 @@ def start(background: bool) -> int:
     print("Starting ai-serve in the background (log: logs/launcher.log) …")
     if wait_for(True, 180):
         print(f"ai-serve runs -> {url}")
+        refresh_outdated()
         return 0
     print("ai-serve didn't come up within 3 minutes -- see logs/launcher.log", file=sys.stderr)
     return 1
@@ -117,6 +118,17 @@ def stop(everything: bool) -> int:
     return 1
 
 
+def refresh_outdated() -> None:
+    """Apps and plugins of this folder still running code from before an update are restarted (when idle)."""
+    r = call("/api/services/restart-outdated", "POST", timeout=300)
+    if not r:
+        return
+    for sid in r.get("restarted", []):
+        print(f"  restarted {sid} (new code)")
+    for sid in r.get("busy", []):
+        print(f"  {sid} runs older code but is busy -- restart it later (Apps & Services)")
+
+
 def restart() -> int:
     if not running():
         print("ai-serve isn't running -- starting it in the background.")
@@ -125,6 +137,7 @@ def restart() -> int:
     wait_for(False, 20)
     if wait_for(True, 180):
         print(f"ai-serve restarted -> http://localhost:{gateway_port()}")
+        refresh_outdated()
         return 0
     print("ai-serve didn't come back -- see logs/launcher.log or the terminal it runs in", file=sys.stderr)
     return 1

@@ -347,6 +347,10 @@ class Runner:
             job["status"] = "interrupted"   # the server restarted mid-way
         return job
 
+    def running(self) -> int:
+        """Comparisons generating right now (ai-serve doesn't restart the Spielwiese for an update meanwhile)."""
+        return len(self._running)
+
     def list(self, sub: str, limit: int = 30) -> List[Dict[str, Any]]:
         d = os.path.join(person_dir(self.root, sub), "comparisons")
         try:

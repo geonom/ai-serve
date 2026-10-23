@@ -392,6 +392,53 @@ async def start_service(service_id: str):
     return {"status": "starting", "pid": proc.pid, "port": m.port}
 
 
+async def _reports_busy(m, inst) -> bool:
+    """The app's own status says busy (`status_path`, raw `busy` field). Unreadable -> not busy."""
+    if not m.status_path:
+        return False
+    port = m.port if m.port in inst.ports else (min(inst.ports) if inst.ports else m.port)
+    try:
+        async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+            r = await client.get(f"http://127.0.0.1:{port}{m.status_path}")
+        data = r.json() if r.status_code == 200 and len(r.content) <= _STATUS_MAX_BYTES else {}
+    except (httpx.HTTPError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("busy") is True
+
+
+@router.post("/api/services/restart-outdated", summary="Restart this installation's apps and plugins whose code changed")
+async def restart_outdated():
+    """After an update (`./ai-serve restart` calls this): apps/ and plugins/ of this ai-serve folder that still run
+    code older than their files are restarted -- unless they report themselves busy. Other projects are never
+    touched (backend/services/updates.py)."""
+    from backend.config import _PROJECT_DIR
+    from backend.services import updates
+    reg = _registry()
+    procs = await asyncio.to_thread(runtime.snapshot)
+    rows, by_id = [], {}
+    for m in reg.services:
+        if m.controller or not updates.part_of_installation(str(m.project_dir), _PROJECT_DIR):   # built-ins: not ours to restart
+            continue
+        for inst in discover_instances(m, procs):
+            rows.append((m.id, str(m.project_dir), inst.root_pid, inst.started_at))
+            by_id[(m.id, inst.root_pid)] = (m, inst)
+    newest = {d: await asyncio.to_thread(updates.newest_code_mtime, d) for d in {r[1] for r in rows}}
+    restarted, busy = [], []
+    for sid, pid in updates.outdated(rows, newest, _PROJECT_DIR):
+        m, inst = by_id[(sid, pid)]
+        if await _reports_busy(m, inst):
+            busy.append(sid)
+            continue
+        await stop_service(sid, StopRequest(pid=pid))
+        try:
+            await start_service(sid)
+            restarted.append(sid)
+        except HTTPException as e:
+            logger.warning(f"{sid} stopped for an update but didn't start again: {e.detail}")
+            restarted.append(f"{sid} (stopped; starts again when needed)")
+    return {"restarted": restarted, "busy": busy}
+
+
 @router.post("/api/services/{service_id}/stop", summary="Stop a running instance of a service")
 async def stop_service(service_id: str, req: Optional[StopRequest] = None):
     m = _get(_registry(), service_id)

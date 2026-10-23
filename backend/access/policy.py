@@ -20,12 +20,20 @@ Vocabulary:
   this machine nor the owner's tailnet devices (e.g. the LAN). Shorter than 32 chars
   = disabled. Never an extra requirement for loopback or the owner's devices.
 - Tunnel-marked requests (Funnel / Cloudflare headers) get nothing but /public/,
-  whatever else they carry."""
+  whatever else they carry.
+- Host and Origin (2026-10-23, DNS rebinding and cross-site requests): requests trusted
+  for where they come from (this machine, the owner's tailnet devices) must name this
+  machine in Host -- an IP address, localhost or one of its names -- and, if they carry
+  an Origin, come from a page of this machine (its names or its own addresses). A page
+  that re-points its name at 127.0.0.1 sends Host = its own name; a page anywhere else
+  sends a foreign Origin. Credential holders (public key, training token, API key) are
+  not affected -- a page can't forge those. Switched on by `known_hosts` (main.py)."""
 import enum
 import hmac
 import ipaddress
 from dataclasses import dataclass
-from typing import Callable, Mapping, Optional
+from typing import Callable, FrozenSet, Mapping, Optional, Tuple
+from urllib.parse import urlsplit
 
 from backend.public_api.domain import ExposureGuard
 
@@ -84,6 +92,42 @@ class Decision:
     reason: str
 
 
+KnownHosts = Tuple[FrozenSet[str], FrozenSet[str]]   # (this machine's names, its own IP addresses)
+
+
+def _ip(value: str) -> Optional[ipaddress._BaseAddress]:
+    try:
+        return ipaddress.ip_address(value.strip("[]"))
+    except ValueError:
+        return None
+
+
+def _host_name(host: str) -> str:
+    """'my-pc:8030' -> 'my-pc', '[::1]:8030' -> '::1'."""
+    host = host.strip()
+    if host.startswith("["):
+        return host[1:host.find("]")] if "]" in host else host
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def host_problem(headers: Mapping[str, str], known: KnownHosts) -> Optional[str]:
+    """Why Host/Origin don't name this machine -- None if they do (or are absent)."""
+    names, own_ips = {n.lower() for n in known[0]}, known[1]
+    host = headers.get("host")
+    if host:
+        name = _host_name(host).lower()
+        if _ip(name) is None and name not in names:
+            return (f"unknown host name {name!r} (a page pointing its own name at this machine?) -- "
+                    "add it to AI_SERVE_ALLOWED_HOSTS if it is yours")
+    origin = headers.get("origin")
+    if origin is not None:
+        oh = (urlsplit(origin).hostname or "").lower() if origin != "null" else ""
+        ip = _ip(oh) if oh else None
+        if not (oh in names or (ip is not None and (ip.is_loopback or str(ip) in own_ips))):
+            return f"request from a foreign page (Origin {origin!r})"
+    return None
+
+
 def _same_login(a: Optional[str], b: Optional[str]) -> bool:
     return bool(a and b and a.strip().lower() == b.strip().lower())
 
@@ -95,10 +139,12 @@ def _is_training_path(path: str) -> bool:
 
 class AccessPolicy:
     def __init__(self, api_key: ApiKey, guard: Optional[ExposureGuard] = None,
-                 is_private: Optional[Callable[[str], bool]] = None):
+                 is_private: Optional[Callable[[str], bool]] = None,
+                 known_hosts: Optional[Callable[[], KnownHosts]] = None):
         self.api_key = api_key
         self.guard = guard or ExposureGuard()
         self.is_private = is_private  # the network provider's overlay ranges
+        self.known_hosts = known_hosts  # this machine's names and addresses; None = no Host/Origin check
 
     def needs_whois(self, peer: Optional[str]) -> bool:
         return classify_peer(peer, self.is_private) is PeerKind.TAILNET
@@ -115,6 +161,10 @@ class AccessPolicy:
         if self.api_key.matches(h.get("authorization")):
             return Decision(True, "API key")
         kind = classify_peer(peer, self.is_private)
+        if self.known_hosts is not None and kind is not PeerKind.OTHER:
+            problem = host_problem(h, self.known_hosts())
+            if problem:
+                return Decision(False, problem)
         if kind is PeerKind.LOOPBACK:
             serve_login = h.get("tailscale-user-login")
             if serve_login is None:

@@ -64,6 +64,37 @@ export function isLoopback(peer: string | undefined | null): boolean {
   return p === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(p);
 }
 
+function isIp(value: string): boolean {
+  const v = value.replace(/^\[|\]$/g, "");
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || (v.includes(":") && /^[0-9a-f:.]+$/i.test(v));
+}
+
+function localNames(): Set<string> {
+  const names = new Set(["localhost"]);
+  for (const n of (process.env.LLAMA_SERVE_LOCAL_HOSTS || "").split(",")) if (n.trim()) names.add(n.trim().toLowerCase());
+  const aud = (process.env.LLAMA_SERVE_IDENTITY_AUDIENCE || "").trim().toLowerCase();
+  if (aud) names.add(aud.split("://").pop()!.split("/")[0].split(":")[0]);
+  return names;
+}
+
+/** Without a door identity, Host and Origin must name this machine – else any web page could act as the owner
+ * (DNS rebinding: Host = the page's name; a foreign page: its Origin). Found 2026-10-23. */
+function thisMachine(headers: Headers): void {
+  const names = localNames();
+  const host = header(headers, "host");
+  if (host) {
+    let h = host.trim().toLowerCase();
+    h = h.startsWith("[") && h.includes("]") ? h.slice(1, h.indexOf("]")) : (h.split(":").length === 2 ? h.split(":")[0] : h);
+    if (!isIp(h) && !names.has(h)) throw new Unauthenticated(`unknown host name '${h}' (add it to LLAMA_SERVE_LOCAL_HOSTS if it is this machine)`);
+  }
+  const origin = header(headers, "origin");
+  if (origin !== undefined) {
+    let oh = "";
+    try { oh = origin === "null" ? "" : new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase(); } catch { oh = ""; }
+    if (!oh || !(names.has(oh) || isLoopback(oh))) throw new Unauthenticated(`request from a foreign page (Origin '${origin}')`);
+  }
+}
+
 export async function identify(headers: Headers, peer: string | undefined | null, opts: IdentifyOptions): Promise<Person> {
   const owner = opts.ownerSub || process.env.LLAMA_SERVE_OWNER_SUB || "owner";
   let raw: string | undefined;
@@ -73,6 +104,7 @@ export async function identify(headers: Headers, peer: string | undefined | null
   }
   if (raw === undefined) {
     if (!isLoopback(peer)) throw new Unauthenticated("no identity");
+    thisMachine(headers);
     // Tailscale Serve (and the dashboard's owner gate) also connect from loopback: such a request
     // is someone on the tailnet, not someone at this machine. Serve sets these headers itself
     // and strips client-supplied copies.

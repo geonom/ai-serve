@@ -28,6 +28,7 @@ class S(http.server.HTTPServer):   # no getfqdn(): it can take ~35 s on a Mac (C
     def server_bind(self):
         socketserver.TCPServer.server_bind(self); self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
 port = int(os.environ["DEMO_PORT"])
+open("started_env.txt", "w").write(os.environ.get("LLAMA_SERVE_LOCAL_HOSTS", "-"))
 S(("127.0.0.1", port), http.server.SimpleHTTPRequestHandler).serve_forever()
 """
 
@@ -417,3 +418,23 @@ def test_single_app_refused_for_whole_tailnet(client, project, exposure):
     r = _set(client, "tailnet")
     assert r.status_code == 400 and "Only me" in r.json()["detail"]
     assert _set(client, "owner").status_code == 200
+
+
+
+def test_a_started_app_gets_this_machines_names(client, project):
+    """Found live 2026-10-23: the names were put into the manifest's env, where child_environment() (rightly) drops
+    them – the apps never got LLAMA_SERVE_LOCAL_HOSTS and the identity SDK would refuse Tailscale Serve's host name."""
+    d, port = project
+    assert client.post("/api/services/demo/start").status_code == 200
+    try:
+        for _ in range(50):
+            if (d / "started_env.txt").exists():
+                break
+            time.sleep(0.1)
+        names = (d / "started_env.txt").read_text().split(",")
+        assert "localhost" in names and "127.0.0.1" in names
+    finally:
+        pid = next(i["pid"] for x in client.get("/api/services").json()["services"] if x["id"] == "demo"
+                   for i in x["instances"]) if any(x["instances"] for x in client.get("/api/services").json()["services"] if x["id"] == "demo") else None
+        if pid:
+            client.post("/api/services/demo/stop", json={"pid": pid})

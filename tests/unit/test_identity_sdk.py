@@ -162,3 +162,39 @@ class TestPomeriumDoor:
     def test_forged_pomerium_header_is_nobody_even_from_loopback(self):
         with pytest.raises(ident.Unauthenticated):
             who({"X-Pomerium-Jwt-Assertion": token(key=OTHER)}, peer="127.0.0.1")
+
+
+class TestRebindingAndForeignPages:
+    """2026-10-23 (DNS rebinding / cross-site requests): "no identity header from this machine = the owner" made every
+    web page the owner – one that points its own name at 127.0.0.1 (Host = its name), or one posting to the app
+    (foreign Origin). Without a door identity, Host must name this machine (an IP, localhost, LLAMA_SERVE_LOCAL_HOSTS
+    – ai-serve passes this machine's names and addresses – or the app's public name) and an Origin must be one of
+    those too. Door identities are signed and unaffected."""
+
+    def test_this_machine_by_ip_or_localhost(self):
+        for host in ("127.0.0.1:8037", "localhost:8037", "[::1]:8037"):
+            assert who({"Host": host}, peer="127.0.0.1").is_owner
+
+    def test_a_rebinding_host_is_nobody(self):
+        with pytest.raises(ident.Unauthenticated, match="host"):
+            who({"Host": "evil.example:8037"}, peer="127.0.0.1")
+
+    def test_a_foreign_page_is_nobody(self):
+        for origin in ("https://evil.example", "null", "http://192.168.1.50"):
+            with pytest.raises(ident.Unauthenticated, match="page"):
+                who({"Host": "localhost:8037", "Origin": origin}, peer="127.0.0.1")
+
+    def test_names_from_ai_serve_and_the_door(self, monkeypatch):
+        monkeypatch.setenv("LLAMA_SERVE_LOCAL_HOSTS", "my-pc,my-pc.example-tailnet.ts.net,100.101.102.103")
+        monkeypatch.setenv("LLAMA_SERVE_OWNER_TAILSCALE_LOGIN", "owner@github")
+        p = who({"Host": "my-pc.example-tailnet.ts.net:18037", "Origin": "https://my-pc.example-tailnet.ts.net:18037",
+                 "Tailscale-User-Login": "owner@github"}, peer="127.0.0.1")
+        assert p.via == "tailscale"
+        assert who({"Host": "localhost:8037", "Origin": "http://100.101.102.103:8037"}, peer="127.0.0.1").is_owner
+        monkeypatch.setenv("LLAMA_SERVE_IDENTITY_AUDIENCE", "spielwiese.apps.example.org")
+        assert who({"Host": "localhost", "Origin": "https://spielwiese.apps.example.org"}, peer="127.0.0.1").is_owner
+
+    def test_door_identities_are_not_affected(self):
+        p = who({"X-Llama-Serve-Identity": token(), "Host": "spielwiese.apps.example.org",
+                 "Origin": "https://spielwiese.apps.example.org"}, peer="127.0.0.1")
+        assert p.via == "door"

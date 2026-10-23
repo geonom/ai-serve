@@ -104,3 +104,13 @@ class TestHeaders(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_origin_and_referer_are_not_forwarded():
+    """The gateway refuses requests from foreign pages (Origin check against DNS rebinding, 2026-10-23). The
+    Spielwiese calls it server-side on the person's behalf, so the browser's Origin/Referer (e.g. the door's public
+    name) must not travel along – the Spielwiese checks the person itself."""
+    from spielwiese.policy import forward_headers
+    out = forward_headers({"Origin": "https://spielwiese.apps.example.org", "Referer": "https://spielwiese.apps.example.org/x",
+                           "Content-Type": "application/json"}, peer="127.0.0.1")
+    assert "Origin" not in out and "Referer" not in out and out["Content-Type"] == "application/json"

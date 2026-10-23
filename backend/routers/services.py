@@ -382,6 +382,12 @@ async def start_service(service_id: str):
     info = await asyncio.to_thread(tailscale.info)
     if info and info.owner:
         os.environ["LLAMA_SERVE_OWNER_TAILSCALE_LOGIN"] = info.owner
+    # this machine's names and addresses for the identity SDK's Host/Origin check (DNS rebinding, foreign pages)
+    from backend.access.hosts import known_hosts
+    names, ips = await asyncio.to_thread(known_hosts)
+    # into the gateway's own environment, like the owner's login: plan.env holds the manifest's values, and
+    # child_environment() deliberately drops this name from those (a manifest must not widen it)
+    os.environ["LLAMA_SERVE_LOCAL_HOSTS"] = ",".join(sorted(names | ips))
     # shared through the door: the app verifies the door's identity for its public host
     from backend.routers.door import identity_env_for
     plan.env.update(identity_env_for(m.id))

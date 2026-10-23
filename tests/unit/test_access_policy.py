@@ -113,3 +113,52 @@ class TestApiKey:
 
     def test_disabled(self):
         assert not ApiKey("").enabled and not ApiKey("x" * 31).enabled and ApiKey(KEY).enabled
+
+
+class TestDnsRebindingAndCrossSite:
+    """Found 2026-10-23 while building V-Noveller's MCP endpoint: this machine and the owner's devices need no
+    credential, so a web page could act as them –
+    - DNS rebinding: evil.example re-points its name at 127.0.0.1 (or this machine's tailnet IP). The browser treats
+      the requests as same-origin: GETs then carry no Origin, only Host = evil.example – it could read logs and
+      lists, and change things.
+    - Cross-site requests: any page can POST a form to http://localhost:8030/api/… – Host is fine, Origin is not.
+    Rules: requests trusted for where they come from (loopback, the owner's tailnet devices) must name this machine
+    in Host (an IP address, localhost, this machine's names) and, if they carry an Origin, come from this machine
+    (its names or its own addresses). Credential holders (/public/, training token, API key) are not affected: a page
+    can't forge those."""
+    NAMES = frozenset({"localhost", "my-pc", "my-pc.example-tailnet.ts.net"})
+    OWN_IPS = frozenset({"127.0.0.1", "::1", "100.101.102.103", "192.168.1.40"})
+
+    def hosted(self, peer, headers, path="/api/status", login=OWNER):
+        p = AccessPolicy(api_key=ApiKey(KEY), known_hosts=lambda: (self.NAMES, self.OWN_IPS))
+        return p.decide(peer=peer, path=path, headers=headers, owner=OWNER, peer_login=login)
+
+    @pytest.mark.parametrize("host", ["localhost:8030", "127.0.0.1:8030", "[::1]:8030", "my-pc:8030",
+                                      "my-pc.example-tailnet.ts.net".upper(), "100.101.102.103:8030", "10.0.0.7:8030"])
+    def test_this_machines_names_and_any_ip_are_fine_as_host(self, host):
+        assert self.hosted("127.0.0.1", {"host": host}).allowed
+
+    def test_a_rebinding_host_is_refused_also_for_the_owners_tailnet_device(self):
+        for peer in ("127.0.0.1", "100.64.0.9"):
+            d = self.hosted(peer, {"host": "evil.example:8030"})
+            assert not d.allowed and "host" in d.reason.lower()
+
+    @pytest.mark.parametrize("origin", ["https://evil.example", "http://192.168.1.50:8000", "null",
+                                        "http://localhost.evil.example"])
+    def test_a_foreign_origin_is_refused(self, origin):
+        d = self.hosted("127.0.0.1", {"host": "localhost:8030", "origin": origin})
+        assert not d.allowed and "origin" in d.reason.lower()
+
+    @pytest.mark.parametrize("origin", ["http://localhost:8030", "http://127.0.0.1:5173", "http://100.101.102.103:8030",
+                                        "https://my-pc.example-tailnet.ts.net:18030", "http://[::1]:8030"])
+    def test_this_machines_own_pages_are_fine_as_origin(self, origin):
+        assert self.hosted("127.0.0.1", {"host": "localhost:8030", "origin": origin}).allowed
+
+    def test_credentials_are_not_affected(self):
+        evil = {"host": "evil.example", "origin": "https://evil.example"}
+        assert self.hosted("8.8.8.8", {**evil, "authorization": f"Bearer {KEY}"}).allowed
+        assert self.hosted("127.0.0.1", evil, path="/public/v1/models").allowed
+
+    def test_without_known_hosts_nothing_changes(self):
+        """The check is switched on by passing known_hosts (main.py does); other uses of the policy keep working."""
+        assert decide("127.0.0.1", headers={"host": "evil.example"}).allowed

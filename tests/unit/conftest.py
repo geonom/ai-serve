@@ -3,6 +3,8 @@ import os
 # Before anything imports backend.main: unit tests must not write into the live
 # logs/backend.log (their deliberate bad requests look like real incidents there).
 os.environ.setdefault("LLAMA_SERVE_LOG_TO_FILE", "0")
+# Starlette's TestClient sends "Host: testserver" -- a name the Host check (backend/access/hosts.py) would refuse.
+os.environ.setdefault("AI_SERVE_ALLOWED_HOSTS", "testserver")
 
 import pytest
 
@@ -79,3 +81,11 @@ def _no_name_lookups(monkeypatch):
     name resolution hangs. Nothing in the tests needs the answer."""
     import socket
     monkeypatch.setattr(socket, "getfqdn", lambda name="": name or "localhost")
+
+
+@pytest.fixture(autouse=True)
+def _no_network_name_lookup(monkeypatch):
+    """The Host check asks the network provider for this machine's name (`tailscale status`) -- not in unit tests."""
+    from backend.access import hosts
+    monkeypatch.setattr(hosts, "_network_hostname", lambda: "")
+    hosts._cache.clear()

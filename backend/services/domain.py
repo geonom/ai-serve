@@ -704,4 +704,9 @@ def child_environment(base: Mapping[str, str], manifest_env: Mapping[str, str]) 
     env.pop("LLAMA_SERVE_OWNER_TAILSCALE_LOGIN", None)
     if base.get("LLAMA_SERVE_OWNER_TAILSCALE_LOGIN"):
         env["LLAMA_SERVE_OWNER_TAILSCALE_LOGIN"] = base["LLAMA_SERVE_OWNER_TAILSCALE_LOGIN"]
+    # this machine's names and addresses: without a door identity, the SDK accepts only requests whose Host/Origin
+    # name this machine (DNS rebinding, foreign pages). From ai-serve only -- a manifest can't widen them.
+    env.pop("LLAMA_SERVE_LOCAL_HOSTS", None)
+    if base.get("LLAMA_SERVE_LOCAL_HOSTS"):
+        env["LLAMA_SERVE_LOCAL_HOSTS"] = base["LLAMA_SERVE_LOCAL_HOSTS"]
     return env

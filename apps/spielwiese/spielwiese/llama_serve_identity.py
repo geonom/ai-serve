@@ -20,6 +20,11 @@ Rules (security-relevant, tests in ai-serve-ui tests/unit/test_identity_sdk.py):
   `Tailscale-User-Login` it is the owner only if that is `LLAMA_SERVE_OWNER_TAILSCALE_LOGIN`;
   with `Tailscale-Funnel-Request` it is nobody.
 - no header from anywhere else -> nobody (`Unauthenticated`, answer 401).
+- without a door identity, Host must name this machine (an IP address, localhost, a name in
+  `LLAMA_SERVE_LOCAL_HOSTS` -- ai-serve passes this machine's names and addresses -- or the app's
+  public name) and an Origin must be one of those too. Otherwise any web page could act as the
+  owner: one that points its own name at 127.0.0.1 (DNS rebinding: Host = its name) or one
+  posting to the app (foreign Origin). Found 2026-10-23.
 """
 from __future__ import annotations
 
@@ -30,7 +35,8 @@ import threading
 import time
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Set, Tuple
+from urllib.parse import urlsplit
 
 import jwt
 
@@ -92,6 +98,43 @@ def _keys(jwks: Optional[Mapping[str, Any]], jwks_url: Optional[str]) -> Mapping
     return keys
 
 
+def _local_names() -> Set[str]:
+    names = {"localhost"}
+    for n in os.environ.get("LLAMA_SERVE_LOCAL_HOSTS", "").split(","):
+        if n.strip():
+            names.add(n.strip().lower())
+    aud = os.environ.get("LLAMA_SERVE_IDENTITY_AUDIENCE", "").strip().lower()
+    if aud:
+        names.add(aud.split("://")[-1].split("/")[0].split(":")[0])
+    return names
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
+def _this_machine(headers: Mapping[str, str]) -> None:
+    """Raise Unauthenticated unless Host and Origin (when present) name this machine (DNS rebinding,
+    foreign pages)."""
+    names = _local_names()
+    host = _get(headers, "Host")
+    if host:
+        h = host.strip().lower()
+        h = h[1:h.find("]")] if h.startswith("[") and "]" in h else (h.rsplit(":", 1)[0] if h.count(":") == 1 else h)
+        if not _is_ip(h) and h not in names:
+            raise Unauthenticated(f"unknown host name {h!r} (add it to LLAMA_SERVE_LOCAL_HOSTS if it is this machine)")
+    origin = _get(headers, "Origin")
+    if origin is not None:
+        oh = (urlsplit(origin).hostname or "").lower() if origin != "null" else ""
+        ok = bool(oh) and (oh in names or (_is_ip(oh) and ipaddress.ip_address(oh).is_loopback))
+        if not ok:
+            raise Unauthenticated(f"request from a foreign page (Origin {origin!r})")
+
+
 def _get(headers: Mapping[str, str], name: str) -> Optional[str]:
     for k, v in headers.items():
         if k.lower() == name.lower():
@@ -115,6 +158,7 @@ def identify(headers: Mapping[str, str], peer: Optional[str], *, app_id: str,
     if raw is None:
         if not _loopback(peer):
             raise Unauthenticated("no identity")
+        _this_machine(headers)
         # Tailscale Serve (and the dashboard's owner gate) also connect from loopback: such a
         # request is someone on the tailnet, not someone at this machine. Serve sets these
         # headers itself and strips client-supplied copies.

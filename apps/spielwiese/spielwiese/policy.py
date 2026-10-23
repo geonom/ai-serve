@@ -66,6 +66,7 @@ _DROP = frozenset({
     "host", "connection", "keep-alive", "proxy-connection", "transfer-encoding", "te", "trailer",
     "upgrade", "proxy-authorization", "cookie", "forwarded", "x-forwarded-for", "x-forwarded-host",
     "x-forwarded-proto", "x-forwarded-port", "x-real-ip", "content-length",
+    "origin", "referer",   # the gateway refuses foreign pages; this is a server-side call (see test_policy.py)
 })
 _LOOPBACK = frozenset({"127.0.0.1", "::1"})
 

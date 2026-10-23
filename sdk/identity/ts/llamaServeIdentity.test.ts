@@ -118,4 +118,32 @@ describe("identify", () => {
       await expect(who({ "X-Pomerium-Jwt-Assertion": await token({}, other) }, "127.0.0.1")).rejects.toBeInstanceOf(Unauthenticated);
     });
   });
+
+  describe("this machine only (DNS rebinding, foreign pages; same as the Python SDK)", () => {
+    it("IPs and localhost are fine as Host", async () => {
+      for (const host of ["127.0.0.1:5180", "localhost:5180", "[::1]:5180"]) expect((await who({ host }, "127.0.0.1")).isOwner).toBe(true);
+    });
+    it("a rebinding Host is nobody", async () => {
+      await expect(who({ host: "evil.example:5180" }, "127.0.0.1")).rejects.toThrow(/host/);
+    });
+    it("a foreign page is nobody", async () => {
+      for (const origin of ["https://evil.example", "null", "http://192.168.1.50"])
+        await expect(who({ host: "localhost:5180", origin }, "127.0.0.1")).rejects.toThrow(/page/);
+    });
+    it("names from ai-serve and the door", async () => {
+      process.env.LLAMA_SERVE_LOCAL_HOSTS = "my-pc,my-pc.example-tailnet.ts.net,100.101.102.103";
+      process.env.LLAMA_SERVE_IDENTITY_AUDIENCE = "sonne.apps.example";
+      try {
+        expect((await who({ host: "my-pc:5180", origin: "http://100.101.102.103:5180" }, "127.0.0.1")).isOwner).toBe(true);
+        expect((await who({ host: "localhost", origin: "https://sonne.apps.example" }, "127.0.0.1")).isOwner).toBe(true);
+      } finally {
+        delete process.env.LLAMA_SERVE_LOCAL_HOSTS;
+        delete process.env.LLAMA_SERVE_IDENTITY_AUDIENCE;
+      }
+    });
+    it("door identities are not affected", async () => {
+      const p = await who({ "x-llama-serve-identity": await token(), host: "sonne.apps.example", origin: "https://sonne.apps.example" }, "127.0.0.1");
+      expect(p.via).toBe("door");
+    });
+  });
 });

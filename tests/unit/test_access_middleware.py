@@ -107,3 +107,14 @@ def test_real_app_refuses_lan_and_strangers(monkeypatch):
         assert client(real_app, "100.90.1.2").get(path).status_code == 403, path
     assert client(real_app, "100.64.7.11").get("/api/version").status_code == 200
     assert client(real_app, "127.0.0.1").get("/api/version").status_code == 200
+
+
+def test_the_real_app_refuses_rebinding_and_foreign_pages():
+    """main.py switches the Host/Origin check on (backend/access/hosts.py): a page that points its own name at this
+    machine, or a foreign page posting to it, is refused even from loopback; this machine's own pages pass."""
+    from backend.main import app as real
+    c = TestClient(real, client=("127.0.0.1", 50000))
+    assert c.get("/api/version", headers={"host": "evil.example:8030"}).status_code == 403
+    r = c.post("/api/models/unload_all", headers={"host": "localhost:8030", "origin": "https://evil.example"})
+    assert r.status_code == 403 and "foreign page" in r.json()["detail"]
+    assert c.get("/api/version", headers={"host": "localhost:8030", "origin": "http://localhost:8030"}).status_code == 200

@@ -744,3 +744,12 @@ def test_manifest_with_provides(tmp_path):
 def test_bad_provides_makes_the_manifest_invalid(tmp_path):
     with pytest.raises(ManifestError, match="provides"):
         _manifest(tmp_path, provides={"image": {"catalog": "http://evil.example/models", "generate": "/x"}})
+
+
+def test_apps_get_this_machines_names_and_a_manifest_cannot_widen_them():
+    """LLAMA_SERVE_LOCAL_HOSTS (identity SDK: Host/Origin must name this machine without a door identity) comes from
+    ai-serve; a manifest may not add names – that would re-open DNS rebinding for that app."""
+    env = child_environment({"PATH": "/usr/bin", "LLAMA_SERVE_LOCAL_HOSTS": "my-pc,100.1.2.3"},
+                            {"LLAMA_SERVE_LOCAL_HOSTS": "evil.example"})
+    assert env["LLAMA_SERVE_LOCAL_HOSTS"] == "my-pc,100.1.2.3"
+    assert "LLAMA_SERVE_LOCAL_HOSTS" not in child_environment({"PATH": "/usr/bin"}, {"LLAMA_SERVE_LOCAL_HOSTS": "x"})

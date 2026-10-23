@@ -157,7 +157,9 @@ except ProviderError as e:  # fail closed: no private network, loopback + API ke
     NETWORK = NoneProvider()
 set_active(NETWORK)
 # asks the active provider per request (not one bound at import), so it can be replaced without a restart
-app.add_middleware(AccessMiddleware, policy=AccessPolicy(ApiKey(API_KEY), is_private=lambda ip: active().is_private(ip)),
+from backend.access.hosts import known_hosts  # noqa: E402  (Host/Origin check: DNS rebinding, cross-site requests)
+app.add_middleware(AccessMiddleware, policy=AccessPolicy(ApiKey(API_KEY), is_private=lambda ip: active().is_private(ip),
+                                                         known_hosts=known_hosts),
                    owner=lambda: active().owner(), whois=lambda ip: active().identify(ip))
 # Added last = outermost: a tunnel-marked request (Tailscale Funnel / Cloudflare) is
 # turned away before any other layer unless its path is under /public/ -- see

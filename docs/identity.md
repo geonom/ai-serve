@@ -64,6 +64,14 @@ failure — wrong signature, wrong `aud`, expired, missing `sub`.
 | loopback, but brought by Tailscale Serve or the dashboard's gate (they connect from loopback too) | `Tailscale-User-Login` = the owner's login (`LLAMA_SERVE_OWNER_TAILSCALE_LOGIN`, env, set by the dashboard) → the owner; any other login → nobody; `Tailscale-Funnel-Request` → nobody. Serve sets these headers itself and strips client-supplied copies. |
 | anywhere else without a valid header | nobody — answer **401**. |
 
+**Only when the request names this machine** (since 2026-10-23): without a door identity, `Host` must be an IP
+address, `localhost`, a name in `LLAMA_SERVE_LOCAL_HOSTS` (this machine's names and addresses, comma-separated — set
+by the dashboard when it starts the app; a manifest can't change it) or the app's public name
+(`LLAMA_SERVE_IDENTITY_AUDIENCE`), and an `Origin`, if present, must be one of those too — else nobody (401).
+Otherwise any web page could be "the owner": one that points its own name at 127.0.0.1 (DNS rebinding — the browser
+then sends `Host` = its name, often without an `Origin`), or one posting to the app from elsewhere (foreign `Origin`).
+Both SDKs do this (`_this_machine` / `thisMachine`).
+
 ### 2.3 Legacy: Tailscale headers
 
 Until an app has moved behind the door, apps reached via the dashboard's Tailscale levels

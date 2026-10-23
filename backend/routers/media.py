@@ -901,11 +901,11 @@ async def openai_audio_models():
 
 @router.get("/v1/images/models", summary="Image models from the image plugins (ComfyUI, MOSS, Iris ...) for apps to pick from")
 async def image_models(task: str = "generate"):
-    """task: generate (default) | edit | style | all. Every image model comes from an image plugin
-    (backend/plugins/images.py); `default` is the plugin's suggestion for that task."""
+    """task: generate (default) | edit | style | remove_background | all. Every image model comes from an image
+    plugin (backend/plugins/images.py); `default` is the plugin's suggestion for that task."""
     from backend.plugins import images as image_plugins
-    if task not in ("generate", "edit", "style", "all"):
-        raise HTTPException(status_code=400, detail="task: generate | edit | style | all")
+    if task not in ("generate", "edit", "style", "remove_background", "all"):
+        raise HTTPException(status_code=400, detail="task: generate | edit | style | remove_background | all")
     entries, errors = await image_plugins.catalog()
     rows = [image_plugins.row(e) for e in entries if task == "all" or task in e["tasks"]]
     default = next((r["id"] for r in rows if r.get("default") and r.get("available")), rows[0]["id"] if rows else None)
@@ -975,20 +975,25 @@ async def cancel_image_generation(req: ImageCancelRequest):
 @router.post("/v1/images/edits", summary="OpenAI-compatible image editing (routed to the image plugin of the model)")
 async def openai_image_edit(
     image: UploadFile = File(...),
-    prompt: str = Form(...),
+    prompt: Optional[str] = Form(None),  # required for edit and style
     model: Optional[str] = Form(None),
     seed: Optional[int] = Form(None),   # extension: same seed + image + prompt = same result (Figurenwerkstatt)
-    task: str = Form("edit"),           # extension: edit | style (style: `reference` = the style image)
+    # extension: edit | style (style: `reference` = the style image) | remove_background (no prompt; the image back
+    # as a PNG with alpha -- cut-out figures)
+    task: str = Form("edit"),
     reference: Optional[UploadFile] = File(None),
     x_request_id: Optional[str] = Header(None),
 ):
     from backend.plugins import images as image_plugins
     if seed is not None and not 0 <= seed < 2 ** 50:
         raise HTTPException(status_code=400, detail="seed must be 0 .. 2^50")
-    if task not in ("edit", "style"):
-        raise HTTPException(status_code=400, detail="task: edit | style")
+    if task not in ("edit", "style", "remove_background"):
+        raise HTTPException(status_code=400, detail="task: edit | style | remove_background")
+    if task != "remove_background" and not prompt:
+        raise HTTPException(status_code=400, detail=f"{task} needs a prompt")
     p, entry = await _image_target(model, task)
-    fields = {"prompt": prompt, "model": entry["id"], "task": task, **({"seed": str(seed)} if seed is not None else {})}
+    fields = {"model": entry["id"], "task": task, **({"prompt": prompt} if prompt else {}),
+              **({"seed": str(seed)} if seed is not None else {})}
     files = {"image": (image.filename or "image.png", await image.read(), image.content_type or "application/octet-stream")}
     if reference is not None:
         files["reference"] = (reference.filename or "reference.png", await reference.read(),

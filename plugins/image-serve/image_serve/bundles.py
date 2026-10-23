@@ -4,7 +4,7 @@ A catalog model needs several files: the diffusion model, its text encoder, its 
 Lightning LoRA its workflow uses). Each file is pinned here by Hugging Face repo, path, size and sha256 -- the same
 files this plugin was tested with (2026-10-22, sha256 compared with the files on the owner's machine). A download
 streams to a temp file next to its target, hashes while writing, and is moved into place only when the hash matches;
-nothing from the request but the bundle id is used. All models here: Apache-2.0. A bundle with `needs` only makes
+nothing from the request but the bundle id is used. All models here: Apache-2.0, BiRefNet MIT. A bundle with `needs` only makes
 sense on top of that one (and only where ComfyUI supports MOSS -- see app.py).
 """
 from __future__ import annotations
@@ -82,6 +82,9 @@ FILES: Tuple[BundleFile, ...] = (
                "MOSS-Image-SFT-Q5_K.gguf", 3921943392, "0f4400bafdf52f08d4ad7d2554564fd41a07964f4e4e98ff13045cd1d212720a",
                rev="238daf423f0de65316207453591f275407aac9a7"),
     *(BundleFile("moss-gguf", f.repo, f.path, f.dir, f.name, f.size, f.sha256) for f in _MOSS_SHARED),
+    BundleFile("birefnet", "Comfy-Org/BiRefNet", "background_removal/birefnet.safetensors", "background_removal",
+               "birefnet.safetensors", 444473596, "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154",
+               rev="25511f8787e51912e1480706b4e47b8f467fbf72"),
     BundleFile("moss-bf16", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_bf16.safetensors", "diffusion_models",
                "moss_image_sft_bf16.safetensors", 10164655808, "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f"),
 )
@@ -93,6 +96,8 @@ BUNDLES: Dict[str, Dict[str, str]] = {
                        "description": "Edit images by instruction and transfer a style (with the 4-step Lightning LoRA)"},
     "ernie-turbo": {"label": "ERNIE-Image Turbo", "license": "Apache-2.0",
                     "description": "Fast images from text, a bit more illustrative"},
+    "birefnet": {"label": "BiRefNet", "license": "MIT",
+                 "description": "Remove the background of an image (cut-out figures with transparency)"},
     "moss": {"label": "MOSS-Image", "license": "Apache-2.0",
              "description": "Text in images, long prompts, things placed where you draw them; with the 4- and 8-step turbo LoRAs"},
     "moss-gguf": {"label": "MOSS-Image (GGUF)", "license": "Apache-2.0",

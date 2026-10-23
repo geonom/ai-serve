@@ -15,8 +15,9 @@ from typing import Dict, List, Optional, Tuple
 
 ASPECTS = ("1:1", "4:3", "3:4", "16:9", "9:16")
 DEFAULT = "z-image-turbo"
-TASKS = ("generate", "edit", "style")   # text-to-image, edit one image, content + style image
-DEFAULTS = {"generate": DEFAULT, "edit": "qwen-edit-2511", "style": "qwen-edit-2511"}
+TASKS = ("generate", "edit", "style", "remove_background")   # text-to-image, edit one image, content + style image,
+                                                             # cut out the foreground (alpha channel)
+DEFAULTS = {"generate": DEFAULT, "edit": "qwen-edit-2511", "style": "qwen-edit-2511", "remove_background": "birefnet"}
 
 
 class CatalogError(ValueError):
@@ -67,6 +68,10 @@ CATALOG: Tuple[ImageModel, ...] = (
     ImageModel("qwen-edit-2511-q3", "Qwen-Image-Edit 2511 (Q3_K_S)", "comfyui", "qwen-image-edit-2511-Q3_K_S.gguf",
                "Fastest (~40 s), but followed instructions less well in tests.", tasks=("edit", "style"),
                steps_default=4, steps_max=20),
+    # ComfyUI's own BiRefNet node (comfy_extras/nodes_bg_removal.py, since 2026-05); Comfy-Org's repackaged file
+    ImageModel("birefnet", "BiRefNet (remove background)", "comfyui", "birefnet.safetensors",
+               "Cuts out the foreground: the same image back as a PNG with transparency (~1 GB VRAM, seconds).",
+               aspects=(), tasks=("remove_background",), steps_default=1, steps_adjustable=False, steps_max=1),
 )
 
 def resolve(name: Optional[str]) -> Optional[ImageModel]:
@@ -98,7 +103,8 @@ def available(m: ImageModel, models_root: Optional[str] = None) -> bool:
 
 
 # catalog model -> the download bundle that brings it (image_serve/bundles.py)
-BUNDLE_OF = {"z-image-turbo": "z-image-turbo", "qwen-edit-2511": "qwen-edit-2511", "ernie-turbo": "ernie-turbo"}
+BUNDLE_OF = {"z-image-turbo": "z-image-turbo", "qwen-edit-2511": "qwen-edit-2511", "ernie-turbo": "ernie-turbo",
+             "birefnet": "birefnet"}
 
 
 def listing_row(m: ImageModel, models_root: Optional[str] = None) -> dict:
@@ -125,7 +131,8 @@ def check_steps(model: Optional[ImageModel], steps: Optional[int]) -> None:
 
 
 def listing(models_root: Optional[str] = None, task: str = "generate") -> List[dict]:
-    """task: generate (default -- what apps listed before edit models were in here) | edit | style | all.
+    """task: generate (default -- what apps listed before edit models were in here) | edit | style |
+    remove_background | all.
     `default` marks the default for the task asked for."""
     if task != "all" and task not in TASKS:
         raise CatalogError(f"task must be one of {', '.join(TASKS)}, all")

@@ -39,7 +39,9 @@ class FakeImageServer:
                 {"id": "iris-turbo", "label": "Iris-3B Turbo (Plugin)", "available": True, "tasks": ["generate"],
                  "aspect_ratios": ["1:1", "16:9"], "steps": {"default": 4, "adjustable": False, "max": 4},
                  "license": "Apache-2.0", "commercial_use": True, "aliases": ["iris"]},
-                {"id": "pix-edit", "label": "Pix Edit", "available": True, "tasks": ["edit"]}]})
+                {"id": "pix-edit", "label": "Pix Edit", "available": True, "tasks": ["edit"]},
+                {"id": "cutter", "label": "Cutter", "available": True, "tasks": ["remove_background"],
+                 "default": True}]})
         if path == "/v1/images/generations":
             if body.get("prompt") == "boom":
                 return httpx.Response(400, json={"detail": "steps can't be set for this model"})
@@ -108,6 +110,28 @@ def test_edit_goes_to_the_plugin_as_multipart(server):
     method, path, body, _ = server.calls[-1]
     assert (method, path) == ("POST", "/v1/images/edits")
     assert b"make it blue" in body and b"pix-edit" in body and b"\x89PNG" in body
+
+
+def test_remove_background_needs_no_prompt_and_goes_to_its_model(server):
+    rows = client.get("/v1/images/models?task=remove_background").json()
+    assert [r["id"] for r in rows["data"]] == ["cutter"] and rows["default"] == "cutter"
+    r = client.post("/v1/images/edits", files={"image": ("a.png", b"\x89PNG", "image/png")},
+                    data={"task": "remove_background"})
+    assert r.status_code == 200, r.text
+    method, path, body, _ = server.calls[-1]
+    assert (method, path) == ("POST", "/v1/images/edits")
+    assert b"remove_background" in body and b"cutter" in body and b'name="prompt"' not in body
+
+
+def test_remove_background_refuses_a_model_that_cannot():
+    r = client.post("/v1/images/edits", files={"image": ("a.png", b"\x89PNG")},
+                    data={"task": "remove_background", "model": "pix-edit"})
+    assert r.status_code == 400 and "remove_background" in r.json()["detail"]
+
+
+def test_edit_and_style_still_need_a_prompt():
+    r = client.post("/v1/images/edits", files={"image": ("a.png", b"\x89PNG")}, data={"model": "pix-edit"})
+    assert r.status_code == 400 and "prompt" in r.json()["detail"]
 
 
 def test_cancel_reaches_the_plugins(server):

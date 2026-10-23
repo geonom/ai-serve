@@ -123,7 +123,8 @@ never started, stopped or unloaded by ai-serve and has no GPU in the GPU manager
 - `generate`: the OpenAI images body plus the gateway's extensions (`aspect_ratio`, `steps`, `seed`, `layout`);
   answers `{"created", "data": [{"b64_json"}]}`. Header `X-Request-Id` identifies the job for `cancel`.
 - `edit`: `multipart/form-data` like OpenAI's `/v1/images/edits` (`image`, `prompt`, `model`, `seed`; a `task`
-  field for upscale / remove_background / segment / inpaint with `mask`).
+  field for upscale / remove_background / segment / inpaint with `mask`; `remove_background` takes no `prompt` and
+  answers the image as a PNG with alpha -- image-serve's `birefnet`).
 - `cancel`: `POST {"request_id"}`. Optional `jobs` for slow models.
 
 ### video

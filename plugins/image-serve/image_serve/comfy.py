@@ -39,7 +39,8 @@ router = APIRouter()
 _MODEL_PATHS = {"checkpoints": ["checkpoints/"], "diffusion_models": ["diffusion_models/", "unet/"],
                 "text_encoders": ["text_encoders/", "clip/"], "vae": ["vae/"], "loras": ["loras/"],
                 "clip_vision": ["clip_vision/"], "controlnet": ["controlnet/"], "upscale_models": ["upscale_models/"],
-                "embeddings": ["embeddings/"], "model_patches": ["model_patches/"]}
+                "embeddings": ["embeddings/"], "model_patches": ["model_patches/"],
+                "background_removal": ["background_removal/"]}
 
 
 def extra_model_paths_args(comfy_dir: str, models_root: str, state_dir: str) -> List[str]:
@@ -1085,8 +1086,10 @@ _COMFY_LOADERS = {
     "UNETLoader": ("unet_name",), "UnetLoaderGGUF": ("unet_name",), "CheckpointLoaderSimple": ("ckpt_name",),
     "CLIPLoader": ("clip_name",), "CLIPLoaderGGUF": ("clip_name",), "DualCLIPLoader": ("clip_name1", "clip_name2"),
     "VAELoader": ("vae_name",), "LoraLoaderModelOnly": ("lora_name",), "LoraLoader": ("lora_name",),
+    "LoadBackgroundRemovalModel": ("bg_removal_name",),
 }
-_COMFY_MODEL_SUBDIRS = ("diffusion_models", "unet", "text_encoders", "clip", "vae", "loras", "checkpoints")
+_COMFY_MODEL_SUBDIRS = ("diffusion_models", "unet", "text_encoders", "clip", "vae", "loras", "checkpoints",
+                        "background_removal")
 
 
 def comfy_model_files(workflow: Dict[str, Any]) -> frozenset:
@@ -1634,6 +1637,26 @@ async def comfyui_style_transfer(req: ComfyUIStyleTransferRequest):
 # 120 s while ComfyUI kept computing (Qwen-Image 2.1 int8, 40 steps ~150 s) -- a "Timeout" for the caller and
 # a GPU that stayed busy for the next request. The job itself is tracked over ComfyUI's websocket.
 COMFYUI_SYNC_TIMEOUT_S = 1800
+
+
+def remove_background_workflow(image_name: str, model_file: str) -> Dict[str, Any]:
+    """ComfyUI's own chain (Comfy-Org's template utility_birefnet_remove_background): RemoveBackground gives the
+    foreground mask, JoinImageWithAlpha takes 1 - alpha (LoadImage's mask convention) -- hence InvertMask."""
+    return {
+        "1": {"class_type": "LoadImage", "inputs": {"image": image_name}},
+        "2": {"class_type": "LoadBackgroundRemovalModel", "inputs": {"bg_removal_name": model_file}},
+        "3": {"class_type": "RemoveBackground", "inputs": {"bg_removal_model": ["2", 0], "image": ["1", 0]}},
+        "4": {"class_type": "InvertMask", "inputs": {"mask": ["3", 0]}},
+        "5": {"class_type": "JoinImageWithAlpha", "inputs": {"image": ["1", 0], "alpha": ["4", 0]}},
+        "6": {"class_type": "SaveImage", "inputs": {"images": ["5", 0], "filename_prefix": "cutout"}},
+    }
+
+
+async def comfyui_remove_background(image_bytes: bytes, model_id: str, model_file: str) -> Dict[str, str]:
+    """Queue one background removal; the caller awaits it like any job (the result is a PNG with alpha)."""
+    await _ensure_comfyui_running()
+    name = await _upload_image_to_comfyui(image_bytes)
+    return await queue_workflow(remove_background_workflow(name, model_file), model_id)
 
 
 async def _await_comfyui_task(prompt_id: str, timeout_s: int = COMFYUI_SYNC_TIMEOUT_S) -> str:

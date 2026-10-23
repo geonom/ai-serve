@@ -77,7 +77,8 @@ def test_edit_and_style_models_are_in_the_catalog():
     edit = {m.id for m in catalog.CATALOG if "edit" in m.tasks}
     style = {m.id for m in catalog.CATALOG if "style" in m.tasks}
     assert edit == style == {"qwen-edit-2511", "qwen-edit-2511-q3"}
-    assert catalog.DEFAULTS == {"generate": "z-image-turbo", "edit": "qwen-edit-2511", "style": "qwen-edit-2511"}
+    assert catalog.DEFAULTS == {"generate": "z-image-turbo", "edit": "qwen-edit-2511", "style": "qwen-edit-2511",
+                                "remove_background": "birefnet"}
 
 
 @pytest.mark.parametrize("old", ["Qwen_Image_Edit-Q2_K.gguf", "Qwen_Image_Edit-Q4_K_S.gguf", "qwen-edit", "qwen-edit-q4"])

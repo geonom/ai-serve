@@ -113,7 +113,8 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | Strata through the ai-serve-strata plugin | ✅ (two NVIDIA cards, 96 GB RAM) | not tried | – |
 
 Everything else listed in the docs (other TTS engines, diarization, OCR, the GPU manager …) runs daily on the
-developer's NVIDIA machine, but not necessarily from a fresh install. Reports of what works elsewhere are welcome.
+developer's NVIDIA machine, but not necessarily from a fresh install. Reports of what works elsewhere are welcome --
+for a Mac, [docs/testing-on-a-mac.md](docs/testing-on-a-mac.md) lists the steps.
 
 ## Licenses
 

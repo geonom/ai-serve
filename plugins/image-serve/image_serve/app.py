@@ -37,6 +37,7 @@ LICENSES: Dict[str, tuple] = {
     "z-image-turbo": ("Apache-2.0", True), "qwen-image-2.1": ("Apache-2.0", True),
     "qwen-image-2.1-int8": ("Apache-2.0", True), "qwen-edit-2511": ("Apache-2.0", True),
     "qwen-edit-2511-q3": ("Apache-2.0", True), "ernie-turbo": ("", None), "ideogram-4": ("", None),
+    "birefnet": ("MIT", True),
 }
 
 
@@ -181,15 +182,29 @@ async def _run(submit, comfy_req, rid: Optional[str]) -> str:
 
 
 @app.post("/v1/images/edits")
-async def edits(image: UploadFile = File(...), prompt: str = Form(...), model: Optional[str] = Form(None),
+async def edits(image: UploadFile = File(...), prompt: Optional[str] = Form(None), model: Optional[str] = Form(None),
                 seed: Optional[int] = Form(None), task: str = Form("edit"), reference: Optional[UploadFile] = File(None),
                 x_request_id: Optional[str] = Header(None)):
-    """OpenAI's edits shape + the contract's `task`: edit (one image) or style (`image` = content, `reference` = style)."""
+    """OpenAI's edits shape + the contract's `task`: edit (one image), style (`image` = content, `reference` = style)
+    or remove_background (no prompt; the image back as a PNG with alpha)."""
     if seed is not None and not 0 <= seed < 2 ** 50:
         raise HTTPException(status_code=400, detail="seed must be 0 .. 2^50")
-    if task not in ("edit", "style"):
-        raise HTTPException(status_code=400, detail="task: edit or style")
+    if task not in ("edit", "style", "remove_background"):
+        raise HTTPException(status_code=400, detail="task: edit, style or remove_background")
     rid = jobs.valid_request_id(x_request_id)
+    if task == "remove_background":
+        try:
+            target = catalog.for_task(model, task)
+        except catalog.CatalogError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if target is None or not catalog.listing_row(target)["available"]:
+            label = target.label if target else model
+            raise HTTPException(status_code=400, detail=f"{label} is not installed on this machine")
+        data = await image.read()
+        b64 = await _run(lambda _r: comfy.comfyui_remove_background(data, target.id, target.file), None, rid)
+        return {"created": int(time.time()), "data": [{"b64_json": b64}]}
+    if not prompt:
+        raise HTTPException(status_code=400, detail=f"{task} needs a prompt")
     content = base64.b64encode(await image.read()).decode()
     seed = seed if seed is not None else random.randint(1, 10_000_000)
     if task == "style":

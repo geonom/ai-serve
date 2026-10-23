@@ -139,6 +139,10 @@ someone other than the owner.
 - [ ] Tests: two people never see each other's data; no header from outside → 401;
       loopback without header → owner.
 - [ ] Set `"identity": "multi"` in the manifest.
+- [ ] **uvicorn apps:** start without proxy headers (`--no-proxy-headers` / `uvicorn.run(..., proxy_headers=False)`).
+      uvicorn trusts `X-Forwarded-For` from 127.0.0.1 by default, and Tailscale Serve and the owner gate connect
+      from 127.0.0.1 and send it -- the SDK then sees the tailnet address instead of loopback and refuses the owner
+      (found 2026-10-23: StoryTime answered 401 over Serve). The door is unaffected (its signed token decides).
 - [ ] **Vite apps:** put `sdk/vite/servePolicy.js` first in `plugins` (`servePolicyPlugin({...})`). Vite's dev
       server hands out *any* file under the project root -- found 2026-10-17: TrioLingo served
       `data/users/*/state.json` and `scripts/deploy.env` (FTP credentials). Keep per-person data out of

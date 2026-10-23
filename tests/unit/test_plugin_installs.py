@@ -118,3 +118,47 @@ def test_refused(fake, plugin, body, status):
 def test_not_from_the_lan(fake):
     lan = TestClient(app, client=("192.168.1.77", 50000))
     assert lan.post("/api/plugins/sd-serve/install", json={"id": "iris-turbo"}).status_code == 403
+
+
+# ------------------------------------------------------------------ a plugin that isn't running
+# Owner on the Mac, 2026-10-23: "With positions" only said to go and start image-serve in the dashboard -- the
+# download list had dropped the plugin silently ("not running" in errors, which no page showed).
+
+def test_a_plugin_that_does_not_start_is_listed_with_its_reason(fake, monkeypatch, tmp_path):
+    from backend.routers import plugins as pl
+    from backend.routers import services as svc
+
+    async def down(p, timeout_s=40.0):
+        return False
+    monkeypatch.setattr(registry, "ensure_running", down)
+    log = tmp_path / "service-sd-serve.log"
+    log.write_text("starting\nTraceback (most recent call last):\nModuleNotFoundError: No module named 'psutil'\n")
+    monkeypatch.setattr(svc, "_log_path", lambda sid: str(tmp_path / f"service-{sid}.log"))
+    body = client.get("/api/plugins/installs").json()
+    assert body["items"] == []
+    down_ = body["down"]
+    assert down_ == [{"plugin": "sd-serve", "plugin_name": "sd-serve", "capability": "image",
+                      "reason": "ModuleNotFoundError: No module named 'psutil'"}]
+
+
+def test_a_plugin_can_be_started_on_request(fake, monkeypatch):
+    calls = []
+
+    async def up(p, timeout_s=40.0):
+        calls.append((p.id, timeout_s))
+        return True
+    monkeypatch.setattr(registry, "ensure_running", up)
+    r = client.post("/api/plugins/sd-serve/start")
+    assert r.status_code == 200 and r.json() == {"plugin": "sd-serve", "running": True}
+    assert calls and calls[0][1] >= 120                       # a first start may build its environment
+
+
+def test_start_is_only_for_plugins_and_reports_why_not(fake, monkeypatch):
+    async def down(p, timeout_s=40.0):
+        return False
+    monkeypatch.setattr(registry, "ensure_running", down)
+    assert client.post("/api/plugins/nope/start").status_code == 404     # not a plugin (apps aren't started here)
+    r = client.post("/api/plugins/sd-serve/start")
+    assert r.status_code == 503 and "sd-serve" in r.json()["detail"]
+    lan = TestClient(app, client=("192.168.1.77", 50000))
+    assert lan.post("/api/plugins/sd-serve/start").status_code == 403

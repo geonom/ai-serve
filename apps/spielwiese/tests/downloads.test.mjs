@@ -27,6 +27,14 @@ test('a page can narrow its offer to certain items (the layout page: only MOSS)'
     assert.deepEqual(D.missing(items, 'image').map(i => i.id), ['iris-turbo', 'moss', 'z-image-turbo']);
 });
 
+test('plugins that are not running show up for their capability', () => {
+    const down = [{ plugin: 'comfyui', plugin_name: 'image-serve', capability: 'image', reason: 'still starting' },
+                  { plugin: 'stt-serve', plugin_name: 'stt-serve', capability: 'stt', reason: 'x' }];
+    assert.deepEqual(D.downFor(down, 'image').map(d => d.plugin), ['comfyui']);
+    assert.deepEqual(D.downFor(down, false), []);
+    assert.deepEqual(D.downFor(undefined, 'image'), []);
+});
+
 test('sizes and states read plainly', () => {
     assert.equal(D.sizeText(5300), '~5.2 GB');
     assert.equal(D.sizeText(700), '~700 MB');

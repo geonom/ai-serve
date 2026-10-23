@@ -44,10 +44,30 @@ async function fetchDownloads() {
             el('span', { class: i.state === 'failed' ? 'tone-bad small' : 'muted small', text: state }),
             btn);
     });
+    for (const d of data.down || []) {   // a plugin with downloads that isn't running: why, and a start button
+        const note = el('span', { class: 'tone-bad small', text: tx('isn\'t running: {reason}', { reason: d.reason || '?' }) });
+        rows.unshift(el('div', { class: 'ms-row' },
+            el('div', {}, el('strong', { text: d.plugin_name || d.plugin }),
+               el('div', { class: 'muted small', text: tx('Its downloads show up once it runs.') })),
+            note,
+            el('button', { class: 'btn btn-secondary btn-sm', text: tx('Start'), onclick: async (e) => {
+                e.target.disabled = true;
+                note.className = 'muted small';
+                note.textContent = tx('Starting … the first start can take a few minutes.');
+                try {
+                    await api(`/api/plugins/${encodeURIComponent(d.plugin)}/start`, 'POST');
+                    addLog(tx('{name} is running.', { name: d.plugin_name || d.plugin }), 'system');
+                } catch (err) {
+                    addLog(tx('{name} didn\'t start: {err}', { name: d.plugin_name || d.plugin, err: err.message }), 'error');
+                }
+                fetchDownloads();
+            } })));
+    }
     if (!rows.length) rows.push(el('div', { class: 'empty-state', text: data.items.length
         ? tx('Everything the plugins offer for this machine is installed.') : tx('No plugin offers downloads here.') }));
     if (done.length) rows.push(el('div', { class: 'muted small', text: tx('Installed: {list}', { list: done.map(i => i.label).join(', ') }) }));
-    if (data.errors && data.errors.length) rows.push(el('div', { class: 'muted small', text: data.errors.join(' · ') }));
+    const other = (data.errors || []).filter(e => !(data.down || []).some(d => e.startsWith(d.plugin + ':')));
+    if (other.length) rows.push(el('div', { class: 'muted small', text: other.join(' · ') }));
     box.replaceChildren(...rows);
     clearTimeout(downloadsPoll);
     if (open.some(i => i.state === 'downloading')) downloadsPoll = setTimeout(fetchDownloads, 3000);

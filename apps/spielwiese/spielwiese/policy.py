@@ -56,6 +56,7 @@ _RULES = [
     ("POST", r"/v1/images/cancel"),        # stop one running image by its request id (Vergleich's cancel)
     ("GET", r"/api/plugins/installs"),     # what can be downloaded (missing models / engines) -- shown to everyone
     ("POST", rf"/api/plugins/{_SEG}/install"),   # start a download: the owner only (quota.classify -> owner_only)
+    ("POST", rf"/api/plugins/{_SEG}/start"),     # start a plugin a page needs (only plugins, not apps): owner only
 ]
 _COMPILED = [(m, re.compile(p + r"\Z")) for m, p in _RULES]
 _QUERY = re.compile(r"\A[A-Za-z0-9._~=&%+-]*\Z")

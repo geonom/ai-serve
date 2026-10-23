@@ -23,14 +23,19 @@ const DownloadRules = (() => {
         if (i.state === 'failed') return tx('Failed: {err}', { err: i.error || '?' });
         return '';
     }
-    return { missing, sizeText, stateText };
+    // plugins of a capability that aren't running (so their downloads can't be listed) -- offered to start
+    function downFor(down, capability) {
+        return capability ? (down || []).filter(d => d.capability === capability) : [];
+    }
+    return { missing, sizeText, stateText, downFor };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = DownloadRules;
 
 const Downloads = (() => {
     if (typeof document === 'undefined') return null;
-    let items = [], isOwner = false, loading = null, poll = null;
+    let items = [], down = [], isOwner = false, loading = null, poll = null;
+    const starting = new Set();
     const panels = new Map();          // element -> {capability, hint}
 
     const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -41,6 +46,7 @@ const Downloads = (() => {
                 swFetch('/sw/me').then(r => r.ok ? r.json() : {}).catch(() => ({}))]);
             const before = new Map(items.map(i => [`${i.plugin}/${i.id}`, i.state]));
             items = list.items || [];
+            down = list.down || [];
             isOwner = !!me.is_owner;
             for (const i of items) {
                 if (before.get(`${i.plugin}/${i.id}`) === 'downloading' && i.state === 'installed') {
@@ -53,6 +59,7 @@ const Downloads = (() => {
             }
         } catch (err) {
             items = [];
+            down = [];
         }
         renderAll();
         clearTimeout(poll);
@@ -75,8 +82,26 @@ const Downloads = (() => {
         refresh();
     }
 
+    async function startPlugin(d, btn, note) {
+        btn.disabled = true;
+        starting.add(d.plugin);
+        note.textContent = tx('Starting {name} … the first start can take a few minutes.', { name: d.plugin_name });
+        try {
+            await api(`/api/plugins/${encodeURIComponent(d.plugin)}/start`, 'POST', {});
+            addLog(tx('{name} is running.', { name: d.plugin_name }), 'success');
+            // its models and downloads are there now: pages of that capability load their lists again
+            window.dispatchEvent(new CustomEvent('sw-installed', { detail: { capability: d.capability } }));
+        } catch (err) {
+            addLog(tx('{name} didn\'t start: {err}', { name: d.plugin_name, err: err.message }), 'error');
+        }
+        starting.delete(d.plugin);
+        loading = null;
+        await refresh();
+    }
+
     function render(box, { capability, hint, only }) {
         const missing = capability === false ? [] : DownloadRules.missing(items, capability, only);
+        const stopped = DownloadRules.downFor(down, capability);
         box.replaceChildren();
         if (hint) {   // a string, or {text, href, link}: the text plus a link to how to get it
             const h = el('div', 'dl-hint', typeof hint === 'string' ? hint : hint.text);
@@ -107,7 +132,27 @@ const Downloads = (() => {
             }
             box.append(row);
         }
-        box.hidden = !hint && !missing.length;
+        for (const d of stopped) {   // a plugin that isn't running: say why, and let the owner start it
+            const row = el('div', 'dl-row');
+            const text = el('div', 'dl-text');
+            text.append(el('strong', null, d.plugin_name),
+                        el('div', 'muted small', tx('isn\'t running: {reason}', { reason: d.reason || '?' })));
+            const note = el('div', 'small dl-state', starting.has(d.plugin)
+                ? tx('Starting {name} … the first start can take a few minutes.', { name: d.plugin_name }) : '');
+            text.append(note);
+            row.append(text);
+            if (isOwner) {
+                const btn = el('button', 'btn btn-secondary btn-sm', tx('Start {name}', { name: d.plugin_name }));
+                btn.type = 'button';
+                btn.disabled = starting.has(d.plugin);
+                btn.addEventListener('click', () => startPlugin(d, btn, note));
+                row.append(btn);
+            } else {
+                row.append(el('span', 'muted small', tx('The owner can start it.')));
+            }
+            box.append(row);
+        }
+        box.hidden = !hint && !missing.length && !stopped.length;
     }
 
     function renderAll() {
@@ -122,5 +167,5 @@ const Downloads = (() => {
         ready().then(() => render(box, { capability, hint, only }));
     }
 
-    return { panel, ready, refresh, items: () => items, isOwner: () => isOwner };
+    return { panel, ready, refresh, items: () => items, down: () => down, isOwner: () => isOwner };
 })();

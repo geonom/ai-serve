@@ -54,6 +54,7 @@ _KINDS = [
     ("POST", re.compile(r"^/api/comfyui/(generate|edit|style-transfer)$"), "image"),
     ("POST", re.compile(r"^/api/comfyui/batch(/.*)?$"), "owner_only"),
     ("POST", re.compile(r"^/api/plugins/[^/]+/install$"), "owner_only"),   # downloads (several GB, setup scripts)
+    ("POST", re.compile(r"^/api/plugins/[^/]+/start$"), "owner_only"),     # starting a plugin (its first start may build it)
     ("POST", re.compile(r"^/api/(tts/generate|stt/transcribe)$"), "speech"),
     ("POST", re.compile(r"^/api/ocr$"), "ocr"),
     ("POST", re.compile(r"^/v1/(embeddings|rerank)$"), "text"),   # "Texte vergleichen": loads a model too

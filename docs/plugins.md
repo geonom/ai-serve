@@ -240,7 +240,8 @@ missing model should be downloadable from the Spielwiese and the dashboard inste
   (shipped) business: sd-serve checks each file against GitHub's / Hugging Face's sha256, tts-serve and stt-serve
   run the provider's own `setup.sh`. Never take URLs, paths or arguments from the request.
 - The gateway: `GET /api/plugins/installs` (every plugin's items, tagged `plugin`, `plugin_name`, `capability`;
-  fields checked by `normalize_install`), `POST /api/plugins/{plugin}/install {"id"}` (only `{"id"}`; dashboard
+  fields checked by `normalize_install`; plugins that couldn't be started are listed under `down` with the reason
+  from their log, and `POST /api/plugins/{plugin}/start` starts one -- only plugins, never other apps), `POST /api/plugins/{plugin}/install {"id"}` (only `{"id"}`; dashboard
   access = this machine and the owner's devices). The Spielwiese forwards the start only for its owner.
 
 ## Which plugins exist

@@ -39,8 +39,14 @@ class TestRoute(unittest.TestCase):
                      ("POST", "/v1/images/generations"),    # MOSS-Image, Iris, catalog ids
                      ("GET", "/v1/images/models"), ("POST", "/v1/images/cancel"),
                      ("GET", "/v1/audio/models"), ("GET", "/v1/llm/models"),
-                     ("POST", "/v1/embeddings"), ("POST", "/v1/rerank")]:        # the gateway's image and speech catalogs
+                     ("POST", "/v1/embeddings"), ("POST", "/v1/rerank"),        # the gateway's image and speech catalogs
+                     ("POST", "/api/plugins/comfyui/start")]:   # a plugin whose downloads a page needs (owner only)
             self.ok(m, p)
+
+    def test_only_plugins_are_started_never_apps_or_services(self):
+        for m, p in [("POST", "/api/services/comfyui/start"), ("POST", "/api/services/spielwiese/stop"),
+                     ("POST", "/api/plugins/comfyui/release"), ("POST", "/api/plugins/../services/x/start")]:
+            self.refused(m, p)
 
     def test_query_string_kept_for_reads(self):
         self.assertEqual(route("GET", "/api/comfyui/task/abc?x=1"), "/api/comfyui/task/abc?x=1")

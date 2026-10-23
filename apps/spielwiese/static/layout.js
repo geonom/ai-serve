@@ -246,10 +246,13 @@ async function layLoadVariants() {
         await Downloads.ready();
         const mine = Downloads.items().filter(i => i.capability === 'image' && LAY_DOWNLOADS.includes(i.id) && i.state !== 'installed');
         const offered = mine.length > 0, blocked = offered && mine.every(i => i.state === 'failed');
-        Downloads.panel(document.getElementById('dl-layout'), 'image', offered
+        const stopped = DownloadRules.downFor(Downloads.down(), 'image').length > 0;
+        Downloads.panel(document.getElementById('dl-layout'), 'image', !offered && stopped
+            ? tx('Placing things by position needs MOSS-Image, which comes with an image plugin that isn\'t running yet. Start it here – its download then appears below.')
+            : offered
             ? (blocked ? tx('Placing things by position needs MOSS-Image – below is why it can\'t be installed yet.')
                        : tx('Placing things by position needs MOSS-Image. It can be downloaded here.'))
-            : { text: tx('No model here can place things by position yet. That needs MOSS-Image from the image-serve plugin (part of ai-serve, plugins/image-serve): if it is there, start it under Apps & Services in the dashboard – the download then shows up here. How to set it up:'),
+            : { text: tx('No model here can place things by position yet. That needs MOSS-Image from the image-serve plugin, which isn\'t part of this installation. How to add it:'),
                 href: 'https://github.com/geonom/ai-serve/blob/main/plugins/image-serve/README.md', link: tx('image-serve README') },
             LAY_DOWNLOADS);
     }

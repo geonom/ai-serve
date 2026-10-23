@@ -58,12 +58,54 @@ def _installers():
     return out
 
 
+def _capability(p) -> Optional[str]:
+    return next((c for c, prov in (getattr(p.manifest, "provides", None) or {}).items() if prov is p.provision), None)
+
+
+def start_problem(p) -> str:
+    """Why a plugin isn't running, in one line: still starting, or the last error its log shows."""
+    from backend.routers import services as svc
+    proc = svc._launched.get(p.id)
+    if proc is not None and proc.poll() is None:
+        return "still starting -- try again in a moment"
+    try:
+        with open(svc._log_path(p.id), encoding="utf-8", errors="replace") as f:
+            lines = [l.strip() for l in f.read().splitlines()[-40:] if l.strip()]
+    except OSError:
+        lines = []
+    errs = [l for l in lines if "error" in l.lower() or "exception" in l.lower() or "failed" in l.lower()]
+    return (errs or lines or ["it didn't start in time"])[-1][:240]
+
+
+def _any_plugin(plugin_id: str):
+    for m in registry._manifests():
+        for cap, prov in sorted((getattr(m, "provides", None) or {}).items()):
+            if m.id == plugin_id:
+                return registry.Plugin(m.id, m.name, m.port, prov, m)
+    return None
+
+
+@router.post("/api/plugins/{plugin_id}/start", summary="Start a plugin that isn't running (only plugins, not apps)")
+async def start_plugin(plugin_id: str):
+    p = _any_plugin(plugin_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail=f"no plugin {plugin_id!r}")
+    # a first start may build the plugin's own environment (uv venv + requirements) -- give it time
+    if await registry.ensure_running(p, 180.0):
+        return {"plugin": p.id, "running": True}
+    raise HTTPException(status_code=503, detail=f"{p.name} didn't start: {start_problem(p)}")
+
+
 @router.get("/api/plugins/installs", summary="What the plugins can download (models, engines) and how far it got")
 async def list_installs():
-    items, errors = [], []
+    """Also `down`: plugins with downloads that aren't running, with the reason -- a page can offer to start them
+    (POST /api/plugins/{id}/start) instead of leaving their downloads out silently."""
+    items, errors, down = [], [], []
     for p in _installers():
         if not await registry.ensure_running(p):
-            errors.append(f"{p.id}: not running")
+            reason = start_problem(p)
+            errors.append(f"{p.id}: not running ({reason})")
+            down.append({"plugin": p.id, "plugin_name": p.name, "capability": _capability(p), "reason": reason})
             continue
         try:
             r = await registry.call(p, "install", timeout=15.0)
@@ -73,7 +115,7 @@ async def list_installs():
         cap = next((c for c, prov in (getattr(p.manifest, "provides", None) or {}).items() if prov is p.provision), None)
         items += [{**i, "plugin": p.id, "plugin_name": p.name, "capability": cap} for i in got]
         errors += [f"{p.id}: {e}" for e in errs]
-    return {"items": items, "errors": errors}
+    return {"items": items, "errors": errors, "down": down}
 
 
 @router.post("/api/plugins/{plugin_id}/install", status_code=202, summary="Start downloading one item a plugin offers")

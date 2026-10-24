@@ -11,6 +11,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -591,6 +592,48 @@ def _is_oom(e: BaseException) -> bool:
     return isinstance(e, MemoryError) or "out of memory" in text or "cuda_error_out_of_memory" in text
 
 
+def _is_cuda_error(e: BaseException) -> bool:
+    text = str(e).lower()
+    return "cuda" in text and ("error" in text or "failed" in text)
+
+
+# One worker thread per device for WhisperX (found live 2026-10-24: after a load on GPU 1 and a later one on GPU 0
+# in the same process every transcription failed with "CUDA failed with error invalid argument" -- CTranslate2 keeps
+# per-thread CUDA state, and asyncio's executor ran the GPU 0 model on a thread that had worked on GPU 1; setting
+# torch's device in that thread wasn't enough). A thread here never switches devices.
+_DEVICE_THREADS: Dict[str, Any] = {}
+_thread_device = threading.local()
+
+
+def _device_executor(device: str):
+    ex = _DEVICE_THREADS.get(device)
+    if ex is None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def init():
+            _thread_device.device = device
+            if device.startswith("cuda:"):
+                try:
+                    import torch
+                    torch.cuda.set_device(int(device.split(":")[1]))
+                except Exception:
+                    pass
+        ex = _DEVICE_THREADS[device] = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"whisper-{device}",
+                                                          initializer=init)
+    return ex
+
+
+def _transcribe_on_device(audio, language: Optional[str]):
+    """model.transcribe on the worker thread of the device the model is on (directly when already there)."""
+    model, device = state.whisperx_model, state.whisperx_device or "cpu"
+
+    def go():
+        return model.transcribe(audio, batch_size=4, language=language, task="transcribe")
+    if getattr(_thread_device, "device", None) == device:
+        return go()
+    return _device_executor(device).submit(go).result()
+
+
 def _finish_first_use() -> None:
     """The first transcription is done: the GPU manager counts the measured usage from now on."""
     if state.whisperx_reservation:
@@ -603,13 +646,15 @@ def _whisper_transcribe(audio, language: Optional[str]):
     unload an idle model or pick the other GPU), reload, retry once; again -> the CPU; out of memory there too ->
     507, retryable. task="transcribe" always (see transcribe_stt)."""
     state.whisperx_last_used = time.time()
+    oom = True
     try:
         try:
-            return state.whisperx_model.transcribe(audio, batch_size=4, language=language, task="transcribe")
+            return _transcribe_on_device(audio, language)
         except Exception as e:
-            if not _is_oom(e):
+            if not (_is_oom(e) or _is_cuda_error(e)):
                 raise
-            logger.warning(f"WhisperX ran out of memory on {state.whisperx_device} -- asking for room again")
+            oom = _is_oom(e)
+            logger.warning(f"WhisperX failed on {state.whisperx_device} ({e}) -- reloading and asking for room again")
         for cpu_only in (False, True):
             if cpu_only and state.whisperx_device == "cpu":
                 break   # already tried there
@@ -617,14 +662,17 @@ def _whisper_transcribe(audio, language: Optional[str]):
             _drop_whisperx_model()
             _ensure_whisperx_loaded(cpu_only=cpu_only)
             try:
-                return state.whisperx_model.transcribe(audio, batch_size=4, language=language, task="transcribe")
+                return _transcribe_on_device(audio, language)
             except Exception as e:
-                if not _is_oom(e):
+                if not (_is_oom(e) or _is_cuda_error(e)):
                     raise
-                logger.warning(f"WhisperX ran out of memory again on {state.whisperx_device}")
+                oom = _is_oom(e)
+                logger.warning(f"WhisperX failed again on {state.whisperx_device} ({e})")
         _drop_whisperx_model()
-        raise HTTPException(status_code=507, detail="Speech recognition ran out of memory (GPU and CPU) -- "
-                                                    "try again in a moment")
+        if oom:
+            raise HTTPException(status_code=507, detail="Speech recognition ran out of memory (GPU and CPU) -- "
+                                                        "try again in a moment")
+        raise HTTPException(status_code=503, detail="Speech recognition hit a GPU error -- try again in a moment")
     finally:
         state.whisperx_last_used = time.time()
         _finish_first_use()
@@ -941,6 +989,8 @@ async def transcribe_stt(req: STTTranscribeRequest):
         logger.error(f"STT transcription failed: {e}")
         if _is_oom(e):   # retryable: memory may be free again in a moment
             raise HTTPException(status_code=507, detail=f"Speech recognition ran out of memory -- try again ({e})")
+        if _is_cuda_error(e):
+            raise HTTPException(status_code=503, detail=f"Speech recognition hit a GPU error -- try again ({e})")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if state.whisperx_status == "transcribing":

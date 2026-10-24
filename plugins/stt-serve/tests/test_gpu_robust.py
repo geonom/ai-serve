@@ -19,10 +19,12 @@ OOM = RuntimeError("CUDA failed with error out of memory")
 
 class Model:
     def __init__(self, device, fail_with=None):
-        self.device, self.fail_with, self.calls = device, list(fail_with or []), 0
+        self.device, self.fail_with, self.calls, self.threads = device, list(fail_with or []), 0, []
 
     def transcribe(self, audio, batch_size, language, task):
+        import threading
         self.calls += 1
+        self.threads.append(threading.current_thread().name)
         if self.fail_with:
             raise self.fail_with.pop(0)
         return {"segments": [{"start": 0.0, "end": 1.0, "text": f" hallo ({self.device})"}], "language": language}
@@ -253,3 +255,42 @@ def test_moss_other_errors_pass_through(moss):
     with pytest.raises(HTTPException) as e:
         asyncio.run(engine._moss_job("w.wav", "p", 100, 10.0))
     assert e.value.status_code == 500 and calls["ensure"] == ["gpu"]
+
+
+# --- found live 2026-10-24 18:01: after a load on GPU 1 and a later one on GPU 0 in the same process, every
+# transcription failed with "CUDA failed with error invalid argument". Reproduced outside the service: CTranslate2
+# keeps per-thread CUDA state, and asyncio's executor ran the GPU 0 model on a thread that had worked on GPU 1
+# (setting torch's device in that thread isn't enough). Each device gets its own worker thread that never switches.
+
+def test_each_device_transcribes_on_its_own_thread(gpu):
+    log, ctl = gpu
+    ctl["grants"] = [1, 0]
+    run()
+    first = engine.state.whisperx_model
+    engine._drop_whisperx_model()
+    run()
+    second = engine.state.whisperx_model
+    assert first.threads and second.threads
+    assert "cuda:1" in first.threads[0] and "cuda:0" in second.threads[0]
+    run()                                                    # same device again: the same thread
+    assert second.threads[-1] == second.threads[0]
+
+
+def test_another_cuda_error_reloads_and_retries(gpu):
+    log, ctl = gpu
+    ctl["grants"], ctl["fails"] = [0, 0], {"cuda:0": [RuntimeError("CUDA failed with error invalid argument")]}
+    out = run()
+    assert "cuda:0" in out["segments"][0]["text"] and [e[0] for e in log].count("load") == 2
+
+
+def test_a_cuda_error_that_stays_is_a_retryable_503(gpu, monkeypatch):
+    log, ctl = gpu
+    ctl["grants"] = [0, 0]
+    bad = RuntimeError("CUDA failed with error invalid argument")
+
+    def load(name, device, device_index, compute_type):
+        return Model("cpu" if device == "cpu" else f"cuda:{device_index}", [bad, bad, bad])
+    monkeypatch.setattr(engine, "_load_model", load)
+    with pytest.raises(HTTPException) as e:
+        run()
+    assert e.value.status_code == 503 and "try again" in e.value.detail.lower()

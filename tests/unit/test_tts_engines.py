@@ -215,3 +215,17 @@ def test_status_when_tts_serve_down(tts):
 
 def test_tts_logs_include_tts_serve(tts):
     assert "worker log line" in client.get("/api/logs/tts").json()["logs"]
+
+
+def test_openai_speech_passes_a_design_seed(tts):
+    """2026-10-24 (owner: a design seed for lots of variety): same description + seed = the same designed voice."""
+    r = client.post("/v1/audio/speech", json={"model": "qwen3", "input": "Hallo", "language": "de",
+                                             "voice": "eine raue, ältere Männerstimme", "seed": 7})
+    assert r.status_code == 200, r.text
+    p = tts.generated[-1]
+    assert p["variant"] == "voice_design" and p["instruct"] == "eine raue, ältere Männerstimme"
+    assert p["params"] == {"seed": 7}
+    client.post("/v1/audio/speech", json={"model": "qwen3", "input": "Hallo", "voice": "warm"})
+    assert "params" not in tts.generated[-1]
+    assert client.post("/v1/audio/speech", json={"model": "qwen3", "input": "x", "voice": "warm",
+                                                  "seed": -1}).status_code == 422

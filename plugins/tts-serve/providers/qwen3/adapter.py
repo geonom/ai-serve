@@ -17,6 +17,9 @@ def build_payload(req, ref_audio_path):
         raise RequestError(f"engine='qwen3' variant must be one of {', '.join(VARIANTS)}")
     language = LANGUAGE_NAMES.get((req.language or "en").strip().lower(), req.language or "English")
     payload = {"text": req.text, "variant": variant, "language": language}
+    seed = (req.params or {}).get("seed")
+    if seed is not None:   # fixes the random draw: same description + seed = the same voice (owner, 2026-10-24)
+        payload["seed"] = int(seed)
     if variant == "base":
         if not ref_audio_path:
             raise RequestError("engine='qwen3' variant='base' requires reference audio.")

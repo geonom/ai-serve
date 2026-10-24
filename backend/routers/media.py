@@ -338,6 +338,9 @@ class OpenAISpeechRequest(BaseModel):
     # non-English text on the language-aware engines (qwen3 maps it to its full
     # language name, chatterbox passes it as language_id). Omitted -> "en", as before.
     language: Optional[str] = None
+    # extension: fixes the random draw of engines that take a `seed` param (Qwen3: a designed voice --
+    # same description + seed = the same voice, other seeds = other voices)
+    seed: Optional[int] = Field(None, ge=0, le=2147483647)
 
 
 class ImageGenerationRequest(BaseModel):
@@ -736,7 +739,7 @@ async def openai_audio_speech(req: OpenAISpeechRequest, request: Request):
         variant = {"cosyvoice": "zero_shot", "cosy": "zero_shot", "cosyvoice3": "zero_shot", "qwen3": "base"}.get(eng)
         return await generate_tts(TTSGenerateRequest(
             text=req.input, language=(req.language or "en"), engine=engine, variant=variant, voice=req.voice,
-            response_format="binary"), request)
+            response_format="binary", **({"params": {"seed": req.seed}} if req.seed is not None else {})), request)
     ref_voice_path = None
     instruct = None
     if os.path.exists(_VOICES_DIR) and req.voice:
@@ -785,7 +788,7 @@ async def openai_audio_speech(req: OpenAISpeechRequest, request: Request):
     tts_req = TTSGenerateRequest(
         text=req.input, language=(req.language or "en"), engine=engine, variant=variant,
         ref_voice_path=ref_voice_path, ref_text=ref_text if not speaker else None, instruct=instruct,
-        speaker=speaker, response_format="binary",
+        speaker=speaker, response_format="binary", **({"params": {"seed": req.seed}} if req.seed is not None else {}),
     )
     return await generate_tts(tts_req)
 

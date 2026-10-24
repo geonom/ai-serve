@@ -100,6 +100,20 @@ class TestQwen3:
     def test_language_names(self, code, name):
         assert _build("qwen3", variant="voice_design", instruct="warm", language=code, ref=None)["language"] == name
 
+    def test_a_seed_reaches_the_worker_as_a_whole_number(self):
+        """2026-10-24 (owner: a design seed for lots of variety): voice_design invents the voice anew each time; a
+        seed fixes that draw, so description + seed = the same voice, and other seeds = other voices."""
+        p = _build("qwen3", variant="voice_design", instruct="a warm voice", ref=None, params={"seed": 42.0})
+        assert p["seed"] == 42 and isinstance(p["seed"], int)
+        assert "seed" not in _build("qwen3", variant="voice_design", instruct="a warm voice", ref=None)
+
+    def test_the_manifest_offers_the_seed_in_every_mode(self):
+        import json
+        m = json.loads((PROVIDERS_DIR / "qwen3" / "llama-serve.provider.json").read_text())
+        for mode in m["modes"]:
+            seed = next(x for x in mode["params"] if x["name"] == "seed")
+            assert seed["min"] == 0 and seed["max"] == 2147483647 and "default" not in seed
+
     def test_voice_design_and_custom_voice(self):
         assert _build("qwen3", variant="voice_design", instruct="a warm voice", ref=None)["instruct"] == "a warm voice"
         p = _build("qwen3", variant="custom_voice", speaker="Vivian", instruct="happy", ref=None)

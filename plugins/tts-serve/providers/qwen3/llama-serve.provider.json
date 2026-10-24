@@ -26,7 +26,9 @@
   "variant_swaps": true,
   "default_reference": false,
   "license": "Apache-2.0",
-  "requires": ["cuda"],
+  "requires": [
+    "cuda"
+  ],
   "install_mb": 10000,
   "setup": "./setup.sh",
   "languages": [
@@ -49,7 +51,16 @@
       "inputs": {
         "reference": "required",
         "ref_text": "required"
-      }
+      },
+      "params": [
+        {
+          "name": "seed",
+          "label": "Seed (same seed + description = same voice)",
+          "min": 0,
+          "max": 2147483647,
+          "step": 1
+        }
+      ]
     },
     {
       "variant": "voice_design",
@@ -65,7 +76,16 @@
           "A warm, calm female voice in her forties, speaking slowly.",
           "An excited boy, about ten years old, speaking fast."
         ]
-      }
+      },
+      "params": [
+        {
+          "name": "seed",
+          "label": "Seed (same seed + description = same voice)",
+          "min": 0,
+          "max": 2147483647,
+          "step": 1
+        }
+      ]
     },
     {
       "variant": "custom_voice",
@@ -93,7 +113,16 @@
           "Speak sadly.",
           "Speak with excitement."
         ]
-      }
+      },
+      "params": [
+        {
+          "name": "seed",
+          "label": "Seed (same seed + description = same voice)",
+          "min": 0,
+          "max": 2147483647,
+          "step": 1
+        }
+      ]
     }
   ]
 }

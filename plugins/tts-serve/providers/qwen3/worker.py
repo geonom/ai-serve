@@ -109,6 +109,16 @@ class Handler(BaseHTTPRequestHandler):
 
                 text = req["text"]
                 language = req.get("language", "English")
+                if req.get("seed") is not None:   # same seed + same input = the same voice
+                    import random
+                    import numpy as np
+                    import torch
+                    seed = int(req["seed"])
+                    random.seed(seed)
+                    np.random.seed(seed % (2 ** 32))
+                    torch.manual_seed(seed)
+                    if torch.cuda.is_available():
+                        torch.cuda.manual_seed_all(seed)
                 if variant == "base":
                     clone_kw = dict(
                         text=text, language=language,

@@ -68,6 +68,51 @@ def get_upstream_error_detail(exc: httpx.HTTPError) -> str:
     return str(exc)
 
 
+class LoadWatch:
+    """How long a starting llama-server may take (2026-10-24, found by V-Noveller: a cold 11.5 GB file took 240 s
+    just to read from disk, and the old fixed 60 s gave up every time). Wait as long as the load makes progress
+    (the process reads from disk or writes its log); give up after STALL_S without any, or MAX_S in all."""
+    STALL_S = 60
+    MAX_S = 20 * 60
+
+    def __init__(self, now: float):
+        self.start = self.last_change = now
+        self.last = None
+
+    def elapsed(self, now: float) -> int:
+        return int(now - self.start)
+
+    def verdict(self, now: float, progress) -> Optional[str]:
+        """None = keep waiting; else why to give up. `progress` = any comparable snapshot (None = unknown)."""
+        if progress is not None and progress != self.last:
+            self.last, self.last_change = progress, now
+        if now - self.start >= self.MAX_S:
+            return f"did not become ready within {self.elapsed(now)}s"
+        if now - self.last_change >= self.STALL_S:
+            return (f"did not become ready: no loading progress for {int(now - self.last_change)}s "
+                    f"({self.elapsed(now)}s in all)")
+        return None
+
+
+def _load_progress(pid: int, log_path: str):
+    """Bytes the process (and its children) read from storage + its log's size -- grows while a model loads."""
+    total = 0
+    try:
+        p = psutil.Process(pid)
+        for q in [p] + p.children(recursive=True):
+            try:
+                total += q.io_counters().read_bytes
+            except (psutil.Error, AttributeError):
+                pass
+    except psutil.Error:
+        pass
+    try:
+        log_size = os.path.getsize(log_path)
+    except OSError:
+        log_size = 0
+    return (total, log_size)
+
+
 def _tail_log_file(path: str, n: int = 20) -> str:
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -1307,13 +1352,12 @@ async def _load_locked(
 
         ready = False
         crashed = False
-        elapsed = 0
-        for i in range(60):
+        watch = LoadWatch(time.monotonic())
+        while True:
             if proc.poll() is not None:
                 crashed = True
                 break
             await asyncio.sleep(1)
-            elapsed = i + 1
             try:
                 async with httpx.AsyncClient(timeout=0.5) as client:
                     resp = await client.get(f"http://127.0.0.1:{port}/health")
@@ -1322,9 +1366,12 @@ async def _load_locked(
                         break
             except Exception:
                 pass
+            if watch.verdict(time.monotonic(), _load_progress(proc.pid, log_file_path)):
+                break
+        elapsed = watch.elapsed(time.monotonic())
 
         if not ready:
-            reason = "crashed during startup" if crashed else f"did not become ready within {elapsed}s"
+            reason = "crashed during startup" if crashed else watch.verdict(time.monotonic(), None)
             log_tail = _tail_log_file(log_file_path)
             logger.error(f"Server on port {port} {reason}.")
             await stop_server_by_port(port)

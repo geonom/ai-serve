@@ -2,7 +2,8 @@
 offer whatever runs through the gateway, open for future models). Pure: tts-serve's /v1/engines and
 stt-serve's /v1/engines come in, the client-facing catalog goes out. The engines describe themselves there
 (modes/inputs/params resp. form fields); the gateway only adds what it knows itself -- a clone engine with
-`default_reference` gets DEFAULT_TTS_VOICE from here, so its clip becomes optional. A service that's down is
+`default_reference` gets DEFAULT_TTS_VOICE from here, so its clip becomes optional, and every mode that takes a
+reference lists the synthetic voices (`voices`, backend/synthetic_voices.py). A service that's down is
 reported with a reason, not hidden. Tests: tests/unit/test_audio_catalog.py."""
 from typing import Any, Dict, List, Optional
 
@@ -12,7 +13,8 @@ def _down(service: str, url_hint: str) -> Dict[str, Any]:
             "reason": f"{service} is unreachable ({url_hint}); start it in Apps & Services."}
 
 
-def _tts_modes(e: Dict[str, Any], default_voice: str) -> List[Dict[str, Any]]:
+def _tts_modes(e: Dict[str, Any], default_voice: str,
+               synthetic_voices: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     modes = e.get("modes") or []
     if not modes:   # an engine that doesn't describe itself yet: one bare mode per variant
         modes = [{"variant": v, "label": v, "description": "", "inputs": {}, "speakers": [], "params": []}
@@ -24,12 +26,16 @@ def _tts_modes(e: Dict[str, Any], default_voice: str) -> List[Dict[str, Any]]:
         if e.get("default_reference") and m["inputs"].get("reference") == "required":
             m["inputs"]["reference"] = "optional"
             m["default_voice"] = default_voice
+        if synthetic_voices and m["inputs"].get("reference") in ("optional", "required"):
+            # a mode that clones a reference can speak with every synthetic voice (backend/synthetic_voices.py) --
+            # the only references an app should offer (voices/ also holds clips of real people)
+            m["voices"] = list(synthetic_voices)
         out.append(m)
     return out
 
 
 def audio_catalog(tts_view: Optional[Dict[str, Any]], stt_view: Optional[Dict[str, Any]],
-                  default_voice: str) -> Dict[str, Any]:
+                  default_voice: str, synthetic_voices: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     if tts_view is None:
         tts = _down("tts-serve", "speech output")
     else:
@@ -37,7 +43,7 @@ def audio_catalog(tts_view: Optional[Dict[str, Any]], stt_view: Optional[Dict[st
             {"id": e["id"], "label": e.get("name") or e["id"], "description": e.get("description", ""),
              "license": e.get("license", ""), "aliases": list(e.get("aliases") or []),
              "languages": list(e.get("languages") or []), "params": list(e.get("params") or []),
-             "loaded": bool(e.get("loaded")), "modes": _tts_modes(e, default_voice),
+             "loaded": bool(e.get("loaded")), "modes": _tts_modes(e, default_voice, synthetic_voices),
              # not set up on this machine yet: listed so the owner can download it (GET /api/plugins/installs)
              "installed": e.get("installed") is not False}
             for e in tts_view.get("engines") or []]}

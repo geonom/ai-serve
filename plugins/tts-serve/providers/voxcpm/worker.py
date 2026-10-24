@@ -83,6 +83,7 @@ def _load():
         _state.update(pool=pool, sr=sr, device=f"cuda:{gpu}")
 
 
+
 def _ref_latents(path: str) -> bytes:
     data = open(path, "rb").read()
     key = hashlib.sha1(data).hexdigest()
@@ -117,6 +118,15 @@ def _synthesize(req):
     async def _gen():
         return [c async for c in pool.generate(req["text"], **kw)]
 
+    if "ref_audio_latents" in kw and not _state.get("ref_warm"):
+        # the first reference-conditioned utterance after a load came out unintelligible (found 2026-10-24: a 3 s
+        # clip Whisper heard nothing in; the same request right after was fine, a warm-up without a reference didn't
+        # help) -- one throwaway generation with this reference first
+        try:
+            _call(_gen())
+        except Exception:
+            pass
+        _state["ref_warm"] = True
     chunks = _call(_gen())
     if not chunks:
         raise RuntimeError("VoxCPM2 returned no audio")

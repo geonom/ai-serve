@@ -41,6 +41,24 @@ def test_both_services():
     assert cat["stt"]["available"] and cat["stt"]["engines"][0]["fields"][0]["name"] == "diarize"
 
 
+SYNTH = [{"id": "synthetic:warm-elder-male", "label": "Warm elder male", "description": "d", "languages": ["de"],
+          "synthetic": True}]
+
+
+def test_every_mode_that_takes_a_reference_offers_the_synthetic_voices():
+    """2026-10-24 (owner: six voices for every engine where possible): the cloning modes list the synthetic voices;
+    a mode without a reference input (Qwen3 presets, Piper) doesn't."""
+    tts = dict(TTS, engines=TTS["engines"] + [
+        {"id": "piper", "name": "Piper", "default_reference": False, "languages": ["de"], "params": [],
+         "modes": [{"variant": "voice", "label": "Voice", "speakers": ["de_DE-thorsten-medium"],
+                    "inputs": {"speaker": "optional"}}]}])
+    cat = audio_catalog(tts, STT, default_voice="synth-default.wav", synthetic_voices=SYNTH)
+    by = {e["id"]: e for e in cat["tts"]["engines"]}
+    assert by["cosyvoice"]["modes"][0]["voices"] == SYNTH and by["qwen3"]["modes"][0]["voices"] == SYNTH
+    assert "voices" not in by["piper"]["modes"][0] and "voices" not in by["old"]["modes"][0]
+    assert "voices" not in audio_catalog(TTS, STT, default_voice="x")["tts"]["engines"][0]["modes"][0]
+
+
 def test_a_service_that_is_down_is_reported():
     cat = audio_catalog(None, None, default_voice="v.wav")
     assert cat["tts"] == {"available": False, "engines": [], "default_engine": None,

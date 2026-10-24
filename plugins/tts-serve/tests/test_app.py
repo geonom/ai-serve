@@ -108,6 +108,9 @@ class FakeCoordinator:
     async def confirm(self, reservation_id, pid):
         self.confirmed.append((reservation_id, pid))
 
+    async def release(self, reservation_id):
+        self.released = getattr(self, "released", []) + [reservation_id]
+
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
@@ -402,3 +405,17 @@ def test_default_engine_falls_back_to_an_installed_one(tmp_path):
     assert {e["id"]: e["installed"] for e in view["engines"]} == {"alpha": False, "beta": True}
     assert view["errors"] == []
     assert view["default_engine"] == "beta"
+
+
+def test_the_reservation_is_given_back_after_the_first_utterance(env):
+    """2026-10-24: held until the gateway's 2-minute limit, a worker's reservation kept the next engine out (VoxCPM got
+    507 four times right after Qwen3). Released once the first utterance is done -- the GPU manager counts the
+    measured usage from then on."""
+    app, _, _, coord = env
+
+    async def fn(c):
+        await c.post("/v1/generate", json={"text": "eins"})
+        await c.post("/v1/generate", json={"text": "zwei"})
+
+    run(app, fn)
+    assert coord.released == [coord.confirmed[0][0]]

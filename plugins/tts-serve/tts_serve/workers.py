@@ -107,6 +107,16 @@ class HttpCoordinator:
         self.last_gpu = body.get("gpu") if isinstance(body.get("gpu"), int) else None
         return body.get("free_mb")
 
+    async def release(self, reservation_id: Optional[str]) -> None:
+        """The worker's first utterance is done: from now on the gateway counts its measured usage."""
+        if not (self.gateway_url and reservation_id):
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                await c.delete(f"{self.gateway_url}/api/coordination/reservations/{reservation_id}")
+        except httpx.HTTPError:
+            pass
+
     async def confirm(self, reservation_id: Optional[str], pid: int) -> None:
         """Bind the reservation to the started worker (within the gateway's 5 s hold);
         it then counts until the worker has allocated its memory or exits."""
@@ -138,6 +148,7 @@ class _Slot:
     last_used: float = 0.0
     inflight: int = 0
     gpu: Optional[int] = None   # where the running worker is (the GPU manager's pick)
+    reservation: Optional[str] = None   # its GPU reservation, given back after the first utterance
     keep_alive_task: Optional[asyncio.Task] = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -247,8 +258,9 @@ class WorkerPool:
             finally:
                 log.close()
             confirm = getattr(self.coordinator, "confirm", None)
+            slot.reservation = getattr(self.coordinator, "last_reservation", None)
             if confirm is not None:
-                await confirm(getattr(self.coordinator, "last_reservation", None), slot.proc.pid)
+                await confirm(slot.reservation, slot.proc.pid)
             slot.port, slot.status, slot.device, slot.variant = port, "starting", None, None
             deadline = time.time() + m.startup_timeout_s
             async with httpx.AsyncClient(timeout=2.0) as c:
@@ -381,6 +393,11 @@ class WorkerPool:
             slot.inflight = max(0, slot.inflight - 1)
             if slot.inflight == 0 and slot.status in ("generating", "loading"):
                 slot.status = "idle" if slot.running else "unloaded"
+            if slot.reservation:   # held through the first utterance (its peak), then the measured usage counts
+                rid, slot.reservation = slot.reservation, None
+                release = getattr(self.coordinator, "release", None)
+                if release is not None:
+                    await release(rid)
             if ref_path and os.path.exists(ref_path):
                 os.remove(ref_path)
 

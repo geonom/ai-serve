@@ -29,6 +29,8 @@ router = APIRouter()
 
 _PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _VOICES_DIR = os.path.join(_PROJECT_DIR, "voices")
+# synthetic reference voices (backend/synthetic_voices.py): the only clips apps get to pick
+SYNTHETIC_VOICES_FILE = os.environ.get("SYNTHETIC_VOICES_FILE") or os.path.join(_VOICES_DIR, "synthetic.json")
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
@@ -66,6 +68,11 @@ class TTSGenerateRequest(BaseModel):
         None,
         description="Voice cloning: path to a preset reference voice, must resolve inside voices/. "
                      "Supported by OmniVoice and by engine='qwen3' variant='base'.",
+    )
+    voice: Optional[str] = Field(
+        None, max_length=60,
+        description="A synthetic voice from GET /v1/audio/models (`synthetic:<id>`, listed under each cloning "
+                    "mode's `voices`): its clip in this request's language and its transcript become the reference.",
     )
     ref_text: Optional[str] = Field(
         None,
@@ -617,8 +624,14 @@ async def generate_tts(req: TTSGenerateRequest):
     name = (req.engine or DEFAULT_TTS_ENGINE or view.get("default_engine") or "").strip().lower()
     engine = _tts_serve_engine(name, view)
 
-    ref_path, temp_path = _resolve_ref_audio(req)
-    ref_text = req.ref_text
+    ref_path, temp_path, ref_text = None, None, req.ref_text
+    if req.voice:
+        ref_path, synth_text = _synthetic_reference(req.voice, req.language, engine)
+        if req.ref_audio_base64 or req.ref_voice_path:
+            raise HTTPException(status_code=400, detail="give either a voice or a reference clip, not both")
+        ref_text = ref_text or synth_text
+    else:
+        ref_path, temp_path = _resolve_ref_audio(req)
     if not ref_path and engine.get("default_reference"):
         ref_path, default_txt = _default_ref_voice()
         if ref_text is None:
@@ -713,6 +726,14 @@ async def generate_qwen3_tts(req: Qwen3TTSGenerateRequest):
 
 @router.post("/v1/audio/speech", summary="OpenAI-compatible speech generation")
 async def openai_audio_speech(req: OpenAISpeechRequest):
+    from backend import synthetic_voices as sv
+    if sv.is_synthetic(req.voice):   # a synthetic reference voice: cloned by the engine, nothing else matched
+        engine = await _speech_engine(req.model)
+        eng = (engine or DEFAULT_TTS_ENGINE or "").strip().lower()
+        variant = {"cosyvoice": "zero_shot", "cosy": "zero_shot", "cosyvoice3": "zero_shot", "qwen3": "base"}.get(eng)
+        return await generate_tts(TTSGenerateRequest(
+            text=req.input, language=(req.language or "en"), engine=engine, variant=variant, voice=req.voice,
+            response_format="binary"))
     ref_voice_path = None
     instruct = None
     if os.path.exists(_VOICES_DIR) and req.voice:
@@ -764,6 +785,22 @@ async def openai_audio_speech(req: OpenAISpeechRequest):
         speaker=speaker, response_format="binary",
     )
     return await generate_tts(tts_req)
+
+
+def _synthetic_reference(voice: str, language: Optional[str], engine: Dict[str, Any]) -> tuple:
+    """`synthetic:<id>` -> (clip, transcript) for an engine that takes a reference; else 400."""
+    from backend import synthetic_voices as sv
+    if not sv.is_synthetic(voice):
+        raise HTTPException(status_code=400, detail="voice: a synthetic voice (synthetic:<id>, GET /v1/audio/models)")
+    modes = engine.get("modes") or []
+    if modes and not any((m.get("inputs") or {}).get("reference") in ("optional", "required") for m in modes):
+        raise HTTPException(status_code=400, detail=f"{engine.get('name') or engine['id']} takes no reference voice "
+                                                    f"-- use one of its own voices (speakers)")
+    voices, _ = sv.load(_VOICES_DIR, SYNTHETIC_VOICES_FILE)
+    try:
+        return sv.resolve(voices, voice, language)
+    except sv.SyntheticVoiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 async def _engine_speaker(engine: Optional[str], voice: Optional[str]):
@@ -904,7 +941,10 @@ async def openai_audio_models():
             stt_view = await stt_client.call("catalog")
         except HTTPException:
             stt_view = None
-    return audio_catalog(tts_view, stt_view, default_voice=DEFAULT_TTS_VOICE)
+    from backend import synthetic_voices as sv
+    voices, _ = sv.load(_VOICES_DIR, SYNTHETIC_VOICES_FILE)
+    return audio_catalog(tts_view, stt_view, default_voice=DEFAULT_TTS_VOICE,
+                         synthetic_voices=sv.catalog_entries(voices))
 
 
 @router.get("/v1/images/models", summary="Image models from the image plugins (ComfyUI, MOSS, Iris ...) for apps to pick from")

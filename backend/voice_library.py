@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 PREFIX = "my:"
-MAX_VOICES = 20
+MAX_VOICES = 50
 _ID = re.compile(r"^[0-9a-f]{16}$")
 
 

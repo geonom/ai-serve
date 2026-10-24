@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import aiohttp
 import httpx
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticUndefined
@@ -31,6 +31,8 @@ _PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 _VOICES_DIR = os.path.join(_PROJECT_DIR, "voices")
 # synthetic reference voices (backend/synthetic_voices.py): the only clips apps get to pick
 SYNTHETIC_VOICES_FILE = os.environ.get("SYNTHETIC_VOICES_FILE") or os.path.join(_VOICES_DIR, "synthetic.json")
+# each person's own voices (backend/voice_library.py)
+VOICE_LIBRARY_DIR = os.environ.get("VOICE_LIBRARY_DIR") or os.path.join(_PROJECT_DIR, "voice_library")
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
@@ -612,7 +614,7 @@ def _tts_serve_engine(name: str, view: Dict[str, Any]) -> Dict[str, Any]:
     "/api/tts/generate",
     summary="Generate speech (engine-agnostic; the TTS plugin's default unless DEFAULT_TTS_ENGINE or `engine` says otherwise)",
 )
-async def generate_tts(req: TTSGenerateRequest):
+async def generate_tts(req: TTSGenerateRequest, request: Request = None):
     """Unified TTS entry point. `engine` picks the backend; omit it for the server
     default (DEFAULT_TTS_ENGINE, else the TTS plugin's own). Every engine is served by
     tts-serve, started on demand; unavailable -> 503. A clone engine (tts-serve's
@@ -626,7 +628,7 @@ async def generate_tts(req: TTSGenerateRequest):
 
     ref_path, temp_path, ref_text = None, None, req.ref_text
     if req.voice:
-        ref_path, synth_text = _synthetic_reference(req.voice, req.language, engine)
+        ref_path, synth_text = _synthetic_reference(req.voice, req.language, engine, _person(request))
         if req.ref_audio_base64 or req.ref_voice_path:
             raise HTTPException(status_code=400, detail="give either a voice or a reference clip, not both")
         ref_text = ref_text or synth_text
@@ -725,15 +727,16 @@ async def generate_qwen3_tts(req: Qwen3TTSGenerateRequest):
 # ---------------------------------------------------------------------------
 
 @router.post("/v1/audio/speech", summary="OpenAI-compatible speech generation")
-async def openai_audio_speech(req: OpenAISpeechRequest):
+async def openai_audio_speech(req: OpenAISpeechRequest, request: Request):
     from backend import synthetic_voices as sv
-    if sv.is_synthetic(req.voice):   # a synthetic reference voice: cloned by the engine, nothing else matched
+    from backend import voice_library as vl
+    if sv.is_synthetic(req.voice) or vl.is_own(req.voice):   # a synthetic or own voice: cloned, nothing else matched
         engine = await _speech_engine(req.model)
         eng = (engine or DEFAULT_TTS_ENGINE or "").strip().lower()
         variant = {"cosyvoice": "zero_shot", "cosy": "zero_shot", "cosyvoice3": "zero_shot", "qwen3": "base"}.get(eng)
         return await generate_tts(TTSGenerateRequest(
             text=req.input, language=(req.language or "en"), engine=engine, variant=variant, voice=req.voice,
-            response_format="binary"))
+            response_format="binary"), request)
     ref_voice_path = None
     instruct = None
     if os.path.exists(_VOICES_DIR) and req.voice:
@@ -787,20 +790,108 @@ async def openai_audio_speech(req: OpenAISpeechRequest):
     return await generate_tts(tts_req)
 
 
-def _synthetic_reference(voice: str, language: Optional[str], engine: Dict[str, Any]) -> tuple:
-    """`synthetic:<id>` -> (clip, transcript) for an engine that takes a reference; else 400."""
+def _person(request: Optional[Request]) -> str:
+    """Who a voice belongs to: the person an app names (`X-AI-Serve-Person`, the door's sub of whoever uses it),
+    else the owner -- like every other call from this machine. Apps for several people must send it."""
+    raw = (request.headers.get("X-AI-Serve-Person") or "").strip() if request is not None else ""
+    if raw and len(raw) <= 128 and raw.isprintable():
+        return raw
+    return os.environ.get("LLAMA_SERVE_OWNER_SUB") or "owner"
+
+
+def _synthetic_reference(voice: str, language: Optional[str], engine: Dict[str, Any],
+                         person: Optional[str] = None) -> tuple:
+    """`synthetic:<id>` or the person's own `my:<id>` -> (clip, transcript) for an engine that takes a reference."""
     from backend import synthetic_voices as sv
-    if not sv.is_synthetic(voice):
-        raise HTTPException(status_code=400, detail="voice: a synthetic voice (synthetic:<id>, GET /v1/audio/models)")
+    from backend import voice_library as vl
+    if not (sv.is_synthetic(voice) or vl.is_own(voice)):
+        raise HTTPException(status_code=400, detail="voice: synthetic:<id> or one of your own (my:<id>), "
+                                                    "GET /v1/audio/voices")
     modes = engine.get("modes") or []
     if modes and not any((m.get("inputs") or {}).get("reference") in ("optional", "required") for m in modes):
         raise HTTPException(status_code=400, detail=f"{engine.get('name') or engine['id']} takes no reference voice "
                                                     f"-- use one of its own voices (speakers)")
-    voices, _ = sv.load(_VOICES_DIR, SYNTHETIC_VOICES_FILE)
     try:
+        if vl.is_own(voice):
+            return vl.resolve(VOICE_LIBRARY_DIR, person or _person(None), voice)
+        voices, _ = sv.load(_VOICES_DIR, SYNTHETIC_VOICES_FILE)
         return sv.resolve(voices, voice, language)
-    except sv.SyntheticVoiceError as e:
+    except (sv.SyntheticVoiceError, vl.VoiceLibraryError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# --------------------------------------------------------------------------- each person's own voices
+
+def _decode_clip(raw: bytes) -> bytes:
+    """An uploaded clip -> loudness-normalised 24 kHz mono WAV, 3-30 s; else 400."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        src, out = os.path.join(d, "in"), os.path.join(d, "out.wav")
+        with open(src, "wb") as f:
+            f.write(raw)
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-af",
+                            "loudnorm=I=-18:TP=-1.5:LRA=11", "-ar", "24000", "-ac", "1", out],
+                           capture_output=True, timeout=120)
+        if r.returncode != 0 or not os.path.isfile(out):
+            raise HTTPException(status_code=400, detail="that file is not audio ffmpeg can read")
+        p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out],
+                           capture_output=True, text=True, timeout=30)
+        try:
+            seconds = float(p.stdout.strip())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="that file is not audio ffmpeg can read")
+        if not 3.0 <= seconds <= 30.0:
+            raise HTTPException(status_code=400, detail=f"a voice clip must be 3-30 seconds (this one: {seconds:.1f} s)")
+        with open(out, "rb") as f:
+            return f.read()
+
+
+async def _transcribe_clip(wav: bytes, language: Optional[str]) -> str:
+    """The clip's transcript by Whisper (the cloning engines need one); '' if speech recognition is unavailable."""
+    try:
+        result = await transcribe_stt(STTTranscribeRequest(audio_base64=base64.b64encode(wav).decode(),
+                                                           language=language or None))
+        return (result.get("plain_transcript") or result.get("transcript") or "").strip()
+    except Exception as e:
+        logger.warning(f"voice upload: no transcript ({e})")
+        return ""
+
+
+@router.get("/v1/audio/voices", summary="The voices the caller may speak with: the synthetic ones and their own")
+async def list_audio_voices(request: Request):
+    from backend import synthetic_voices as sv
+    from backend import voice_library as vl
+    synth, _ = sv.load(_VOICES_DIR, SYNTHETIC_VOICES_FILE)
+    return {"voices": [dict(v, own=False) for v in sv.catalog_entries(synth)]
+                      + vl.list_voices(VOICE_LIBRARY_DIR, _person(request))}
+
+
+@router.post("/v1/audio/voices", status_code=201, summary="Add a voice of your own (a 3-30 s clip of your voice)")
+async def add_audio_voice(request: Request, file: UploadFile = File(...), label: str = Form(""),
+                          consent: str = Form(...), transcript: Optional[str] = Form(None),
+                          language: Optional[str] = Form(None)):
+    from backend import voice_library as vl
+    if consent.strip().lower() != "true":
+        raise HTTPException(status_code=400, detail="consent=true: it is your own voice, or you have permission")
+    raw = await file.read()
+    if len(raw) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="a voice clip may be 15 MB at most")
+    wav = _decode_clip(raw)
+    text = (transcript or "").strip()[:1000] or await _transcribe_clip(wav, language)
+    try:
+        return vl.add_voice(VOICE_LIBRARY_DIR, _person(request), wav, label, text, (language or None))
+    except vl.VoiceLibraryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/v1/audio/voices/{voice_id}", status_code=204, summary="Delete one of your own voices")
+async def delete_audio_voice(voice_id: str, request: Request):
+    from backend import voice_library as vl
+    try:
+        vl.delete_voice(VOICE_LIBRARY_DIR, _person(request), voice_id)
+    except vl.VoiceLibraryError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(status_code=204)
 
 
 async def _engine_speaker(engine: Optional[str], voice: Optional[str]):

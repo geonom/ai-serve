@@ -366,6 +366,10 @@ class ImageGenerationRequest(BaseModel):
     # extension: an aspect ratio from GET /v1/images/models instead of `size`; each provider turns it into a
     # size it was trained for (backend/images/catalog.py)
     aspect_ratio: Optional[str] = None
+    # extension (MOSS): a medium (cover, title_card, document, poster, item, sign) + a brief (texts, scene, style,
+    # must_not) instead of a layout -- the prompt enhancer builds the layout (image_serve/moss_brief.py)
+    medium: Optional[str] = None
+    brief: Optional[Dict[str, Any]] = None
 
 
 class ImageGenerationResponseDataItem(BaseModel):

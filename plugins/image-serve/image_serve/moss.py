@@ -10,6 +10,7 @@ import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from image_serve.moss_brief import MEDIA
 from image_serve.moss_layout import Element, LayoutError, moss_prompt, parse_layout, parse_size
 
 WORKFLOW = Path(__file__).resolve().parent.parent / "workflows" / "MOSS-Image.json"   # (moved from comfyui-moss, 2026-10-22)
@@ -87,6 +88,7 @@ def catalog(installed, unet_of=lambda variant: VARIANTS[variant]["unet"]) -> Dic
         "id": vid, "label": label(vid, unet_of(vid)), "description": v["description"],
         "available": bool(installed(vid)),
         "tasks": ["generate"], "aspect_ratios": list(ASPECT_SIZES), "text_in_image": True, "layout": True,
+        "media": list(MEDIA),   # `medium` + `brief` instead of a layout: the prompt enhancer (moss_brief.py)
         "steps": {"default": v["steps"], "adjustable": True, "max": MAX_STEPS},
         # MOSS-Image-SFT: Apache-2.0 (OpenMOSS); both turbo LoRAs' repos state Apache-2.0 too (checked 2026-10-22)
         "license": "Apache-2.0", "commercial_use": True,

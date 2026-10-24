@@ -113,6 +113,15 @@ def test_image_entries_say_how_many_input_images_they_take():
     assert {e["id"]: e["max_images"] for e in entries} == {"group": 5, "plain": 1, "gen": 0, "silly": 1}
 
 
+def test_image_entries_name_the_media_their_prompt_enhancer_knows():
+    entries, _ = normalize_catalog("image", "comfyui", {"data": [
+        {"id": "moss", "label": "M", "tasks": ["generate"], "layout": True, "media": ["cover", "title_card", "Bad!"]},
+        {"id": "z", "label": "Z", "tasks": ["generate"]},
+    ]})
+    by = {e["id"]: e for e in entries}
+    assert by["moss"]["media"] == ["cover", "title_card"] and by["z"]["media"] == []
+
+
 def test_catalog_entries_get_safe_defaults_and_lose_unknown_fields():
     entries, _ = normalize_catalog("image", "iris", {"data": [{"id": "iris-turbo", "label": "Iris", "evil": "<script>"}]})
     e = entries[0]

@@ -1,6 +1,8 @@
 """MOSS-Image inside image-serve (moved from the comfyui-moss plugin, 2026-10-22): its variants appear in the catalog
 only where this ComfyUI can run them (v0.42+, or a ComfyUI setup.sh is still to clone), a generate request with a MOSS
 model (and `layout`) becomes its own workflow, and its files are a download bundle."""
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -247,3 +249,87 @@ def test_gguf_patch_applies_on_top_of_the_qwen_patch(tmp_path, monkeypatch):
     assert config.teach_gguf_moss() is True and config.gguf_knows_moss()
     assert config.teach_gguf_moss() is False             # already in
     assert "ModelMossImage" in (g / "tools" / "convert.py").read_text()
+
+
+# --- the prompt enhancer: medium + brief instead of a layout (image_serve/moss_brief.py) -----------------------------
+
+@pytest.fixture
+def moss_queue(monkeypatch):
+    monkeypatch.setattr(config, "moss_possible", lambda: True)
+    monkeypatch.setattr(plugin, "moss_installed", lambda v: True)
+    queued = []
+
+    async def fake_queue(workflow, label):
+        queued.append(workflow)
+        return {"task_id": f"p{len(queued)}"}
+
+    async def fake_await(pid):
+        return "aW1n"
+    monkeypatch.setattr(comfy, "queue_workflow", fake_queue)
+    monkeypatch.setattr(comfy, "_await_comfyui_task", fake_await)
+    return queued
+
+
+CARD = {"prompt": "", "model": "moss-turbo-4", "medium": "title_card",
+        "brief": {"texts": ["Buch 1", "Die letzten 48 Stunden"], "scene": "an ash field at dusk",
+                  "style": "warm white serif", "must_not": ["people"]}}
+
+
+def test_a_brief_becomes_a_layout_from_the_layout_model(moss_queue, monkeypatch):
+    asked = []
+
+    async def chat(messages, schema):
+        asked.append(messages)
+        return json.dumps({"summary": "A dark cinematic title card over an ash field at dusk.",
+                           "texts": [{"box": [0.1, 0.35, 0.9, 0.45], "caption": "small serif, warm white"},
+                                     {"box": [0.1, 0.45, 0.9, 0.65], "caption": "large bold serif, warm white"}],
+                           "objects": [{"box": [0, 0, 1, 1], "kind": "object", "caption": "ash field at dusk"}]})
+    monkeypatch.setattr(plugin, "_layout_chat", chat)
+    r = client.post("/v1/images/generations", json=CARD)
+    assert r.status_code == 200, r.text
+    lay = r.json()["layout"]
+    assert lay["source"] == "llm" and lay["medium"] == "title_card" and len(lay["elements"]) == 3
+    wf = moss_queue[0]
+    assert wf["6"]["inputs"]["width"] == 1280 and wf["6"]["inputs"]["height"] == 720       # the medium's 16:9
+    assert "Die letzten 48 Stunden" in wf["4"]["inputs"]["text"] and "people" not in wf["4"]["inputs"]["text"]
+    assert "people" in asked[0][1]["content"]                                             # only the layout model
+    assert [e.get("text") for e in lay["elements"][:2]] == ["Buch 1", "Die letzten 48 Stunden"]   # put in verbatim
+
+
+@pytest.mark.parametrize("answer", ["not json", json.dumps({"summary": "x", "elements": []}), None])
+def test_a_refused_or_failed_layout_model_falls_back_to_the_template(moss_queue, monkeypatch, answer):
+    async def chat(messages, schema):
+        if answer is None:
+            raise RuntimeError("gateway down")
+        return answer
+    monkeypatch.setattr(plugin, "_layout_chat", chat)
+    r = client.post("/v1/images/generations", json=CARD)
+    assert r.status_code == 200, r.text
+    assert r.json()["layout"]["source"] == "template"
+    assert "Buch 1" in moss_queue[0]["4"]["inputs"]["text"]
+
+
+def test_an_explicit_shape_wins_over_the_mediums(moss_queue, monkeypatch):
+    async def chat(messages, schema):
+        raise RuntimeError("x")
+    monkeypatch.setattr(plugin, "_layout_chat", chat)
+    r = client.post("/v1/images/generations", json={**CARD, "aspect_ratio": "1:1"})
+    assert r.status_code == 200 and moss_queue[0]["6"]["inputs"]["width"] == 1024
+
+
+@pytest.mark.parametrize("body,why", [
+    ({**CARD, "layout": [{"box": [0, 0, 1, 1], "caption": "x"}]}, "either"),
+    ({**CARD, "medium": "comic"}, "medium"),
+    ({**CARD, "brief": {"texts": []}}, "texts"),
+    ({**CARD, "model": "z-image-turbo"}, "moss"),
+])
+def test_briefs_are_checked(moss_queue, body, why):
+    r = client.post("/v1/images/generations", json=body)
+    assert r.status_code == 400 and why in r.json()["detail"].lower()
+
+
+def test_the_catalog_names_the_media(monkeypatch):
+    monkeypatch.setattr(config, "moss_possible", lambda: True)
+    rows = {r["id"]: r for r in client.get("/v1/images/models").json()["data"]}
+    assert set(rows["moss-turbo-4"]["media"]) == {"cover", "title_card", "document", "poster", "item", "sign"}
+    assert "media" not in rows["z-image-turbo"] or rows["z-image-turbo"]["media"] == []

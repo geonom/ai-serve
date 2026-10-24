@@ -95,6 +95,16 @@ def test_generation_goes_to_the_plugin_with_the_request_id(server, name):
     assert "size" not in body and "response_format" not in body     # only what the caller sent (found live)
 
 
+def test_medium_and_brief_reach_the_plugin(server):
+    """MOSS's prompt enhancer (image-serve): apps send a medium + brief instead of a layout."""
+    brief = {"texts": ["Buch 1"], "scene": "ash field", "must_not": ["people"]}
+    r = client.post("/v1/images/generations", json={"prompt": "", "model": "iris-turbo", "medium": "cover",
+                                                    "brief": brief})
+    assert r.status_code == 200, r.text
+    _, _, body, _ = server.calls[-1]
+    assert body["medium"] == "cover" and body["brief"] == brief
+
+
 def test_plugin_refusals_keep_their_status_and_message():
     r = client.post("/v1/images/generations", json={"model": "iris-turbo", "prompt": "boom"})
     assert r.status_code == 400 and "steps" in r.json()["detail"]

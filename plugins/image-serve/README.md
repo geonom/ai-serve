@@ -45,6 +45,13 @@ use a ComfyUI you already have, set `COMFYUI_DIR` (and `COMFYUI_PYTHON`, `COMFYU
 draws them. ComfyUI runs on 127.0.0.1:8192 behind this plugin (not 8188,
 so a ComfyUI you already run keeps its port).
 
+**Or let it lay out the picture:** instead of `layout`, send `"medium"` (`cover`, `title_card`, `document`,
+`poster`, `item`, `sign`) and a `"brief"`: `{"texts": ["exact text", "line 1\nline 2"], "scene": "what should be seen",
+"style": "look and type", "must_not": ["what must not be in it"]}`. A chat model through ai-serve (`MOSS_LAYOUT_MODEL`,
+default `default`) lays it out under rules for that medium; every text is kept verbatim, nothing is added, and if the
+model's answer doesn't pass the checks a fixed layout for the medium is used. The answer includes the `layout` that was
+drawn, so you can adjust it and send it back as `layout`.
+
 **Getting MOSS-Image on an older setup:** image-serve's own ComfyUI (`./ComfyUI`, e.g. set up before setup.sh pinned
 v0.42) is updated to the pinned release when you download MOSS-Image (Playground → *With positions*, or the
 dashboard's *Downloads*) or run `./setup.sh` again; a running ComfyUI is restarted once it's idle. A ComfyUI of your

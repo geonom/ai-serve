@@ -188,6 +188,8 @@ def _image(raw):
     if max_images is None:
         max_images = 0 if tasks == ["generate"] else 1
     return {"tasks": tasks, "max_images": max_images,
+            # what a prompt enhancer takes as `medium` (+ `brief`) instead of a layout (image-serve's MOSS)
+            "media": _strings(raw.get("media"), pattern=re.compile(r"^[a-z][a-z0-9_]{0,31}$"), limit=20),
             "aspect_ratios": _strings(raw.get("aspect_ratios"), pattern=_ASPECT) or ["1:1"],
             "text_in_image": raw.get("text_in_image") is True, "layout": raw.get("layout") is True,
             "steps": {"default": _int(steps.get("default"), 1, 200), "adjustable": steps.get("adjustable") is not False,

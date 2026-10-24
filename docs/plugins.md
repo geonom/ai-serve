@@ -120,8 +120,11 @@ never started, stopped or unloaded by ai-serve and has no GPU in the GPU manager
 
 - `catalog` → `{"data": [entry]}` with `tasks` (`generate`, `edit`, `style`, `inpaint`, `upscale`,
   `remove_background`, `segment`), `aspect_ratios`, `steps` `{default, adjustable, max}`, `text_in_image`, `layout`,
-  `max_images` (input images for `edit`; default 1, 0 for generate-only models).
-- `generate`: the OpenAI images body plus the gateway's extensions (`aspect_ratio`, `steps`, `seed`, `layout`);
+  `max_images` (input images for `edit`; default 1, 0 for generate-only models), `media` (what its prompt enhancer
+  takes as `medium`).
+- `generate`: the OpenAI images body plus the gateway's extensions (`aspect_ratio`, `steps`, `seed`, `layout`, and
+  `medium` + `brief` for a model whose row lists `media`: the plugin's prompt enhancer builds the layout and answers
+  it as `layout` next to `data`);
   answers `{"created", "data": [{"b64_json"}]}`. Header `X-Request-Id` identifies the job for `cancel`.
 - `edit`: `multipart/form-data` like OpenAI's `/v1/images/edits` (`image`, `prompt`, `model`, `seed`; a `task`
   field for upscale / remove_background / segment / inpaint with `mask`; `remove_background` takes no `prompt` and

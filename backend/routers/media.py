@@ -346,6 +346,10 @@ class ImageGenerationRequest(BaseModel):
     # extension: an aspect ratio from GET /v1/images/models instead of `size`; each provider turns it into a
     # size it was trained for (the image plugin decides)
     aspect_ratio: Optional[str] = None
+    # extension: a medium (one of the model row's `media`) + a brief {texts, scene, style, must_not} instead of a
+    # layout -- the plugin's prompt enhancer builds the layout (image-serve's MOSS-Image)
+    medium: Optional[str] = None
+    brief: Optional[Dict[str, Any]] = None
 
 
 class ImageGenerationResponseDataItem(BaseModel):

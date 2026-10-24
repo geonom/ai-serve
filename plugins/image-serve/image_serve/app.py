@@ -26,7 +26,7 @@ import httpx
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from image_serve import catalog, comfy, config, jobs, moss
+from image_serve import catalog, comfy, config, jobs, moss, moss_brief
 from image_serve.config import LOGS_DIR
 from image_serve.state import state
 
@@ -101,11 +101,51 @@ def moss_installed(variant: str) -> bool:
     return all(os.path.isfile(os.path.join(root, rel)) for rel in moss.needed_files(variant, unet))
 
 
+LAYOUT_MODEL = os.environ.get("MOSS_LAYOUT_MODEL") or "default"   # the chat model that lays out a brief
+
+
+async def _layout_chat(messages: List[Dict[str, str]], schema: Dict[str, Any]) -> str:
+    """Ask a language model through ai-serve (plain OpenAI chat with a JSON schema) for a layout."""
+    from image_serve.gpu import GATEWAY
+    async with httpx.AsyncClient(timeout=180.0) as c:
+        r = await c.post(f"{GATEWAY}/v1/chat/completions", json={
+            "model": LAYOUT_MODEL, "messages": messages, "temperature": 0.3, "max_tokens": 1500, "thinking": False,
+            "response_format": {"type": "json_schema", "json_schema": {"name": "moss_layout", "schema": schema}}})
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"]
+
+
+async def _layout_from_brief(medium: str, b: "moss_brief.Brief") -> Dict[str, Any]:
+    """The layout model's layout if it passes the checks, else the medium's template -- always a layout."""
+    try:
+        summary, elements = moss_brief.accept_llm_layout(
+            await _layout_chat(moss_brief.llm_messages(medium, b), moss_brief.layout_schema(len(b.texts))), b)
+        source = "llm"
+    except Exception as e:   # unreachable, slow, or an answer the checks refuse
+        logger.warning(f"MOSS layout from the brief: {e} -- using the {medium} template")
+        summary, elements = moss_brief.template_layout(medium, b)
+        source = "template"
+    return {"medium": medium, "summary": summary, "elements": elements, "source": source}
+
+
 async def _moss_generate(body: Dict[str, Any], rid: Optional[str]) -> Dict[str, Any]:
     if not config.moss_possible():
         v = config.comfy_version()
         raise HTTPException(status_code=400, detail="MOSS-Image needs ComfyUI v0.42 or newer"
                                                     + (f" (this one is v{'.'.join(map(str, v))})" if v else ""))
+    built = None
+    if body.get("medium") is not None or body.get("brief") is not None:
+        if body.get("layout"):
+            raise HTTPException(status_code=400, detail="give either a layout or a medium + brief, not both")
+        try:
+            b = moss_brief.parse_brief(body.get("medium"), body.get("brief"), prompt=body.get("prompt") or "")
+        except moss_brief.BriefError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        built = await _layout_from_brief(b.medium, b)
+        body = {k: v for k, v in body.items() if k not in ("medium", "brief")}
+        body.update(prompt=built["summary"], layout=built["elements"])
+        if body.get("aspect_ratio") is None and body.get("size") is None:
+            body["aspect_ratio"] = moss_brief.MEDIA[b.medium].aspect
     try:
         variant, prompt, elements, width, height, n, seed, steps = moss.from_openai(body)
     except moss.InputError as e:
@@ -117,7 +157,10 @@ async def _moss_generate(body: Dict[str, Any], rid: Optional[str]) -> Dict[str, 
         wf = moss.build_workflow(prompt, elements, width, height, seed=None if seed is None else seed + i,
                                  steps=steps, variant=variant, unet=moss_unet(variant))
         data.append({"b64_json": await _run(lambda _r, wf=wf: comfy.queue_workflow(wf, variant), None, rid)})
-    return {"created": int(time.time()), "data": data}
+    out = {"created": int(time.time()), "data": data}
+    if built:
+        out["layout"] = built   # what was drawn: an app can keep it, adjust it and send it back as `layout`
+    return out
 
 
 @app.post("/v1/images/generations")
@@ -144,6 +187,8 @@ async def generations(req: comfy.ImageGenerationRequest, x_request_id: Optional[
         raise HTTPException(status_code=400, detail=str(e))
     if req.layout:
         raise HTTPException(status_code=400, detail="layout needs a model that can place things (e.g. moss)")
+    if req.medium is not None or req.brief is not None:
+        raise HTTPException(status_code=400, detail="medium + brief need a model with layout (MOSS-Image)")
     # Unknown names (OpenAI clients send e.g. dall-e-3) keep the default. A ComfyUI model's UNet only works with the
     # CLIP/VAE its workflow template bakes in -- the catalog pairs them.
     model_name = model.file if model else catalog.resolve(catalog.DEFAULT).file

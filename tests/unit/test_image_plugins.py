@@ -40,6 +40,8 @@ class FakeImageServer:
                  "aspect_ratios": ["1:1", "16:9"], "steps": {"default": 4, "adjustable": False, "max": 4},
                  "license": "Apache-2.0", "commercial_use": True, "aliases": ["iris"]},
                 {"id": "pix-edit", "label": "Pix Edit", "available": True, "tasks": ["edit"]},
+                {"id": "group-edit", "label": "Group Edit", "available": True, "tasks": ["edit"], "max_images": 5,
+                 "aspect_ratios": ["1:1", "16:9"]},
                 {"id": "cutter", "label": "Cutter", "available": True, "tasks": ["remove_background"],
                  "default": True}]})
         if path == "/v1/images/generations":
@@ -110,6 +112,41 @@ def test_edit_goes_to_the_plugin_as_multipart(server):
     method, path, body, _ = server.calls[-1]
     assert (method, path) == ("POST", "/v1/images/edits")
     assert b"make it blue" in body and b"pix-edit" in body and b"\x89PNG" in body
+
+
+def test_edits_take_several_images_in_order_and_an_aspect_ratio(server):
+    """A background + up to four figures (owner 2026-10-24): `image` repeated or OpenAI's `image[]`, forwarded as
+    repeated `image` parts in the caller's order; `aspect_ratio` = the output's shape."""
+    row = next(r for r in client.get("/v1/images/models?task=edit").json()["data"] if r["id"] == "group-edit")
+    assert row["max_images"] == 5
+    for field in ("image", "image[]"):
+        files = [(field, (f"{i}.png", f"\x89PNG-{i}".encode(), "image/png")) for i in range(5)]
+        r = client.post("/v1/images/edits", files=files,
+                        data={"prompt": "the four from picture 2 in picture 1", "model": "group-edit",
+                              "aspect_ratio": "16:9"})
+        assert r.status_code == 200, r.text
+        _, _, body, _ = server.calls[-1]
+        assert body.count(b'name="image"') == 5 and b"image[]" not in body
+        assert [body.index(f"\x89PNG-{i}".encode()) for i in range(5)] == sorted(body.index(f"\x89PNG-{i}".encode()) for i in range(5))
+        assert b'name="aspect_ratio"' in body and b"16:9" in body
+
+
+def test_too_many_images_or_a_wrong_shape_are_refused_before_the_plugin(server):
+    def edits():
+        return [c for c in server.calls if c[1] == "/v1/images/edits"]
+    before = len(edits())
+    two = [("image", ("1.png", b"\x89PNG")), ("image", ("2.png", b"\x89PNG"))]
+    r = client.post("/v1/images/edits", files=two, data={"prompt": "p", "model": "pix-edit"})
+    assert r.status_code == 400 and "1" in r.json()["detail"]      # no max_images = one image
+    six = [("image", (f"{i}.png", b"\x89PNG")) for i in range(6)]
+    r = client.post("/v1/images/edits", files=six, data={"prompt": "p", "model": "group-edit"})
+    assert r.status_code == 400 and "5" in r.json()["detail"]
+    r = client.post("/v1/images/edits", files=two, data={"prompt": "p", "model": "group-edit", "aspect_ratio": "4:3"})
+    assert r.status_code == 400 and "16:9" in r.json()["detail"]
+    both = [("image", ("1.png", b"\x89PNG")), ("image[]", ("2.png", b"\x89PNG"))]
+    assert client.post("/v1/images/edits", files=both, data={"prompt": "p", "model": "group-edit"}).status_code == 400
+    assert client.post("/v1/images/edits", data={"prompt": "p", "model": "group-edit"}).status_code == 400
+    assert len(edits()) == before
 
 
 def test_remove_background_needs_no_prompt_and_goes_to_its_model(server):

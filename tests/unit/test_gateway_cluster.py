@@ -129,3 +129,15 @@ def test_embeddings_endpoint_uses_device(local_model, monkeypatch):
     r = TestClient(app, client=("127.0.0.1", 50000)).post("/v1/embeddings", json={"model": "m.gguf", "input": "hi"})
     assert r.status_code == 200, r.text
     assert calls == [("http://node.test/v1/instances/i/proxy/v1/embeddings", "Bearer tok")]
+
+
+def test_a_file_on_an_unmounted_drive_says_so_when_no_device_has_it(tmp_path, monkeypatch):
+    # 2026-10-24: the device fallback's "not on this machine and on no device" hid the real reason
+    link = tmp_path / "m.gguf"
+    link.symlink_to(tmp_path / "unplugged" / "m.gguf")
+    monkeypatch.setattr(gateway, "resolve_model_path", lambda name: str(link))
+    devices(monkeypatch, error=HTTPException(status_code=507, detail="m.gguf: not on this machine and on no device"))
+    with pytest.raises(HTTPException) as e:
+        resolve()
+    assert e.value.status_code == 400
+    assert "symlink" in e.value.detail and "mounted" in e.value.detail and "no device" in e.value.detail

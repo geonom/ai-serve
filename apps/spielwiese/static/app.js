@@ -159,6 +159,13 @@ const UI = {
     comfyEditImgPreview: document.getElementById('comfy-edit-img-preview'),
     comfyEditRemoveBtn: document.getElementById('comfy-edit-remove-btn'),
     comfyEditPlaceholder: document.getElementById('comfy-edit-placeholder'),
+    comfyEditExtraList: document.getElementById('comfy-edit-extra-list'),
+    comfyEditExtraZone: document.getElementById('comfy-edit-extra-zone'),
+    comfyEditExtraInput: document.getElementById('comfy-edit-extra-input'),
+    comfyEditExtraHint: document.getElementById('comfy-edit-extra-hint'),
+    comfyEditExtraMax: document.getElementById('comfy-edit-extra-max'),
+    comfyEditExtraGroup: document.getElementById('comfy-edit-extra-group'),
+    comfyEditAspect: document.getElementById('comfy-edit-aspect'),
     comfyModeStyleBtn: document.getElementById('comfy-mode-style-btn'),
     comfyStyleFields: document.getElementById('comfy-style-fields'),
     comfyStyleModel: document.getElementById('comfy-style-model'),
@@ -1303,6 +1310,73 @@ UI.comfyEditRemoveBtn.addEventListener('click', (e) => {
     UI.comfyEditImgPreview.src = "";
 });
 
+// More pictures for an edit (static/editimages.js): characters for the scene in picture 1, a group photo ...
+let comfyEditExtra = [];   // [{b64, url}] in prompt order
+
+function editModelRow() {
+    const o = UI.comfyEditModel.selectedOptions[0];
+    return { maxImages: o && o.dataset.maxImages ? parseInt(o.dataset.maxImages, 10) : 1,
+             aspects: o && o.dataset.aspects ? JSON.parse(o.dataset.aspects) : [] };
+}
+
+function renderEditExtras() {
+    const { maxImages, aspects } = editModelRow();
+    const limit = EditImages.extraLimit(maxImages);
+    if (comfyEditExtra.length > limit) comfyEditExtra = comfyEditExtra.slice(0, limit);
+    UI.comfyEditExtraGroup.style.display = limit > 0 ? 'block' : 'none';
+    UI.comfyEditExtraMax.textContent = tx('up to {n}', { n: limit });
+    UI.comfyEditExtraZone.style.display = comfyEditExtra.length < limit ? 'block' : 'none';
+    const labels = EditImages.labels(comfyEditExtra.length);
+    UI.comfyEditExtraList.replaceChildren(...comfyEditExtra.map((p, i) => {
+        const item = document.createElement('div');
+        item.className = 'edit-extra-item';
+        const img = document.createElement('img');
+        img.src = p.url;
+        img.alt = labels[i];
+        const cap = document.createElement('span');
+        cap.className = 'muted small';
+        cap.textContent = labels[i];
+        const rm = document.createElement('button');
+        rm.className = 'btn-remove';
+        rm.type = 'button';
+        rm.textContent = '×';
+        rm.title = tx('Remove');
+        rm.addEventListener('click', () => { comfyEditExtra.splice(i, 1); renderEditExtras(); });
+        item.append(img, rm, cap);
+        return item;
+    }));
+    UI.comfyEditExtraHint.textContent = EditImages.hint(comfyEditExtra.length);
+    const keep = UI.comfyEditAspect.value;
+    UI.comfyEditAspect.replaceChildren(...EditImages.aspects(aspects).map(a => {
+        const o = document.createElement('option');
+        o.value = a;
+        o.textContent = a ? a : tx('Like picture 1');
+        return o;
+    }));
+    UI.comfyEditAspect.value = [...UI.comfyEditAspect.options].some(o => o.value === keep) ? keep : '';
+}
+
+function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+    });
+}
+
+UI.comfyEditExtraZone.addEventListener('click', () => UI.comfyEditExtraInput.click());
+UI.comfyEditExtraInput.addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    UI.comfyEditExtraInput.value = '';
+    const urls = await Promise.all(files.map(readAsDataUrl));
+    const { list, dropped } = EditImages.add(comfyEditExtra, urls.map(url => ({ url, b64: url.split(',')[1] })),
+                                             EditImages.extraLimit(editModelRow().maxImages));
+    comfyEditExtra = list;
+    if (dropped) addLog(tx('{n} picture(s) left out – this model takes {max} more at most.', { n: dropped, max: EditImages.extraLimit(editModelRow().maxImages) }), 'warn');
+    renderEditExtras();
+});
+
 // Drag & Drop / File select for the style-transfer content and reference images
 function wireImageUploadZone(zone, input, previewContainer, imgPreview, removeBtn, placeholder, onLoaded, onCleared) {
     zone.addEventListener('click', () => input.click());
@@ -1409,7 +1483,8 @@ async function startImageEdit() {
             steps: stepsForRequest(),
             seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
             denoise: UI.comfyDenoise.value ? parseFloat(UI.comfyDenoise.value) : null,
-            filename: UI.comfyFilename.value.trim() || null
+            filename: UI.comfyFilename.value.trim() || null,
+            ...EditImages.request(comfyEditExtra.map(p => p.b64), UI.comfyEditAspect.value)
         });
 
         addLog(tx('Task queued: {id}. Following its progress…', { id: resp.task_id }), 'system');
@@ -1488,6 +1563,8 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
         o.disabled = !m.available;
         o.dataset.description = m.description ? tx(m.description) : '';
         if (m.steps) o.dataset.steps = JSON.stringify(m.steps);
+        if (Number.isInteger(m.max_images)) o.dataset.maxImages = String(m.max_images);
+        if (Array.isArray(m.aspect_ratios)) o.dataset.aspects = JSON.stringify(m.aspect_ratios);
         select.append(o);
     }
     const def = rows.find(m => m.default && m.available);
@@ -1498,6 +1575,7 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
     const showNote = () => {
         if (noteEl) noteEl.textContent = (select.selectedOptions[0] || {}).dataset?.description || '';
         applyStepsField();
+        if (select === UI.comfyEditModel) renderEditExtras();
     };
     select.onchange = showNote;
     showNote();

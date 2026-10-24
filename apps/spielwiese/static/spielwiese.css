@@ -213,3 +213,10 @@
 .dl-text { min-width: 0; overflow-wrap: anywhere; }
 .dl-state { margin-top: 2px; }
 .sw-toast.success { border-left-color: #1e8449; }
+
+/* Edit mode: more pictures (editimages.js) */
+.edit-extra-list { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.5rem; }
+.edit-extra-list:empty { display: none; }
+.edit-extra-item { position: relative; width: 96px; text-align: center; }
+.edit-extra-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; display: block; }
+.edit-extra-item .muted { display: block; margin-top: 0.2rem; line-height: 1.2; }

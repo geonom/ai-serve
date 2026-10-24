@@ -198,6 +198,9 @@ def resolve_model_path(model_name_or_path: Optional[str]) -> str:
             if (proc and proc.poll() is None and not info.get("embedding") and not info.get("reranking")
                     and can_chat(info["model"])):
                 return info["model"]
+        # a symlink onto a drive that isn't mounted (2026-10-24: the external SSD after a reboot) can't be the
+        # default -- a model asked for by name still resolves to it, for the "is the drive mounted?" message
+        models = [m for m in models if not (os.path.islink(m["path"]) and not os.path.exists(m["path"]))] or models
         for m in models:
             if m["name"].lower() == DEFAULT_CHAT_MODEL.lower():
                 return m["path"]

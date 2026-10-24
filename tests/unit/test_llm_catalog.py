@@ -90,3 +90,19 @@ def test_endpoint_lists_local_models_with_their_kind(monkeypatch, tmp_path):
     assert rows and all(set(x) >= {"id", "label", "kind", "where", "loaded"} for x in rows)
     assert all(x["kind"] in ("chat", "embedding", "rerank", "base") for x in rows)
     assert all(x["kind_source"] in ("name", "config") for x in rows)   # traits faked away -> names decide
+
+
+def test_files_on_a_drive_that_is_not_mounted_are_not_listed(monkeypatch, tmp_path):
+    # 2026-10-24: after a reboot the external SSD wasn't mounted; its symlinked models were still listed as local,
+    # and choosing one failed (like an offline device's models, they're left out until the drive is back)
+    from fastapi.testclient import TestClient
+    from backend import model_manager
+    from backend.routers import dashboard, gateway
+    (tmp_path / "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf").write_bytes(b"")
+    (tmp_path / "gemma-4-12b-it-qat-q4_0.gguf").symlink_to(tmp_path / "unplugged" / "gemma-4-12b-it-qat-q4_0.gguf")
+    for mod in (model_manager, gateway, dashboard):
+        monkeypatch.setattr(mod, "MODEL_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(model_manager, "get_model_traits", lambda path: None)
+    from backend.main import app
+    ids = {x["id"] for x in TestClient(app, client=("127.0.0.1", 50000)).get("/v1/llm/models").json()["models"]}
+    assert "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf" in ids and "gemma-4-12b-it-qat-q4_0.gguf" not in ids

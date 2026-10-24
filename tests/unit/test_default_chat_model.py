@@ -65,3 +65,20 @@ def test_without_the_configured_file_tiny_quants_are_avoided(running, monkeypatc
     _files(monkeypatch, ["gemma-4-12b-it-UD-IQ2_M.gguf", "gemma-4-12b-it-UD-Q3_K_XL.gguf", "gemma-4-12b-it-UD-Q6_K_XL.gguf"])
     monkeypatch.setattr(model_manager, "DEFAULT_CHAT_MODEL", "missing.gguf")
     assert model_manager.resolve_model_path("default") == "/m/gemma-4-12b-it-UD-Q6_K_XL.gguf"
+
+
+def test_default_skips_files_on_a_drive_that_is_not_mounted(running, monkeypatch, tmp_path):
+    # 2026-10-24: after a reboot the external SSD wasn't mounted; the configured default (a symlink onto it) was
+    # still picked, and every "default" chat failed -- V-Noveller found it. A real file of the family is used instead.
+    gone = tmp_path / "unplugged"
+    (tmp_path / "gemma-4-12b-it-qat-q4_0.gguf").symlink_to(gone / "gemma-4-12b-it-qat-q4_0.gguf")
+    (tmp_path / "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf").symlink_to(gone / "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf")
+    (tmp_path / "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf").write_bytes(b"GGUF")
+    import os
+    monkeypatch.setattr(model_manager.glob, "glob", lambda pattern, recursive=False: sorted(
+        str(tmp_path / n) for n in os.listdir(tmp_path) if n.endswith(".gguf")))
+    monkeypatch.setattr(model_manager, "DEFAULT_CHAT_MODEL", "gemma-4-12b-it-qat-q4_0.gguf")
+    assert model_manager.resolve_model_path("default") == str(tmp_path / "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf")
+    # asked for by name, the symlink is still what it resolves to -- so the caller gets the "is the drive mounted?"
+    # message instead of some other model
+    assert model_manager.resolve_model_path("gemma-4-12b-it-qat-q4_0.gguf") == str(tmp_path / "gemma-4-12b-it-qat-q4_0.gguf")

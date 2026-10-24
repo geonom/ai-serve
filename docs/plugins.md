@@ -119,12 +119,15 @@ never started, stopped or unloaded by ai-serve and has no GPU in the GPU manager
 ### image -- generating, editing and image tools
 
 - `catalog` → `{"data": [entry]}` with `tasks` (`generate`, `edit`, `style`, `inpaint`, `upscale`,
-  `remove_background`, `segment`), `aspect_ratios`, `steps` `{default, adjustable, max}`, `text_in_image`, `layout`.
+  `remove_background`, `segment`), `aspect_ratios`, `steps` `{default, adjustable, max}`, `text_in_image`, `layout`,
+  `max_images` (input images for `edit`; default 1, 0 for generate-only models).
 - `generate`: the OpenAI images body plus the gateway's extensions (`aspect_ratio`, `steps`, `seed`, `layout`);
   answers `{"created", "data": [{"b64_json"}]}`. Header `X-Request-Id` identifies the job for `cancel`.
 - `edit`: `multipart/form-data` like OpenAI's `/v1/images/edits` (`image`, `prompt`, `model`, `seed`; a `task`
   field for upscale / remove_background / segment / inpaint with `mask`; `remove_background` takes no `prompt` and
-  answers the image as a PNG with alpha -- image-serve's `birefnet`).
+  answers the image as a PNG with alpha -- image-serve's `birefnet`). Several images: `image` repeated (the gateway
+  also takes OpenAI's `image[]`), in prompt order "picture 1, 2 …", at most the entry's `max_images`; `aspect_ratio`
+  = the output's shape (one of the entry's `aspect_ratios`, else the first image's).
 - `cancel`: `POST {"request_id"}`. Optional `jobs` for slow models.
 
 ### video

@@ -974,7 +974,10 @@ async def cancel_image_generation(req: ImageCancelRequest):
 
 @router.post("/v1/images/edits", summary="OpenAI-compatible image editing (routed to the image plugin of the model)")
 async def openai_image_edit(
-    image: UploadFile = File(...),
+    # one or more images (`image` repeated, or OpenAI's `image[]`), in prompt order: "picture 1", "picture 2" ...;
+    # how many a model takes = its catalog row's max_images (Qwen-Image-Edit 2511: a background + up to four figures)
+    image: Optional[List[UploadFile]] = File(None),
+    image_list: Optional[List[UploadFile]] = File(None, alias="image[]"),
     prompt: Optional[str] = Form(None),  # required for edit and style
     model: Optional[str] = Form(None),
     seed: Optional[int] = Form(None),   # extension: same seed + image + prompt = same result (Figurenwerkstatt)
@@ -982,6 +985,7 @@ async def openai_image_edit(
     # as a PNG with alpha -- cut-out figures)
     task: str = Form("edit"),
     reference: Optional[UploadFile] = File(None),
+    aspect_ratio: Optional[str] = Form(None),   # extension: the output's shape (else the first image's)
     x_request_id: Optional[str] = Header(None),
 ):
     from backend.plugins import images as image_plugins
@@ -991,13 +995,26 @@ async def openai_image_edit(
         raise HTTPException(status_code=400, detail="task: edit | style | remove_background")
     if task != "remove_background" and not prompt:
         raise HTTPException(status_code=400, detail=f"{task} needs a prompt")
+    if image and image_list:
+        raise HTTPException(status_code=400, detail="send the images either as image or as image[], not both")
+    images = image or image_list or []
+    if not images:
+        raise HTTPException(status_code=400, detail="an edit needs an image")
     p, entry = await _image_target(model, task)
+    top = entry.get("max_images") or 1
+    if len(images) > top:
+        raise HTTPException(status_code=400, detail=f"{entry['label']} takes at most {top} image{'s' if top > 1 else ''}")
+    if aspect_ratio is not None and aspect_ratio not in entry.get("aspect_ratios", []):
+        raise HTTPException(status_code=400, detail=f"{entry['label']} supports the aspect ratios "
+                                                    f"{', '.join(entry.get('aspect_ratios', [])) or '(none)'}")
     fields = {"model": entry["id"], "task": task, **({"prompt": prompt} if prompt else {}),
-              **({"seed": str(seed)} if seed is not None else {})}
-    files = {"image": (image.filename or "image.png", await image.read(), image.content_type or "application/octet-stream")}
+              **({"seed": str(seed)} if seed is not None else {}),
+              **({"aspect_ratio": aspect_ratio} if aspect_ratio else {})}
+    files = [("image", (i.filename or "image.png", await i.read(), i.content_type or "application/octet-stream"))
+             for i in images]
     if reference is not None:
-        files["reference"] = (reference.filename or "reference.png", await reference.read(),
-                              reference.content_type or "application/octet-stream")
+        files.append(("reference", (reference.filename or "reference.png", await reference.read(),
+                                    reference.content_type or "application/octet-stream")))
     rid = x_request_id if x_request_id and re.fullmatch(r"[A-Za-z0-9_-]{16,64}", x_request_id) else None
     try:
         r = await image_plugins.forward(p, "edit", request_id=rid, data=fields, files=files)

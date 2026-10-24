@@ -103,6 +103,16 @@ def test_image_catalog_entries_are_checked_and_tagged_with_their_plugin():
     assert len(errors) == 3
 
 
+def test_image_entries_say_how_many_input_images_they_take():
+    entries, _ = normalize_catalog("image", "comfyui", {"data": [
+        {"id": "group", "label": "G", "tasks": ["edit"], "max_images": 5},
+        {"id": "plain", "label": "P", "tasks": ["edit"]},
+        {"id": "gen", "label": "Z", "tasks": ["generate"]},
+        {"id": "silly", "label": "S", "tasks": ["edit"], "max_images": 999},
+    ]})
+    assert {e["id"]: e["max_images"] for e in entries} == {"group": 5, "plain": 1, "gen": 0, "silly": 1}
+
+
 def test_catalog_entries_get_safe_defaults_and_lose_unknown_fields():
     entries, _ = normalize_catalog("image", "iris", {"data": [{"id": "iris-turbo", "label": "Iris", "evil": "<script>"}]})
     e = entries[0]

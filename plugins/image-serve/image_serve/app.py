@@ -19,7 +19,7 @@ import random
 import threading
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 import httpx
@@ -70,7 +70,7 @@ async def models(task: str = "all"):
     for r in listing:
         lic, commercial = LICENSES.get(r["id"], ("", None))
         rows.append({**{k: r[k] for k in ("id", "label", "description", "available", "aliases", "default", "tasks",
-                                          "aspect_ratios", "text_in_image", "layout", "steps")},
+                                          "aspect_ratios", "text_in_image", "layout", "steps", "max_images")},
                      "license": lic, "commercial_use": commercial})
     if config.moss_possible() and task in ("all", "generate"):
         for r in moss.catalog(lambda v: config.comfy_ready() and moss_installed(v), moss_unet)["data"]:
@@ -182,15 +182,29 @@ async def _run(submit, comfy_req, rid: Optional[str]) -> str:
 
 
 @app.post("/v1/images/edits")
-async def edits(image: UploadFile = File(...), prompt: Optional[str] = Form(None), model: Optional[str] = Form(None),
+async def edits(image: Optional[List[UploadFile]] = File(None),
+                image_list: Optional[List[UploadFile]] = File(None, alias="image[]"),
+                prompt: Optional[str] = Form(None), model: Optional[str] = Form(None),
                 seed: Optional[int] = Form(None), task: str = Form("edit"), reference: Optional[UploadFile] = File(None),
-                x_request_id: Optional[str] = Header(None)):
-    """OpenAI's edits shape + the contract's `task`: edit (one image), style (`image` = content, `reference` = style)
-    or remove_background (no prompt; the image back as a PNG with alpha)."""
+                aspect_ratio: Optional[str] = Form(None), x_request_id: Optional[str] = Header(None)):
+    """OpenAI's edits shape + the contract's `task`: edit (1-3 images: `image` repeated or `image[]`, in the prompt
+    "picture 1..3"; `aspect_ratio` = output shape, else the first image's), style (`image` = content, `reference` =
+    style) or remove_background (no prompt; the image back as a PNG with alpha)."""
     if seed is not None and not 0 <= seed < 2 ** 50:
         raise HTTPException(status_code=400, detail="seed must be 0 .. 2^50")
     if task not in ("edit", "style", "remove_background"):
         raise HTTPException(status_code=400, detail="task: edit, style or remove_background")
+    if image and image_list:
+        raise HTTPException(status_code=400, detail="send the images either as image or as image[], not both")
+    images = image or image_list or []
+    if not images:
+        raise HTTPException(status_code=400, detail="an edit needs an image")
+    top = comfy.EDIT_MAX_IMAGES if task == "edit" else 1
+    if len(images) > top:
+        raise HTTPException(status_code=400, detail=f"{task} takes at most {top} image{'s' if top > 1 else ''}")
+    if aspect_ratio is not None and (task != "edit" or aspect_ratio not in comfy.EDIT_SIZES):
+        raise HTTPException(status_code=400, detail=f"aspect_ratio (edit only): {', '.join(comfy.EDIT_SIZES)}")
+    image = images[0]
     rid = jobs.valid_request_id(x_request_id)
     if task == "remove_background":
         try:
@@ -216,9 +230,13 @@ async def edits(image: UploadFile = File(...), prompt: Optional[str] = Form(None
             kwargs["model_name"] = comfy._catalog_file(model, "style")
         b64 = await _run(comfy.comfyui_style_transfer, comfy.ComfyUIStyleTransferRequest(**kwargs), rid)
     else:
-        kwargs = {"image_base64": content, "prompt": prompt, "seed": seed}
+        kwargs = {"image_base64": content, "prompt": prompt, "seed": seed, "aspect_ratio": aspect_ratio,
+                  "extra_images_base64": [base64.b64encode(await i.read()).decode() for i in images[1:]]}
         if model:
             kwargs["model_name"] = comfy._catalog_file(model, "edit")
+            target = catalog.for_task(model, "edit")
+            if target is not None and len(images) > target.max_images:
+                raise HTTPException(status_code=400, detail=f"{target.label} takes at most {target.max_images} images")
         b64 = await _run(comfy.comfyui_edit, comfy.ComfyUIEditRequest(**kwargs), rid)
     return {"created": int(time.time()), "data": [{"b64_json": b64}]}
 

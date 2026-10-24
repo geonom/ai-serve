@@ -272,7 +272,7 @@
                                     <div id="dl-image-edit" class="dl-panel" hidden></div>
                                 </div>
                                 <div class="input-group">
-                                    <label>Image to edit</label>
+                                    <label>Picture 1 – the image to edit, or the scene</label>
                                     <div id="comfy-edit-upload-zone" class="image-upload-zone">
                                         <input type="file" id="comfy-edit-input" accept="image/*" style="display: none;">
                                         <div id="comfy-edit-preview-container" style="display: none; position: relative;">
@@ -283,6 +283,20 @@
                                             <span>🖼️ Drop an image here or click</span>
                                         </div>
                                     </div>
+                                </div>
+                                <div class="input-group" id="comfy-edit-extra-group">
+                                    <label>More pictures (optional) – e.g. characters for the scene above</label>
+                                    <div id="comfy-edit-extra-max" class="muted small"></div>
+                                    <div id="comfy-edit-extra-list" class="edit-extra-list"></div>
+                                    <div id="comfy-edit-extra-zone" class="image-upload-zone">
+                                        <input type="file" id="comfy-edit-extra-input" accept="image/*" multiple style="display: none;">
+                                        <div class="upload-placeholder"><span>➕ Add pictures (several at once are fine)</span></div>
+                                    </div>
+                                    <div id="comfy-edit-extra-hint" class="muted small"></div>
+                                </div>
+                                <div class="input-group">
+                                    <label for="comfy-edit-aspect">Output shape</label>
+                                    <select id="comfy-edit-aspect"><option value="">Like picture 1</option></select>
                                 </div>
                             </div>
                             <div id="comfy-style-fields" style="display: none;">
@@ -869,6 +883,7 @@ France is known for its cheese.</textarea></div>
     <script src="door-session.js?v=1"></script>
     <script src="models.js?v=3"></script>
     <script src="imagesteps.js?v=1"></script>
+    <script src="editimages.js?v=1"></script>
     <script src="app.js?v=118"></script>
     <script src="downloads.js?v=6"></script>
     <script src="docs.js?v=2"></script>

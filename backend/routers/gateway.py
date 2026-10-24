@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.config import MODEL_DIRS
 from backend.model_manager import (
+    check_model_file_exists,
     get_or_load_model,
     get_upstream_error_detail,
     reset_keep_alive,
@@ -349,6 +350,12 @@ async def _resolve_upstream(model_name: Optional[str], **load_kwargs) -> Upstrea
     except HTTPException as e:
         if local_error is not None and e.status_code == 507:
             raise HTTPException(status_code=507, detail=f"{local_error.detail}\nOther devices: {e.detail}")
+        if not local and os.path.islink(path) and e.status_code == 507:
+            # the file is here, but on a drive that isn't mounted: say that, not just "on no device" (2026-10-24)
+            try:
+                check_model_file_exists(path, "Model")
+            except HTTPException as missing:
+                raise HTTPException(status_code=400, detail=f"{missing.detail}\nOther devices: {e.detail}")
         raise
 
 
@@ -769,6 +776,8 @@ async def list_llm_models():
     def _local() -> List[Dict[str, Any]]:
         out = []
         for m in found:
+            if os.path.islink(m["path"]) and not os.path.exists(m["path"]):
+                continue      # on a drive that isn't mounted -- can't be served until it is back (2026-10-24)
             try:
                 size_mb = round(os.path.getsize(m["path"]) / 1048576)
             except OSError:

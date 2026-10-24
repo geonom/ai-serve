@@ -226,9 +226,82 @@ class ComfyBatchRequest(BaseModel):
     items: List[ComfyBatchItem]
 
 
+# Qwen-Image-Edit 2511 (TextEncodeQwenImageEditPlus): up to three pictures, named "Picture 1..3" in the prompt it
+# builds; the node scales each one itself (384x384 for the vision model, ~1 MP for the reference latents). Four or
+# five images (a background + up to four characters, owner 2026-10-24): images 2..5 are stitched left to right into
+# picture 2 -- in a test with four characters that gave exactly those four on three seeds, while five native
+# references (via ReferenceLatent) doubled one and lost another and 2+2 stitched invented a fifth person.
+EDIT_MAX_IMAGES = 5
+EDIT_NATIVE_IMAGES = 3
+# The output is the KSampler's latent: the first image's (scaled to 1.5 MP) unless an aspect ratio is asked for, then
+# an empty latent of the sizes Qwen-Image was trained on (its model card's list, ~1.5-1.8 MP).
+EDIT_SIZES = {"1:1": (1328, 1328), "16:9": (1664, 928), "9:16": (928, 1664), "4:3": (1472, 1104), "3:4": (1104, 1472)}
+
+
+def patch_edit_workflow(workflow: Dict[str, Any], image_names: List[str], prompt: str, model_name: str,
+                        seed: int, steps: Optional[int] = None, denoise: Optional[float] = None,
+                        aspect_ratio: Optional[str] = None) -> Dict[str, Any]:
+    """The Qwen-Image-Edit template with these uploaded pictures (in order), prompt, checkpoint, seed and shape."""
+    if not 1 <= len(image_names) <= EDIT_MAX_IMAGES:
+        raise ValueError(f"an edit takes 1 to {EDIT_MAX_IMAGES} images")
+    if aspect_ratio is not None and aspect_ratio not in EDIT_SIZES:
+        raise ValueError(f"aspect_ratio: {', '.join(EDIT_SIZES)}")
+    for node in workflow.values():   # the template's own LoadImage is picture 1
+        if node.get("class_type") == "LoadImage":
+            node["inputs"]["image"] = image_names[0]
+    next_id = max(int(k) for k in workflow if k.isdigit()) + 1
+    loads = []
+    for name in image_names[1:]:
+        nid = str(next_id)
+        next_id += 1
+        workflow[nid] = {"class_type": "LoadImage", "inputs": {"image": name},
+                         "_meta": {"title": f"Load Image {len(loads) + 2}"}}
+        loads.append(nid)
+    extra = loads
+    if len(image_names) > EDIT_NATIVE_IMAGES:   # one row of figures as picture 2
+        row = loads[0]
+        for nid in loads[1:]:
+            stitch = str(next_id)
+            next_id += 1
+            workflow[stitch] = {"class_type": "ImageStitch", "_meta": {"title": "Figures Side by Side"},
+                                "inputs": {"image1": [row, 0], "image2": [nid, 0], "direction": "right",
+                                           "match_image_size": True, "spacing_width": 16, "spacing_color": "white"}}
+            row = stitch
+        extra = [row]
+    for node in workflow.values():
+        class_type = node.get("class_type")
+        if class_type == "UnetLoaderGGUF":
+            node["inputs"]["unet_name"] = model_name
+        elif class_type == "TextEncodeQwenImageEditPlus":   # 2511 checkpoints (older ones removed 2026-10-21)
+            for i, nid in enumerate(extra, start=2):
+                node["inputs"][f"image{i}"] = [nid, 0]
+            if "Positive" in node.get("_meta", {}).get("title", ""):
+                node["inputs"]["prompt"] = prompt
+        elif class_type == "KSampler":
+            node["inputs"]["seed"] = seed
+            if steps is not None:
+                node["inputs"]["steps"] = steps
+            if denoise is not None:
+                node["inputs"]["denoise"] = denoise
+    if aspect_ratio is not None:
+        width, height = EDIT_SIZES[aspect_ratio]
+        nid = str(next_id)
+        workflow[nid] = {"class_type": "EmptySD3LatentImage", "_meta": {"title": "Output Size"},
+                         "inputs": {"width": width, "height": height, "batch_size": 1}}
+        for node in workflow.values():
+            if node.get("class_type") == "KSampler":
+                node["inputs"]["latent_image"] = [nid, 0]
+                node["inputs"]["denoise"] = 1   # an empty latent is all noise
+    return workflow
+
+
 class ComfyUIEditRequest(BaseModel):
     image_base64: str
     prompt: str
+    # pictures 2 and 3 for TextEncodeQwenImageEditPlus ("the creature from picture 2 in the scene of picture 1")
+    extra_images_base64: List[str] = Field(default_factory=list, max_length=EDIT_MAX_IMAGES - 1)
+    # None = the first image's shape; else an empty latent of Qwen-Image's trained size (EDIT_SIZES)
+    aspect_ratio: Optional[str] = None
     # Fastest + most reliable instruction-following of the three quants tested
     # (Q2_K/Q3_K_S/Q4_K_S all ~40-55s with the Lightning LoRA; Q3_K_S under-applied
     # edits in testing despite being the mid-size quant — quant quality here doesn't
@@ -1520,25 +1593,13 @@ async def comfyui_edit(req: ComfyUIEditRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not load workflow template: {e}")
 
-    image_bytes = _decode_image_base64(req.image_base64)
-    uploaded_name = await _upload_image_to_comfyui(image_bytes)
-
-    for node_id, node in workflow.items():
-        class_type = node.get("class_type")
-        if class_type == "LoadImage":
-            node["inputs"]["image"] = uploaded_name
-        elif class_type == "UnetLoaderGGUF":
-            node["inputs"]["unet_name"] = req.model_name
-        elif class_type == "TextEncodeQwenImageEditPlus":   # 2511 checkpoints (older ones removed 2026-10-21)
-            title = node.get("_meta", {}).get("title", "")
-            if "Positive" in title:
-                node["inputs"]["prompt"] = req.prompt
-        elif class_type == "KSampler":
-            node["inputs"]["seed"] = req.seed if req.seed is not None else random.randint(1, 10**14 - 1)
-            if req.steps is not None:
-                node["inputs"]["steps"] = req.steps
-            if req.denoise is not None:
-                node["inputs"]["denoise"] = req.denoise
+    if req.aspect_ratio is not None and req.aspect_ratio not in EDIT_SIZES:
+        raise HTTPException(status_code=400, detail=f"aspect_ratio: {', '.join(EDIT_SIZES)}")
+    names = [await _upload_image_to_comfyui(_decode_image_base64(b))
+             for b in [req.image_base64, *req.extra_images_base64]]
+    workflow = patch_edit_workflow(workflow, names, prompt=req.prompt, model_name=req.model_name,
+                                   seed=req.seed if req.seed is not None else random.randint(1, 10**14 - 1),
+                                   steps=req.steps, denoise=req.denoise, aspect_ratio=req.aspect_ratio)
 
     if req.loras:
         lora_node_id = next((nid for nid, n in workflow.items() if n.get("class_type") == "LoraLoaderModelOnly"), None)

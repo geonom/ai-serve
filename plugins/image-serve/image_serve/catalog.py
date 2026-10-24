@@ -39,6 +39,7 @@ class ImageModel:
     steps_adjustable: bool = True  # Iris' schedule is part of the model
     steps_max: int = 60
     tasks: Tuple[str, ...] = ("generate",)
+    max_images: int = 0            # input images an edit takes (0 = none: text to image)
 
 
 CATALOG: Tuple[ImageModel, ...] = (
@@ -63,15 +64,16 @@ CATALOG: Tuple[ImageModel, ...] = (
     # language_learning and Munin, now mean this one
     ImageModel("qwen-edit-2511", "Qwen-Image-Edit 2511 (Q2_K)", "comfyui", "qwen-image-edit-2511-Q2_K.gguf",
                "The default for editing and style transfer; keeps characters consistent over many images, takes two images (~50 s).",
-               tasks=("edit", "style"), steps_default=4, steps_max=20,
+               tasks=("edit", "style"), steps_default=4, steps_max=20, max_images=5,
                aliases=("qwen-edit", "qwen-edit-q4", "qwen_image_edit-q2_k.gguf", "qwen_image_edit-q4_k_s.gguf")),
     ImageModel("qwen-edit-2511-q3", "Qwen-Image-Edit 2511 (Q3_K_S)", "comfyui", "qwen-image-edit-2511-Q3_K_S.gguf",
                "Fastest (~40 s), but followed instructions less well in tests.", tasks=("edit", "style"),
-               steps_default=4, steps_max=20),
+               steps_default=4, steps_max=20, max_images=5),
     # ComfyUI's own BiRefNet node (comfy_extras/nodes_bg_removal.py, since 2026-05); Comfy-Org's repackaged file
     ImageModel("birefnet", "BiRefNet (remove background)", "comfyui", "birefnet.safetensors",
                "Cuts out the foreground: the same image back as a PNG with transparency (~1 GB VRAM, seconds).",
-               aspects=(), tasks=("remove_background",), steps_default=1, steps_adjustable=False, steps_max=1),
+               aspects=(), tasks=("remove_background",), steps_default=1, steps_adjustable=False, steps_max=1,
+               max_images=1),
 )
 
 def resolve(name: Optional[str]) -> Optional[ImageModel]:
@@ -116,7 +118,7 @@ def listing_row(m: ImageModel, models_root: Optional[str] = None) -> dict:
             # settings before the catalog) -- the bare filename, never a path
             "aliases": [*m.aliases, os.path.basename(m.file)],
             "steps": {"default": m.steps_default, "adjustable": m.steps_adjustable, "max": m.steps_max},
-            "tasks": list(m.tasks)}
+            "tasks": list(m.tasks), "max_images": m.max_images}
 
 
 def check_steps(model: Optional[ImageModel], steps: Optional[int]) -> None:

@@ -182,7 +182,12 @@ TOOL_RISKS = ("read", "write", "external", "execute")      # from harmless to "r
 
 def _image(raw):
     steps = raw.get("steps") if isinstance(raw.get("steps"), dict) else {}
-    return {"tasks": _tasks(raw, IMAGE_TASKS, ["generate"]),
+    tasks = _tasks(raw, IMAGE_TASKS, ["generate"])
+    # input images a model takes (/v1/images/edits; e.g. a background + four figures); text to image takes none
+    max_images = _int(raw.get("max_images"), 0, 16)
+    if max_images is None:
+        max_images = 0 if tasks == ["generate"] else 1
+    return {"tasks": tasks, "max_images": max_images,
             "aspect_ratios": _strings(raw.get("aspect_ratios"), pattern=_ASPECT) or ["1:1"],
             "text_in_image": raw.get("text_in_image") is True, "layout": raw.get("layout") is True,
             "steps": {"default": _int(steps.get("default"), 1, 200), "adjustable": steps.get("adjustable") is not False,

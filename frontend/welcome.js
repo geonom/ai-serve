@@ -1,5 +1,5 @@
 // Welcome (owner, 2026-10-22): what the gateway is, how to use it as an API (with this machine's real address), and
-// how to start and open the Spielwiese. Opens by itself on the first visit in a browser, then from the sidebar's
+// how to start and open the Playground. Opens by itself on the first visit in a browser, then from the sidebar's
 // "Welcome & help". Uses el()/api()/serviceAction()/serviceOpenControl()/renderServiceAutostart() from services.js.
 (function () {
     const KEY = 'ai-serve-welcome-seen';
@@ -24,12 +24,12 @@ reply = client.chat.completions.create(model="default", messages=[{"role": "user
 print(reply.choices[0].message.content)`;
     }
 
-    async function renderSpielwiese() {
-        const box = $('welcome-spielwiese');
+    async function renderPlayground() {
+        const box = $('welcome-playground');
         let s = null;
-        try { s = ((await api('/api/services')).services || []).find(x => x.id === 'spielwiese'); } catch (e) { s = null; }
+        try { s = ((await api('/api/services')).services || []).find(x => x.id === 'playground'); } catch (e) { s = null; }
         if (!s) {
-            box.replaceChildren(el('p', { class: 'muted', text: tx('The Spielwiese isn\'t installed here (it comes with ai-serve in apps/spielwiese).') }));
+            box.replaceChildren(el('p', { class: 'muted', text: tx('The Playground isn\'t installed here (it comes with ai-serve in apps/playground).') }));
             return;
         }
         const running = s.instances && s.instances.length > 0;
@@ -40,16 +40,16 @@ print(reply.choices[0].message.content)`;
             const open = serviceOpenControl(s);
             if (open) actions.append(open);
         } else {
-            actions.append(el('button', { class: 'btn btn-primary btn-sm', text: tx('Start the Spielwiese'), onclick: async (e) => {
+            actions.append(el('button', { class: 'btn btn-primary btn-sm', text: tx('Start the Playground'), onclick: async (e) => {
                 e.target.disabled = true;
                 e.target.textContent = tx('Starting…');
-                await serviceAction('spielwiese', 'start');
+                await serviceAction('playground', 'start');
                 for (let i = 0; i < 20; i++) {             // until it answers, then offer "Open"
                     await new Promise(r => setTimeout(r, 1000));
-                    const now = ((await api('/api/services').catch(() => ({}))).services || []).find(x => x.id === 'spielwiese');
+                    const now = ((await api('/api/services').catch(() => ({}))).services || []).find(x => x.id === 'playground');
                     if (now && now.instances && now.instances.length) break;
                 }
-                renderSpielwiese();
+                renderPlayground();
             } }));
         }
         actions.append(renderServiceAutostart(s));
@@ -59,7 +59,7 @@ print(reply.choices[0].message.content)`;
 
     function open() {
         fillApi();
-        renderSpielwiese();
+        renderPlayground();
         if (!dlg.open) dlg.showModal();
         markSeen();
     }

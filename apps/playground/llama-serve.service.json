@@ -1,0 +1,22 @@
+{
+  "id": "playground",
+  "name": "Playground",
+  "description": "Modelle ausprobieren: Chat, Bilder, Sprache (Vorlesen, Abschreiben) und Dokumente lesen -- über den ai-serve-ui Gateway.",
+  "command": [
+    "./run.sh"
+  ],
+  "env": {
+    "PLAYGROUND_PORT": "{port}"
+  },
+  "port": 8037,
+  "match": [
+    "playground.server"
+  ],
+  "health_path": "/",
+  "category": "tools",
+  "icon": "chat",
+  "screenshot": "./docs/llama-serve-screenshot.jpg",
+  "identity": "multi",
+  "maturity": "beta",
+  "status_path": "/sw/status"
+}

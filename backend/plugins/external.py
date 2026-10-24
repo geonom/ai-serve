@@ -1,5 +1,5 @@
 """External model servers: a standard OpenAI-compatible server the owner already runs -- Ollama, LM Studio,
-llama-server, vLLM ... -- added to ai-serve by port, without an adapter app (owner, 2026-10-21: the Spielwiese and
+llama-server, vLLM ... -- added to ai-serve by port, without an adapter app (owner, 2026-10-21: the Playground and
 every extension should work with standard Ollama or LM Studio). They become `llm` plugins (backend/plugins/llm.py):
 their models are listed and routed like any plugin's.
 

@@ -93,16 +93,24 @@ def test_validation(ctx, body, status):
 
 
 @needs_whisperx
-def test_gpu_owner_refusal_blocks_loading(ctx, monkeypatch):
-    c, *_ = ctx
+def test_gpu_owner_refusal_loads_on_the_cpu(ctx, monkeypatch):
+    """The GPU manager says no (no room, or Strata holds the GPUs): WhisperX loads on the CPU instead of failing
+    (2026-10-24; it used to answer 507 and the spoken input was lost). Details: tests/test_gpu_robust.py."""
+    c, fake, _ = ctx
     monkeypatch.setattr(engine.state, "whisperx_model", None)
+    loaded = []
 
-    def refuse(purpose):
-        raise HTTPException(status_code=507, detail=f"Strata belegt die GPUs ({purpose})")
+    def refuse(purpose, need_mb):
+        raise HTTPException(status_code=507, detail=f"Strata holds the GPUs ({purpose})")
 
-    monkeypatch.setattr(engine, "preflight_sync", refuse)
+    def load(name, device, device_index, compute_type):
+        loaded.append(device)
+        return fake
+    monkeypatch.setattr(engine, "reserve_sync", refuse)
+    monkeypatch.setattr(engine, "_load_model", load)
+    monkeypatch.setattr(engine, "_gpu_possible", lambda: True)
     r = c.post("/v1/transcribe", json={"audio_base64": wav_b64(0.5)})
-    assert r.status_code == 507 and engine.state.whisperx_model is None
+    assert r.status_code == 200 and loaded == ["cpu"] and engine.state.whisperx_device == "cpu"
 
 
 @needs_whisperx
@@ -157,7 +165,7 @@ def moss(ctx, monkeypatch):
     c, _, preflights = ctx
     calls = {"worker": [], "embed": []}
 
-    async def fake_ensure(cfg):
+    async def fake_ensure(cfg, cpu_only=False):
         return 1
 
     async def fake_worker(port, wav_path, prompt, max_new_tokens, duration_s):

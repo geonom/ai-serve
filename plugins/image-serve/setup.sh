@@ -84,4 +84,4 @@ if [ -n "$MODELS" ]; then
     echo "== models: $MODELS"
     run .venv/bin/python -m image_serve.bundles ${MODELS//,/ }
 fi
-echo "ok -- ComfyUI in $COMFYUI_DIR; more models: Spielwiese, dashboard (Downloads) or ./setup.sh --models <ids>"
+echo "ok -- ComfyUI in $COMFYUI_DIR; more models: Playground, dashboard (Downloads) or ./setup.sh --models <ids>"

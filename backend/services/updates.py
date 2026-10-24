@@ -1,5 +1,5 @@
 """Apps and plugins still running old code after an update (owner on the Mac, 2026-10-23: `./ai-serve restart` only
-restarted the gateway; image-serve and the Spielwiese kept running the code from before `git pull`, so a fixed
+restarted the gateway; image-serve and the Playground kept running the code from before `git pull`, so a fixed
 download stayed hidden). Rules here, pure except `newest_code_mtime` (tests: tests/unit/test_service_updates.py):
 
 - only what belongs to this installation -- apps/ and plugins/ inside the ai-serve folder; projects in other service

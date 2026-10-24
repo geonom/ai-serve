@@ -35,11 +35,18 @@ class H(BaseHTTPRequestHandler):
             return self._send(400, {"error": "bad combination"})
         if req.get("text") == "worker-500":
             return self._send(500, {"error": "CUDA out of memory at /secret/path"})
+        if req.get("text") == "worker-crash":
+            return self._send(500, {"error": "segfault in the vocoder at /secret/path"})
+        if req.get("text") == "oom-once":   # out of memory the first time only (marker in the provider dir)
+            if not os.path.exists("oom.flag"):
+                open("oom.flag", "w").close()
+                return self._send(500, {"error": "CUDA out of memory. Tried to allocate 2.00 GiB"})
         if req.get("text") == "slow":
             time.sleep(1.5)
         ref = req.get("ref")
         req["ref_exists"] = bool(ref and os.path.exists(ref))
         req["env"] = os.environ.get("FAKE_ENV")
+        req["cuda"] = os.environ.get("CUDA_VISIBLE_DEVICES")
         self._send(200, {"audio_base64": base64.b64encode(json.dumps(req).encode()).decode(), "device": "cuda:0"})
     def log_message(self, *a): pass
 import socketserver
@@ -82,15 +89,20 @@ class FakeGpu:
 
 
 class FakeCoordinator:
-    def __init__(self, refuse=None):
+    def __init__(self, refuse=None, pick=1):
         self.refuse, self.calls, self.confirmed = refuse, [], []
-        self.last_reservation = None
+        self.last_reservation, self.last_gpu, self.pick = None, None, pick
+        self.standalone = False   # True: like no ai-serve reachable (no reservation, no pick)
 
     async def preflight(self, purpose, gpu, need_mb):
         self.calls.append((purpose, gpu, need_mb))
         if self.refuse:
             raise CoordinationRefused(self.refuse)
-        self.last_reservation = f"r-{purpose}"
+        if self.standalone:
+            self.last_reservation = self.last_gpu = None
+            return None
+        self.last_reservation = f"r-{purpose}-{len(self.calls)}"
+        self.last_gpu = gpu if gpu is not None else self.pick   # the manager picks when no GPU is named
         return None
 
     async def confirm(self, reservation_id, pid):
@@ -148,9 +160,9 @@ def test_generate_spawns_worker_and_uses_adapter(env):
     alpha = next(e for e in engines["engines"] if e["id"] == "alpha")
     assert alpha["status"] == "idle" and alpha["loaded"] and alpha["device"] == "cuda:0"
     assert alpha["default_reference"] is True and alpha["variants"] == ["a", "b"]
-    assert coord.calls == [("tts:alpha", 0, 1000 + 512)]
+    assert coord.calls == [("tts:alpha", None, 1000 + 512)]
     # the reservation from the preflight is bound to the started worker's PID
-    assert len(coord.confirmed) == 1 and coord.confirmed[0][0] == "r-tts:alpha" and coord.confirmed[0][1] > 1
+    assert len(coord.confirmed) == 1 and coord.confirmed[0][0].startswith("r-tts:alpha") and coord.confirmed[0][1] > 1
 
 
 def test_engines_describe_their_modes(env):
@@ -195,8 +207,44 @@ def test_worker_failure_is_502_without_internals_leaking_status(env):
         return r, (await c.get("/v1/engines")).json()
 
     r, engines = run(app, fn)
+    # out of memory -> restarted where the GPU manager has room and retried; still out of memory -> 507 (retryable)
+    assert r.status_code == 507 and "try again" in r.json()["detail"].lower()
+    assert "/secret/path" not in r.text
+
+
+def test_other_worker_errors_stay_502(env):
+    app, *_ = env
+
+    async def fn(c):
+        r = await c.post("/v1/generate", json={"text": "worker-crash"})
+        return r, (await c.get("/v1/engines")).json()
+
+    r, engines = run(app, fn)
     assert r.status_code == 502
     assert next(e for e in engines["engines"] if e["id"] == "alpha")["status"] == "error"
+
+
+def test_out_of_memory_once_is_retried_on_a_fresh_worker(env):
+    """2026-10-24 (owner: speech must not fail because another model fills the GPU)."""
+    app, _, _, coord = env
+
+    async def fn(c):
+        return await c.post("/v1/generate", json={"text": "oom-once"})
+
+    r = run(app, fn)
+    assert r.status_code == 200, r.text
+    assert len(coord.calls) == 2   # asked the GPU manager again before the retry
+
+
+def test_the_gpu_manager_picks_the_gpu_and_the_worker_sees_only_that_one(env):
+    app, _, _, coord = env
+
+    async def fn(c):
+        return await c.post("/v1/generate", json={"text": "Hallo"})
+
+    r = run(app, fn)
+    assert coord.calls[0][1] is None                      # no fixed GPU asked for
+    assert _decode(r)["cuda"] == "1"                      # the one the manager picked
 
 
 def test_worker_crash_on_startup(env):
@@ -256,7 +304,9 @@ def test_keep_alive_unloads_idle_worker(env):
 
 
 def test_eviction_makes_room_with_idle_lru_engine(env):
-    app, _, gpu, _ = env
+    """Without ai-serve (standalone) tts-serve makes room among its own engines; with it, the GPU manager does."""
+    app, _, gpu, coord = env
+    coord.standalone = True
 
     async def fn(c):
         await c.post("/v1/generate", json={"text": "x", "engine": "alpha"})
@@ -275,7 +325,7 @@ def test_unload_idle_endpoint_and_status(env):
     async def fn(c):
         await c.post("/v1/generate", json={"text": "x"})
         before = (await c.get("/v1/status")).json()
-        r = await c.post("/v1/unload_idle", params={"gpu": 0})
+        r = await c.post("/v1/unload_idle", params={"gpu": 1})   # where the GPU manager put it
         after = (await c.get("/v1/status")).json()
         return before, r, after
 

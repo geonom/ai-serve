@@ -191,10 +191,10 @@ class TestRebindingAndForeignPages:
                  "Tailscale-User-Login": "owner@github"}, peer="127.0.0.1")
         assert p.via == "tailscale"
         assert who({"Host": "localhost:8037", "Origin": "http://100.101.102.103:8037"}, peer="127.0.0.1").is_owner
-        monkeypatch.setenv("LLAMA_SERVE_IDENTITY_AUDIENCE", "spielwiese.apps.example.org")
-        assert who({"Host": "localhost", "Origin": "https://spielwiese.apps.example.org"}, peer="127.0.0.1").is_owner
+        monkeypatch.setenv("LLAMA_SERVE_IDENTITY_AUDIENCE", "playground.apps.example.org")
+        assert who({"Host": "localhost", "Origin": "https://playground.apps.example.org"}, peer="127.0.0.1").is_owner
 
     def test_door_identities_are_not_affected(self):
-        p = who({"X-Llama-Serve-Identity": token(), "Host": "spielwiese.apps.example.org",
-                 "Origin": "https://spielwiese.apps.example.org"}, peer="127.0.0.1")
+        p = who({"X-Llama-Serve-Identity": token(), "Host": "playground.apps.example.org",
+                 "Origin": "https://playground.apps.example.org"}, peer="127.0.0.1")
         assert p.via == "door"

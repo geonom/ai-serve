@@ -1177,8 +1177,9 @@ async def _load_locked(
         # engines, STT; least recently used first; never busy or pinned) if needed --
         # so two loads can't both count on the same free VRAM before either has
         # allocated it. Fast yes/no, no waiting (callers retry).
+        # purpose per model *and* context size: the GPU manager learns needs per purpose (KV grows with ctx)
         reservation, why = await _reserve_for_load(gpu_id, target_gpu_id, int(required_free),
-                                                   os.path.basename(model_path))
+                                                   f"{os.path.basename(model_path)}@{ctx_size}")
         if reservation is not None:
             target_gpu_id = reservation.gpu
         # refused by the manager (even if measured room exists: it may be promised to

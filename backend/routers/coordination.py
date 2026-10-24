@@ -8,6 +8,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.cluster.local import MANAGER
@@ -35,16 +36,22 @@ async def gpu_preflight(req: PreflightRequest):
     gpu, mode = req.gpu, None
     if gpu is None:   # the manager picks (cluster/consumers.py choose_gpu): start / stay / move / evict
         from backend.cluster.consumers import choose_gpu
-        gpu, mode = choose_gpu(await MANAGER.room(), req.need_mb, req.current_gpu, req.movable)
+        # for what this purpose really needed before, not only what it announces (NeedBook)
+        gpu, mode = choose_gpu(await MANAGER.room(), MANAGER.need(req.purpose, req.need_mb), req.current_gpu,
+                               req.movable)
     res, unloaded, reason = await MANAGER.reserve(gpu, req.need_mb, req.purpose)
     if unloaded:
         logger.info(f"{req.purpose} needs ~{req.need_mb} MiB on GPU {gpu}: unloaded {', '.join(unloaded)}")
     elif res is None and reason:
         logger.info(f"{req.purpose}: {reason}")
     gpus = {g["index"]: g for g in (await fetch_gpu_status()).get("gpus", [])}
-    return {"gpu": gpu, "mode": mode, "free_mb": gpus.get(gpu, {}).get("free"), "granted": res is not None,
+    body = {"gpu": gpu, "mode": mode, "free_mb": gpus.get(gpu, {}).get("free"), "granted": res is not None,
             "reservation_id": res.id if res else None, "hold_s": int(MANAGER.reservations.hold_s),
             "reason": reason or None}
+    if res is None:
+        # a no is 507 (2026-10-24): as 200 + granted false, stt-serve and tts-serve loaded anyway and ran out of memory
+        return JSONResponse(status_code=507, content={**body, "detail": reason or f"no room on GPU {gpu}"})
+    return body
 
 
 @router.get("/api/coordination/room", summary="Memory each GPU could give right now without unloading anyone")
@@ -88,5 +95,5 @@ async def confirm_reservation(reservation_id: str, req: ConfirmRequest):
 @router.delete("/api/coordination/reservations/{reservation_id}",
                summary="Release a GPU reservation (the worker is loaded, or its start was given up)")
 async def release_reservation(reservation_id: str):
-    MANAGER.release(reservation_id)
+    await MANAGER.release_measured(reservation_id)
     return {"released": reservation_id}

@@ -15,12 +15,12 @@ import logging
 import os
 import subprocess
 import time
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 import psutil
 from backend.procs import processes
 
-from backend.cluster.consumers import (Consumer, Reservation, Reservations, attribute_vram, gpu_view, unified_procs,
+from backend.cluster.consumers import (Consumer, NeedBook, Reservation, Reservations, attribute_vram, gpu_view, unified_procs,
                                       plan_exclusive, plan_room)
 
 logger = logging.getLogger("ai-serve-ui.gpu")
@@ -115,12 +115,46 @@ def _cmdline_pid(fragment: str, cwd: Optional[str] = None) -> Optional[int]:
 
 
 class LocalGpuManager:
-    def __init__(self, pins_file: str):
+    def __init__(self, pins_file: str, needs_file: Optional[str] = None):
         self.pins_file = pins_file
+        self.needs_file = needs_file
         self._locks: Dict[int, asyncio.Lock] = {}
         self.reservations = Reservations(hold_s=5.0, bound_max_s=120.0)
         self._procs: List[Tuple[int, int, int]] = []
         self._parents: Dict[int, int] = {}
+        self.needs = NeedBook()
+        self.load_needs()
+
+    # --- learned needs (consumers.NeedBook; persisted, so a restart keeps what was learned)
+    def load_needs(self) -> None:
+        if not self.needs_file:
+            return
+        try:
+            with open(self.needs_file, encoding="utf-8") as f:
+                self.needs = NeedBook.from_dict(json.load(f))
+        except (OSError, ValueError):
+            self.needs = NeedBook()
+
+    def need(self, purpose: str, declared: int) -> int:
+        return self.needs.need(purpose, int(declared))
+
+    def _learn(self) -> None:
+        finished = self.reservations.drain_finished()
+        for r in finished:
+            if r.peak_mb > 0:
+                before = self.needs.need(r.purpose, 0)
+                self.needs.observe(r.purpose, r.peak_mb)
+                if r.peak_mb > r.mb:
+                    logger.warning(f"GPU manager: {r.purpose} reserved {r.mb} MB but grew by {r.peak_mb} MB -- "
+                                   f"reserving {self.needs.need(r.purpose, 0)} MB from now on (was {before})")
+        if finished and self.needs_file:
+            try:
+                tmp = self.needs_file + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(self.needs.to_dict(), f, indent=1, sort_keys=True)
+                os.replace(tmp, self.needs_file)
+            except OSError as e:
+                logger.warning(f"GPU manager: learned needs not saved: {e}")
 
     # --- pins (the owner's choice, persisted)
     def pins(self) -> FrozenSet[str]:
@@ -206,10 +240,8 @@ class LocalGpuManager:
             f"{holder} holds the GPUs exclusively -- {purpose} can't load now (it would run both out of "
             f"memory). Stop {holder} first (Apps & Services, or POST /api/plugins/<id>/release)."))
 
-    def _outstanding(self, gpu: int) -> int:
-        """Memory promised on `gpu` but not yet allocated by the reserving processes
-        (their VRAM incl. children, from the last snapshot)."""
-        pids = {r.pid for r in self.reservations.all() if r.pid}
+    def _measured(self, gpu: int, pids: Set[int]) -> Dict[int, int]:
+        """VRAM on `gpu` per process in `pids`, incl. its children (from the last snapshot)."""
         measured: Dict[int, int] = {}
         for pid, g, mb in self._procs:
             if g != gpu:
@@ -221,8 +253,17 @@ class LocalGpuManager:
                     break
                 seen.add(cur)
                 cur = self._parents.get(cur)
+        return measured
+
+    def _outstanding(self, gpu: int) -> int:
+        """Memory promised on `gpu` but not yet allocated by the reserving processes
+        (their VRAM incl. children, from the last snapshot, beyond what they held when they confirmed)."""
+        pids = {r.pid for r in self.reservations.all() if r.pid}
+        measured = self._measured(gpu, pids)
         alive = {p for p in pids if psutil.pid_exists(p)}
-        return self.reservations.outstanding(gpu, time.time(), alive, measured)
+        out = self.reservations.outstanding(gpu, time.time(), alive, measured)
+        self._learn()
+        return out
 
     async def view(self) -> List[Dict[str, Any]]:
         gpus, consumers, att = await self.snapshot()
@@ -270,6 +311,7 @@ class LocalGpuManager:
         `need_mb` reserved: held 5 s until confirm(pid), then bound to that process.
         Promised-but-unallocated memory of other reservations counts as used.
         Returns (reservation or None, unloaded ids, reason)."""
+        need_mb = self.need(purpose, need_mb)   # at least what this purpose grew by before (NeedBook)
         lock = self._locks.setdefault(gpu, asyncio.Lock())
         async with lock:
             gpus, consumers, att = await self.snapshot()
@@ -360,10 +402,26 @@ class LocalGpuManager:
                 l.release()
 
     def confirm(self, reservation_id: str, pid: int) -> bool:
-        return self.reservations.confirm(reservation_id, pid, time.time())
+        """Bind to `pid`; what it already holds on that GPU (an already running ComfyUI or stt-serve) is the
+        baseline -- only growth after this counts against the reservation."""
+        r = self.reservations.get(reservation_id)
+        baseline = self._measured(r.gpu, {int(pid)}).get(int(pid), 0) if r else 0
+        return self.reservations.confirm(reservation_id, pid, time.time(), baseline_mb=baseline)
 
     def release(self, reservation_id: str) -> None:
         self.reservations.release(reservation_id)
+        self._learn()
+
+    async def release_measured(self, reservation_id: str) -> None:
+        """Release after a fresh measurement, so the peak the process reached is learned (the endpoint's way)."""
+        r = self.reservations.get(reservation_id)
+        if r is not None and r.pid is not None:
+            try:
+                await self.snapshot()
+                self.reservations.observe(self._measured(r.gpu, {r.pid}))
+            except Exception as e:
+                logger.debug(f"GPU manager: no measurement before releasing {reservation_id}: {e}")
+        self.release(reservation_id)
 
     async def make_room(self, gpu: int, need_mb: int, purpose: str) -> Tuple[bool, List[str], str]:
         """Room without keeping a reservation (kept for callers that don't start a
@@ -379,4 +437,4 @@ def _pins_path() -> str:
     return os.path.join(_PROJECT_DIR, "gpu_pins.json")
 
 
-MANAGER = LocalGpuManager(_pins_path())
+MANAGER = LocalGpuManager(_pins_path(), needs_file=os.path.join(os.path.dirname(_pins_path()), "gpu_needs.json"))

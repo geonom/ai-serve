@@ -30,6 +30,11 @@ from tts_serve.providers import load_adapter
 logger = logging.getLogger("tts-serve.workers")
 
 
+def _out_of_memory(detail: Any) -> bool:
+    text = str(detail).lower()
+    return "out of memory" in text or "cuda_error_out_of_memory" in text or "outofmemory" in text
+
+
 class CoordinationRefused(Exception):
     """The GPU owner (ai-serve-ui) said no -- e.g. Strata holds both GPUs."""
 
@@ -70,18 +75,21 @@ class HttpCoordinator:
     def __init__(self, gateway_url: Optional[str]):
         self.gateway_url = (gateway_url or "").rstrip("/")
         self.last_reservation: Optional[str] = None
+        self.last_gpu: Optional[int] = None
 
     async def preflight(self, purpose: str, gpu: int, need_mb: int) -> Optional[int]:
         """Free MiB on the GPU (None: gateway unreachable/standalone). A granted
         preflight is a reservation in ai-serve-ui's GPU manager; its id is kept in
         `last_reservation` for confirm() with the worker's PID."""
-        self.last_reservation = None
+        self.last_reservation, self.last_gpu = None, None
         if not self.gateway_url:
             return None
+        body = {"purpose": purpose, "need_mb": need_mb}
+        if gpu is not None:   # None: the GPU manager picks one with room (answers `gpu`)
+            body["gpu"] = gpu
         try:
             async with httpx.AsyncClient(timeout=30) as c:
-                r = await c.post(f"{self.gateway_url}/api/coordination/gpu-preflight",
-                                 json={"purpose": purpose, "gpu": gpu, "need_mb": need_mb})
+                r = await c.post(f"{self.gateway_url}/api/coordination/gpu-preflight", json=body)
         except httpx.HTTPError:
             return None
         if r.status_code in (409, 507):
@@ -93,7 +101,10 @@ class HttpCoordinator:
         if r.status_code != 200:
             return None
         body = r.json()
+        if body.get("granted") is False:   # an older gateway said no with a 200
+            raise CoordinationRefused(str(body.get("reason") or "no room on the GPUs"))
         self.last_reservation = body.get("reservation_id")
+        self.last_gpu = body.get("gpu") if isinstance(body.get("gpu"), int) else None
         return body.get("free_mb")
 
     async def confirm(self, reservation_id: Optional[str], pid: int) -> None:
@@ -126,6 +137,7 @@ class _Slot:
     variant: Optional[str] = None
     last_used: float = 0.0
     inflight: int = 0
+    gpu: Optional[int] = None   # where the running worker is (the GPU manager's pick)
     keep_alive_task: Optional[asyncio.Task] = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -174,15 +186,22 @@ class WorkerPool:
         return self.logs_dir / f"{pid}.log"
 
     # -- start / stop --------------------------------------------------------
-    async def _make_room(self, m: ProviderManifest) -> None:
+    async def _make_room(self, m: ProviderManifest) -> Optional[int]:
+        """The GPU to start on. With ai-serve: its GPU manager picks one with room (unloading idle models of any kind
+        if needed) -- an engine that takes a fraction of its card (VoxCPM) keeps its own GPU, since its need depends
+        on that card. A no is CoordinationRefused (507). Without ai-serve (standalone): the manifest's GPU, after
+        unloading this service's own idle engines there."""
         gpus = await asyncio.to_thread(self.gpu_probe)
         total = gpus.get(m.gpu, {}).get("total", 0)
         need = vram_need_mb(m, total)
-        free = await self.coordinator.preflight(f"tts:{m.id}", m.gpu, need)
+        free = await self.coordinator.preflight(f"tts:{m.id}", m.gpu if m.vram_fraction is not None else None, need)
+        picked = getattr(self.coordinator, "last_gpu", None)
+        if getattr(self.coordinator, "last_reservation", None) or picked is not None:
+            return picked if picked is not None else m.gpu   # the manager made room there
         if free is None:
             free = gpus.get(m.gpu, {}).get("free")
         if free is None or free >= need:
-            return
+            return None
         engines = [{"id": pid, "gpu": self._gpu_of(pid), "idle": s.running and s.status == "idle" and not s.inflight,
                     "last_used": s.last_used} for pid, s in self.slots.items()]
         for victim in eviction_order(m.id, m.gpu, engines):
@@ -191,11 +210,15 @@ class WorkerPool:
             await asyncio.sleep(0.5)
             free = (await asyncio.to_thread(self.gpu_probe)).get(m.gpu, {}).get("free", free)
             if free >= need:
-                return
+                return None
         logger.warning(f"{m.name} needs ~{need} MiB on GPU {m.gpu} but only {free} MiB is free after "
                        f"unloading every idle TTS engine -- it may fall back to CPU.")
+        return None
 
     def _gpu_of(self, pid: str) -> int:
+        slot = self.slots.get(pid)
+        if slot is not None and slot.running and slot.gpu is not None:
+            return slot.gpu
         try:
             return self.registry().resolve(pid).gpu
         except RequestError:
@@ -203,16 +226,19 @@ class WorkerPool:
 
     async def ensure(self, m: ProviderManifest) -> int:
         if not m.installed:
-            raise WorkerError(409, f"{m.name} isn't set up on this machine yet -- download it in the Spielwiese or the "
+            raise WorkerError(409, f"{m.name} isn't set up on this machine yet -- download it in the Playground or the "
                                    f"dashboard, or run providers/{m.id}/setup.sh")
         slot = self.slot(m.id)
         async with slot.lock:
             if slot.running:
                 return slot.port
-            await self._make_room(m)
+            gpu = await self._make_room(m)
             port = _free_port()
             env = dict(os.environ, HF_HUB_ENABLE_HF_TRANSFER="0")
             env.update(m.environment(port))
+            if gpu is not None:   # the worker sees only the GPU it was given (its cuda:0)
+                env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+            slot.gpu = gpu if gpu is not None else m.gpu
             log = open(self.log_path(m.id), "w", encoding="utf-8")
             logger.info(f"Starting {m.name} worker on port {port}")
             try:
@@ -317,15 +343,27 @@ class WorkerPool:
             self._reset_keep_alive(m.id, keep)
             slot.status = "generating" if warm else "loading"
             slot.last_used = time.time()
-            async with httpx.AsyncClient(timeout=1800.0) as c:
-                r = await c.post(f"http://127.0.0.1:{port}/generate", json=payload)
-            if r.status_code >= 400:
+            for attempt in (1, 2):
+                async with httpx.AsyncClient(timeout=1800.0) as c:
+                    r = await c.post(f"http://127.0.0.1:{port}/generate", json=payload)
+                if r.status_code < 400:
+                    break
                 try:
                     detail = r.json().get("error") or r.text
                 except ValueError:
                     detail = r.text
                 if r.status_code < 500:
                     raise RequestError(f"{m.name}: {detail}")
+                if _out_of_memory(detail):
+                    # another model filled the GPU (2026-10-24): a fresh worker where the GPU manager has room
+                    logger.warning(f"{m.name} ran out of GPU memory (attempt {attempt}) -- restarting it")
+                    await self._terminate(slot)
+                    if attempt == 1:
+                        port = await self.ensure(m)
+                        slot.status = "loading"
+                        continue
+                    slot.status = "unloaded"
+                    raise WorkerError(507, f"{m.name} ran out of GPU memory -- try again in a moment")
                 slot.status = "error"
                 raise WorkerError(502, f"{m.name} worker error: {detail}")
             data = r.json()
@@ -355,7 +393,7 @@ class WorkerPool:
             out.append({
                 "id": m.id, "name": m.name, "description": m.description, "license": m.license,
                 "aliases": list(m.aliases), "variants": list(m.variants), "default_reference": m.default_reference,
-                "gpu": m.gpu, "vram_mb": m.vram_mb, "vram_fraction": m.vram_fraction,
+                "gpu": s.gpu if s.running and s.gpu is not None else m.gpu, "vram_mb": m.vram_mb, "vram_fraction": m.vram_fraction,
                 "keep_alive_s": m.keep_alive_s, "concurrent": m.concurrent,
                 "modes": [dict(x) for x in m.modes], "languages": list(m.languages),
                 "params": sorted(m.param_names),

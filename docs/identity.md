@@ -6,7 +6,7 @@ building its own login. Decided 2026-10-17 (user: apps shareable per person, "eg
 welchen Service per Konto-Login / SSO / selbst angebotene User Identification").
 
 Status: **v1 draft.** In this release: the manifest field `identity` and its guard, the building blocks in
-`sdk/identity/` (unit-tested), and the Spielwiese as a `multi` app. **The door itself – an `access` plugin with the
+`sdk/identity/` (unit-tested), and the Playground as a `multi` app. **The door itself – an `access` plugin with the
 login, the per-app policy and the signed header – is not included**; it runs on the developer's own setup (a small
 VPS + Nextcloud as login) and isn't general enough to publish yet. Without it, only this machine (the owner) and the
 owner's Tailscale devices reach the apps.
@@ -108,7 +108,7 @@ are for logging and display only.
    page is never reloaded. It checks the login on `/.door-probe` (no app serves it; 404 from
    the app = signed in, redirect/401 from the door = not). A service worker must leave
    `/.door-*` alone. Not covered: XMLHttpRequest, EventSource, WebSocket. Tests:
-   `node --test sdk/door/door-session.test.mjs`. Used by Spielwiese, StoryTime, Sonnenrechner,
+   `node --test sdk/door/door-session.test.mjs`. Used by Playground, StoryTime, Sonnenrechner,
    Liruna, Detektiv, Kristallhelden; after changing the SDK, copy it into each again.
 
 ## 4. The manifest field `identity`

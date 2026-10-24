@@ -81,6 +81,7 @@ def create_app() -> FastAPI:
         out = []
         if state.whisperx_model is not None or state.diarize_pipeline is not None or state.align_model is not None:
             out.append({"id": "stt-serve", "label": "WhisperX / diarization", "pid": os.getpid(), "loaded": True,
+                        "last_used": state.whisperx_last_used or None,   # the GPU manager unloads the least recent first
                         "busy": state.whisperx_status == "transcribing" or state.diarize_status == "diarizing"
                                 or bool(state.live_stt_sessions)})
         if _nemotron_running():

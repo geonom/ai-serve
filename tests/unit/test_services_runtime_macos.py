@@ -1,6 +1,6 @@
 """macOS: psutil.net_connections() needs root there and raises AccessDenied -- the snapshot must still see which of
 this user's processes listen on which port (per-process lookups work for one's own processes). Found on a Mac:
-the Spielwiese ran but Apps & Services showed "starting" for an hour."""
+the Playground ran but Apps & Services showed "starting" for an hour."""
 import socket
 import subprocess
 import sys

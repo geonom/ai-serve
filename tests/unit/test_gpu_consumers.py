@@ -17,7 +17,7 @@ even when an idle ComfyUI held 10 GB next to them). Now one view per GPU:
   nothing is evicted and the blockers are named."""
 import pytest
 
-from backend.cluster.consumers import Consumer, attribute_vram, plan_room, gpu_view
+from backend.cluster.consumers import NeedBook, Consumer, attribute_vram, plan_room, gpu_view
 
 GPUS = [{"index": 0, "name": "RTX 3090", "total": 24576, "free": 2000},
         {"index": 1, "name": "RTX 4060 Ti", "total": 16380, "free": 14000}]
@@ -161,6 +161,84 @@ class TestReservations:
         assert r.outstanding(1, now=1, alive=set(), measured={}) == 2000
         r.release(a.id)
         assert r.outstanding(0, now=1, alive=set(), measured={}) == 0
+
+
+class TestBaselineAndPeak:
+    """2026-10-24 (STT ran out of memory right after loading; owner: provisioning must be robust for every service):
+    - a process that already holds memory (ComfyUI with other models, stt-serve with its CUDA context) confirms a new
+      reservation: only what it allocates *after* the confirm shrinks it -- before, its whole usage did, so the
+      reservation counted as 0 at once and the GPU could be promised twice;
+    - the reservation remembers the most the process grew by (peak over the baseline); when it ends (released,
+      process gone, expired) that peak is handed over for learning (NeedBook)."""
+
+    def book(self):
+        return Reservations(hold_s=5, bound_max_s=120)
+
+    def test_only_growth_after_the_confirm_counts(self):
+        r = self.book()
+        res = r.add(gpu=0, mb=8000, purpose="image:z", now=0)
+        assert r.confirm(res.id, pid=7, now=1, baseline_mb=6000)
+        assert r.outstanding(0, now=2, alive={7}, measured={7: 6000}) == 8000
+        assert r.outstanding(0, now=3, alive={7}, measured={7: 9000}) == 5000
+
+    def test_the_peak_is_handed_over_when_it_ends(self):
+        r = self.book()
+        res = r.add(gpu=0, mb=1500, purpose="stt:whisperx:medium", now=0)
+        r.confirm(res.id, pid=7, now=1, baseline_mb=300)
+        r.outstanding(0, now=2, alive={7}, measured={7: 2000})
+        r.outstanding(0, now=3, alive={7}, measured={7: 2990})
+        r.outstanding(0, now=4, alive={7}, measured={7: 2500})
+        r.release(res.id)
+        assert [(x.purpose, x.peak_mb) for x in r.drain_finished()] == [("stt:whisperx:medium", 2690)]
+        assert r.drain_finished() == []
+
+    def test_expired_and_exited_ones_are_handed_over_too(self):
+        r = self.book()
+        a = r.add(gpu=0, mb=1000, purpose="a", now=0)
+        b = r.add(gpu=0, mb=1000, purpose="b", now=0)
+        r.confirm(a.id, pid=1, now=1)
+        r.confirm(b.id, pid=2, now=1)
+        r.outstanding(0, now=2, alive={1, 2}, measured={1: 4000, 2: 500})
+        r.outstanding(0, now=200, alive={1}, measured={})
+        assert sorted((x.purpose, x.peak_mb) for x in r.drain_finished()) == [("a", 4000), ("b", 500)]
+
+    def test_unconfirmed_ones_teach_nothing(self):
+        r = self.book()
+        r.add(gpu=0, mb=1000, purpose="a", now=0)
+        r.outstanding(0, now=10, alive=set(), measured={})
+        assert r.drain_finished() == []
+
+
+class TestNeedBook:
+    """What a purpose really needed, learned from finished reservations: a load is reserved at least its largest
+    recent peak + 10 %, so a too-low declared need corrects itself after one run."""
+
+    def test_learned_peak_raises_a_low_declared_need(self):
+        b = NeedBook()
+        assert b.need("stt:whisperx:medium", 1500) == 1500          # nothing learned yet
+        b.observe("stt:whisperx:medium", 2690)
+        assert b.need("stt:whisperx:medium", 1500) == 2959           # ceil(2690 * 1.1)
+        assert b.need("stt:whisperx:medium", 4000) == 4000           # a higher declared need still wins
+        assert b.need("stt:whisperx:small", 1500) == 1500            # per purpose
+
+    def test_the_largest_of_the_last_five_counts(self):
+        b = NeedBook()
+        for mb in (5000, 1000, 1000, 1000, 1000):
+            b.observe("x", mb)
+        assert b.need("x", 0) == 5500
+        b.observe("x", 1000)                                          # the 5000 falls out of the window
+        assert b.need("x", 0) == 1100
+
+    def test_nonsense_is_ignored_and_it_round_trips(self):
+        b = NeedBook()
+        b.observe("x", 0)
+        b.observe("x", -5)
+        b.observe("", 900)
+        assert b.need("x", 10) == 10 and b.to_dict() == {}
+        b.observe("y", 900)
+        assert NeedBook.from_dict(b.to_dict()).need("y", 0) == 990
+        junk = NeedBook.from_dict({"y": "lots", "z": [1, "a", None], 5: [3]})
+        assert junk.need("y", 7) == 7 and junk.need("z", 0) == 2
 
 
 def test_plan_room_counts_outstanding_reservations():

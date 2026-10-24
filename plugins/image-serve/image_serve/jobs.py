@@ -1,6 +1,6 @@
 """Running image jobs that a caller can cancel (POST /v1/images/cancel).
 
-A caller (the Spielwiese's comparison runner, say) tags a generation with an `X-Request-Id` it made up --
+A caller (the Playground's comparison runner, say) tags a generation with an `X-Request-Id` it made up --
 random, unguessable, 16-64 of [A-Za-z0-9_-]. While the job runs, the provider path registers how to stop
 exactly that job: for ComfyUI and MOSS's ComfyUI, delete its prompt from the queue if it hasn't started and
 interrupt it if it's the one running (ComfyUI's /interrupt with `prompt_id` only stops that prompt), so one

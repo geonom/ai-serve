@@ -1,5 +1,5 @@
 """A streamed chat whose upstream refuses the request must fail with that status and message -- not 200 with
-the error JSON inside an event stream (2026-10-20: the Spielwiese showed an empty answer bubble when an "Auto"
+the error JSON inside an event stream (2026-10-20: the Playground showed an empty answer bubble when an "Auto"
 chat landed on a reranker: llama-server answered 500 "the current context does not logits computation")."""
 import json
 import threading

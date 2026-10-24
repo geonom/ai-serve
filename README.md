@@ -5,7 +5,7 @@
 A gateway for local AI on your own machine: language models (llama.cpp), text-to-speech, speech-to-text, image
 generation and document reading – behind **one** OpenAI-compatible API (`/v1/...`) plus a dashboard. Installed
 models are loaded when a request needs them (the plugin serving them is started too) and unloaded after a while unused
-or when the memory is needed for something else. Apps such as the Spielwiese are started by you, or with ai-serve
+or when the memory is needed for something else. Apps such as the Playground are started by you, or with ai-serve
 (Autostart).
 
 > **Alpha.** Developed and tested on Linux with NVIDIA GPUs; first runs on one Apple Silicon Mac. AMD, Vulkan-only and
@@ -46,8 +46,8 @@ works without one.
 
 Then: `./ai-serve start` → <http://localhost:8030> (another port: `AI_SERVE_PORT=8031 ./ai-serve start`;
 in the background: `./ai-serve start -d`; also `./ai-serve stop`, `restart`, `status`). The
-**Spielwiese** ("playground", under *Apps & Services*) lets you try everything the gateway offers. The dashboard and the
-Spielwiese are in English, with a switch to German at the top right.
+**Playground** (under *Apps & Services*) lets you try everything the gateway offers. The dashboard and the
+Playground are in English, with a switch to German at the top right.
 
 ## Extend
 
@@ -58,7 +58,7 @@ each kind, in [docs/models.md](docs/models.md).
 
 Everything except llama.cpp is a **plugin**: a separate program with a small manifest (`llama-serve.service.json`)
 that ai-serve starts when it's needed. Bundled: `plugins/tts-serve`, `plugins/stt-serve`, `plugins/sd-serve`, `plugins/image-serve`
-(ComfyUI). Models a plugin offers but that aren't installed yet can be downloaded from the Spielwiese or the
+(ComfyUI). Models a plugin offers but that aren't installed yet can be downloaded from the Playground or the
 dashboard (*Compute & models → Downloads*). More
 from any git repository:
 
@@ -73,7 +73,7 @@ Two plugins live in repositories of their own, as examples: [ai-serve-piper](htt
 [ai-serve-strata](https://github.com/geonom/ai-serve-strata).
 
 Existing OpenAI-compatible model servers such as **Ollama** or **LM Studio** can be added in the dashboard
-(*Compute & models → More model servers*), on custom ports too. The other way round, the Spielwiese can talk to such a
+(*Compute & models → More model servers*), on custom ports too. The other way round, the Playground can talk to such a
 server directly. Both were tried with a plain llama-server standing in – not yet with Ollama or LM Studio themselves. Writing a plugin: [docs/plugins.md](docs/plugins.md),
 [docs/service-manifest.md](docs/service-manifest.md). API: [docs/API.md](docs/API.md).
 
@@ -106,7 +106,7 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | Chatterbox (TTS), Whisper (STT) offers in `./ai-serve setup` | engines run here; the offers themselves not run on a clean machine | not tried (Chatterbox uses MLX there) | – |
 | Iris (sd-serve) | ✅ clean setup, Vulkan build | memory check fixed after a refusal; an image not confirmed | – |
 | ComfyUI (image-serve): Z-Image, Qwen-Image-Edit, style transfer, MOSS | ✅ clean setup | not tried (int8/fp8 weights are made for CUDA; may be slow or fail) | – |
-| Downloads from the Spielwiese / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
+| Downloads from the Playground / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
 | More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |
 | `./ai-serve plugin add <git-url>` | ✅ with [ai-serve-strata](https://github.com/geonom/ai-serve-strata) and [ai-serve-piper](https://github.com/geonom/ai-serve-piper) (cloned, manifest checked, setup.sh) | – | – |
 | Piper (CPU speech) through ai-serve-piper | ✅ fresh copy: plugin add, voice downloaded from the dashboard API, speech via `/v1/audio/speech` | not tried | Raspberry Pi: not tried |

@@ -7,11 +7,11 @@ from backend.services import updates
 
 def test_only_apps_and_plugins_of_this_installation(tmp_path):
     root = tmp_path / "ai-serve"
-    for d in ("apps/spielwiese", "plugins/image-serve"):
+    for d in ("apps/playground", "plugins/image-serve"):
         (root / d).mkdir(parents=True)
     other = tmp_path / "Projekte" / "storytime"
     other.mkdir(parents=True)
-    assert updates.part_of_installation(str(root / "apps/spielwiese"), str(root))
+    assert updates.part_of_installation(str(root / "apps/playground"), str(root))
     assert updates.part_of_installation(str(root / "plugins/image-serve"), str(root))
     assert not updates.part_of_installation(str(other), str(root))          # someone else's project
     assert not updates.part_of_installation(str(root / "plugins"), str(root))

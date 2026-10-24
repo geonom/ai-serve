@@ -11,9 +11,18 @@ Do NOT bump for UI-only, ComfyUI, documentation, or other changes that
 don't touch the llama.cpp/model-serving path.
 """
 
-BACKEND_VERSION = 10
+BACKEND_VERSION = 11
 
 VERSION_LOG = [
+    {
+        "version": 11,
+        "date": "2026-10-24",
+        "change": (
+            "GPU provisioning: a refused preflight is 507; reservations shrink only by growth past the process's "
+            "baseline at confirm; the GPU manager learns each purpose's real peak and reserves/chooses GPUs by it "
+            "(LLM purposes per model and context size)."
+        ),
+    },
     {
         "version": 10,
         "date": "2026-10-22",

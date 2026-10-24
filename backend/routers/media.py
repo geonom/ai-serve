@@ -865,6 +865,7 @@ async def openai_audio_transcriptions(
     model: str = Form("whisper-1"),
     language: Optional[str] = Form(None),
     response_format: str = Form("json"),
+    keep_alive: Optional[int] = Form(None),   # extension: seconds Whisper stays loaded afterwards (default 300)
 ):
     """Same transcription as POST /api/stt/transcribe, wrapped in the OpenAI
     multipart-upload shape. `model` picks a transcription engine by id or alias (e.g. `moss-transcribe` ->
@@ -872,10 +873,13 @@ async def openai_audio_transcriptions(
     transcribe_stt(), whose ffmpeg-backed decoding content-sniffs regardless of container.
     `language` is forwarded (auto-detect is known-unreliable, see CLAUDE.md's STT notes).
     """
+    if keep_alive is not None and not 1 <= keep_alive <= 86400:
+        raise HTTPException(status_code=400, detail="keep_alive: 1 .. 86400 seconds")
     content = await file.read()
     audio_base64 = base64.b64encode(content).decode("utf-8")
     engine = await _transcription_engine(model)
-    stt_req = STTTranscribeRequest(audio_base64=audio_base64, language=language or None, engine=engine)
+    stt_req = STTTranscribeRequest(audio_base64=audio_base64, language=language or None, engine=engine,
+                                   **({"keep_alive": keep_alive} if keep_alive is not None else {}))
     result = await transcribe_stt(stt_req)
     return openai_transcription_response(result, response_format, language)
 

@@ -1,5 +1,5 @@
 """/api/comfyui/* goes unchanged to the image plugin that declares `comfyui_api` (image-serve) -- apps from before
-image plugins (Munin, dynasty, language_learning, train-serve, Liruna, the Spielwiese) keep working."""
+image plugins (Munin, dynasty, language_learning, train-serve, Liruna, the Playground) keep working."""
 import json
 from pathlib import Path
 

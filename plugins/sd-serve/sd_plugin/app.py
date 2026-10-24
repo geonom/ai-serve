@@ -69,6 +69,10 @@ def _device_for(gpu: int) -> str:
     return rules.pick_device(out, _gpu_name(gpu))
 
 
+class _Restart(Exception):
+    """sd-server ran out of memory or died mid-image: start it again where the GPU manager has room."""
+
+
 class Server:
     def __init__(self):
         self.proc: Optional[subprocess.Popen] = None
@@ -163,51 +167,70 @@ class Server:
         return True
 
     async def generate(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """One image. sd-server out of memory, or gone mid-image (2026-10-24: nothing may fail just because another
+        model fills the GPU) -> stopped, the GPU manager asked again (it may unload an idle model or pick the other
+        GPU), the image made once more; failing again that way -> 507, retryable."""
         async with self.lock:   # one request at a time: one GPU, one model
             self.busy += 1
-            reservation = None
             try:
-                running = self.alive()
-                if not running or not self.loaded:
-                    # where to run: the GPU manager picks (start / stay / move) and reserves before the load
-                    r = await self._gateway("POST", "/api/coordination/gpu-preflight", json={
-                        "purpose": "Iris-3B", "need_mb": NEED_MB, "current_gpu": self.gpu if running else None,
-                        "movable": True})
-                    d = r.json() if r.status_code == 200 else {}
-                    if r.status_code == 507:
-                        raise HTTPException(status_code=507, detail=r.json().get("detail", "GPUs held exclusively"))
-                    if not d.get("granted"):
-                        raise HTTPException(status_code=507, detail=f"Iris: not enough GPU memory -- {d.get('reason') or r.text[:200]}")
-                    reservation = d.get("reservation_id")
-                    if running and d.get("mode") == "move":
+                for attempt in (1, 2):
+                    try:
+                        return await self._generate_once(body)
+                    except _Restart as e:
+                        logger.warning(f"sd-server: {e} (attempt {attempt}) -- restarting it where there is room")
                         await self.stop()
-                        running = False
-                    if not running:
-                        await self._start(int(d["gpu"]))
-                    if reservation and self.pid:
-                        await self._gateway("POST", f"/api/coordination/reservations/{reservation}/confirm",
-                                            json={"pid": self.pid})
-                async with httpx.AsyncClient(timeout=TIMEOUT_S) as c:
-                    r = await c.post(f"{SD}/v1/images/generations", json=body)
-                if r.status_code != 200:
-                    logger.error(f"sd-server {r.status_code}: {r.text[:300]}")
-                    raise HTTPException(status_code=500, detail="Iris: image generation failed")
-                data = [{"b64_json": d["b64_json"]} for d in r.json().get("data", []) if d.get("b64_json")]
-                if not data:
-                    raise HTTPException(status_code=500, detail="Iris: no image returned")
-                self.loaded = True
-                return {"created": int(time.time()), "data": data}
-            except httpx.HTTPError as e:
-                raise HTTPException(status_code=503, detail=f"Iris: {type(e).__name__} (ai-serve or sd-server unreachable)")
+                raise HTTPException(status_code=507, detail="Iris ran out of GPU memory -- try again in a moment")
             finally:
                 self.busy -= 1
                 self.last_used = time.time()
-                if reservation:
-                    try:
-                        await self._gateway("DELETE", f"/api/coordination/reservations/{reservation}")
-                    except httpx.HTTPError:
-                        pass
                 self._schedule_idle_stop()
+
+    async def _generate_once(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        reservation = None
+        try:
+            running = self.alive()
+            if not running or not self.loaded:
+                # where to run: the GPU manager picks (start / stay / move) and reserves before the load
+                r = await self._gateway("POST", "/api/coordination/gpu-preflight", json={
+                    "purpose": "Iris-3B", "need_mb": NEED_MB, "current_gpu": self.gpu if running else None,
+                    "movable": True})
+                d = r.json() if r.status_code == 200 else {}
+                if r.status_code == 507:
+                    raise HTTPException(status_code=507, detail=r.json().get("detail", "GPUs held exclusively"))
+                if not d.get("granted"):
+                    raise HTTPException(status_code=507, detail=f"Iris: not enough GPU memory -- {d.get('reason') or r.text[:200]}")
+                reservation = d.get("reservation_id")
+                if running and d.get("mode") == "move":
+                    await self.stop()
+                    running = False
+                if not running:
+                    await self._start(int(d["gpu"]))
+                if reservation and self.pid:
+                    await self._gateway("POST", f"/api/coordination/reservations/{reservation}/confirm",
+                                        json={"pid": self.pid})
+            try:
+                async with httpx.AsyncClient(timeout=TIMEOUT_S) as c:
+                    r = await c.post(f"{SD}/v1/images/generations", json=body)
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError) as e:
+                raise _Restart(f"sd-server went away ({type(e).__name__})")
+            if r.status_code != 200:
+                logger.error(f"sd-server {r.status_code}: {r.text[:300]}")
+                if "out of memory" in r.text.lower():
+                    raise _Restart("out of memory")
+                raise HTTPException(status_code=500, detail="Iris: image generation failed")
+            data = [{"b64_json": d["b64_json"]} for d in r.json().get("data", []) if d.get("b64_json")]
+            if not data:
+                raise HTTPException(status_code=500, detail="Iris: no image returned")
+            self.loaded = True
+            return {"created": int(time.time()), "data": data}
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=503, detail=f"Iris: {type(e).__name__} (ai-serve or sd-server unreachable)")
+        finally:
+            if reservation:   # held through the first image (its peak), then the measured usage counts
+                try:
+                    await self._gateway("DELETE", f"/api/coordination/reservations/{reservation}")
+                except httpx.HTTPError:
+                    pass
 
     def _schedule_idle_stop(self) -> None:
         if self.idle and not self.idle.done():

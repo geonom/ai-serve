@@ -15,17 +15,23 @@ PNG = "iVBORw0KGgo="
 @pytest.fixture
 def world(monkeypatch):
     w = {"calls": [], "grant": {"granted": True, "gpu": 0, "mode": "start", "reservation_id": "r1"},
-         "running": False, "started_on": [], "stopped": 0}
+         "running": False, "started_on": [], "stopped": 0, "sd_fail": []}
     real = httpx.AsyncClient
 
     def handler(request: httpx.Request):
         body = json.loads(request.content) if request.content else None
         w["calls"].append((request.method, request.url.port, request.url.path, body))
         if request.url.path == "/api/coordination/gpu-preflight":
-            return httpx.Response(200, json=w["grant"])
+            g = w["grant"]
+            return httpx.Response(507 if not g.get("granted") and g.get("as_507") else 200, json=g)
         if request.url.path.startswith("/api/coordination/reservations/"):
             return httpx.Response(200, json={})
         if request.url.path == "/v1/images/generations":
+            if w["sd_fail"]:
+                fail = w["sd_fail"].pop(0)
+                if fail == "crash":
+                    raise httpx.RemoteProtocolError("server disconnected")
+                return httpx.Response(500, text=fail)
             return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
         return httpx.Response(404)
 
@@ -83,6 +89,36 @@ def test_no_room_is_507_and_nothing_starts(world):
     r = _gen(world)
     assert r.status_code == 507 and "CosyVoice is busy" in r.json()["detail"]
     assert world["started_on"] == [] and not any(c[2] == "/v1/images/generations" for c in world["calls"])
+
+
+def test_a_no_from_a_current_gateway_is_its_507(world):
+    """Since 2026-10-24 ai-serve answers a no with 507 (and the reason as detail)."""
+    world["grant"] = {"granted": False, "as_507": True, "detail": "GPU 0: gemma is busy", "reason": "GPU 0: gemma is busy"}
+    r = _gen(world)
+    assert r.status_code == 507 and "gemma is busy" in r.json()["detail"] and world["started_on"] == []
+
+
+@pytest.mark.parametrize("fail", ["ggml_cuda: out of memory", "crash"])
+def test_out_of_memory_or_a_crash_restarts_it_where_there_is_room(world, fail):
+    """2026-10-24 (owner: nothing may fail just because another model fills the GPU): sd-server out of memory, or
+    gone mid-image -> stopped, the GPU manager asked again (it may unload an idle model or pick the other GPU),
+    started there, the image made once more."""
+    world["sd_fail"] = [fail]
+    r = _gen(world)
+    assert r.status_code == 200, r.text
+    preflights = [c for c in world["calls"] if c[2] == "/api/coordination/gpu-preflight"]
+    assert len(preflights) == 2 and world["stopped"] == 1 and world["started_on"] == [0, 0]
+
+
+def test_out_of_memory_twice_is_a_retryable_507(world):
+    world["sd_fail"] = ["out of memory", "out of memory"]
+    r = _gen(world)
+    assert r.status_code == 507 and "try again" in r.json()["detail"].lower()
+
+
+def test_other_sd_server_errors_stay_500(world):
+    world["sd_fail"] = ["invalid prompt"]
+    assert _gen(world).status_code == 500 and world["stopped"] == 0
 
 
 def test_idle_server_moves_when_the_manager_says_so(world):

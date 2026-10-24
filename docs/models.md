@@ -1,7 +1,7 @@
 # Using more models
 
 What it takes to add a model, per kind – from "drop a file in a folder" to "write a few lines of code". Downloads
-offered by a plugin (*Compute & models → Downloads*, or the Spielwiese's pages) are the easiest way and come first;
+offered by a plugin (*Compute & models → Downloads*, or the Playground's pages) are the easiest way and come first;
 this page is about everything else.
 
 | Kind | How hard | In short |
@@ -70,7 +70,7 @@ documents through a plain chat request with an image.
 tts-serve (`plugins/tts-serve`) brings six engines: Chatterbox, Chatterbox through MLX (Apple Silicon), CosyVoice 3,
 OmniVoice, Qwen3-TTS and VoxCPM2. Each lives in `providers/<id>/` with its own Python environment.
 
-- **Set up an engine:** *Downloads* in the dashboard or the Spielwiese, or `plugins/tts-serve/providers/<id>/setup.sh`.
+- **Set up an engine:** *Downloads* in the dashboard or the Playground, or `plugins/tts-serve/providers/<id>/setup.sh`.
   Some need an NVIDIA GPU (the Downloads list only offers what fits the machine). OmniVoice is for non-commercial use
   only.
 - **Without a GPU** (a Mac, a Raspberry Pi, an older PC): the Piper plugin speaks fast on the CPU, one voice per
@@ -110,7 +110,7 @@ image-serve (`plugins/image-serve`, ComfyUI) offers Z-Image Turbo, ERNIE Turbo, 
 - **LoRAs** for Z-Image and ERNIE: `.safetensors` into `models/loras/<subfolder>/`, then `lora_name` on
   `/api/comfyui/generate` (`GET /api/comfyui/loras` lists them). An optional `<name>.json` next to it can carry its
   trigger words.
-- **A new model in the API and the Spielwiese** (`/v1/images/generations`, `/v1/images/edits`): today that's code in
+- **A new model in the API and the Playground** (`/v1/images/generations`, `/v1/images/edits`): today that's code in
   image-serve. An image model rarely comes alone – it usually needs its own text encoder and VAE (sometimes a turbo
   LoRA), its own workflow (sampler, guidance, latent size), and often a newer ComfyUI or custom nodes (MOSS-Image
   needed ComfyUI v0.42, Qwen-Image 2.1 v0.37 plus a patched ComfyUI-GGUF). So: build and test the workflow in

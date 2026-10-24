@@ -1,7 +1,7 @@
 """Downloads a plugin offers (contract endpoint `install`, docs/plugins.md): the gateway lists them across plugins
-and starts one on the owner's request. Owner, 2026-10-22: missing models should be downloadable from the Spielwiese
+and starts one on the owner's request. Owner, 2026-10-22: missing models should be downloadable from the Playground
 and the dashboard instead of empty model lists -- only by the owner (this machine / the owner's devices; the
-Spielwiese passes it on only for its owner).
+Playground passes it on only for its owner).
 
 Rules: the request names only an item id (the plugin decides which files, with checksums); unknown plugins, plugins
 without `install`, and ids that aren't plain item ids are refused; whatever the plugin answers is checked field by

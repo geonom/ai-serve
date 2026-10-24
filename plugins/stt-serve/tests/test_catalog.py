@@ -1,4 +1,4 @@
-"""stt-serve describes its engines (owner, 2026-10-20: the Spielwiese should offer whatever the gateway
+"""stt-serve describes its engines (owner, 2026-10-20: the Playground should offer whatever the gateway
 can do, open for future models): which engines exist, whether they're set up, and the options each
 takes as plain form fields -- every field name is a real STTTranscribeRequest field."""
 from stt_serve.catalog import engine_catalog

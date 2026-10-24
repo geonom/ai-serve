@@ -6,6 +6,13 @@ class State:
     whisperx_model: Optional[Any] = None
     whisperx_status: str = "idle"
     whisperx_keep_alive_task: Optional[Any] = None
+    whisperx_device: Optional[str] = None        # "cuda:<n>" or "cpu"
+    whisperx_reservation: Optional[str] = None   # GPU reservation kept until the first transcription is done
+    whisperx_last_used: float = 0.0              # reported to the GPU manager (least recently used goes first)
+    # the workers' GPU reservations, kept until their first job is done
+    nemotron_diarize_reservation: Optional[str] = None
+    moss_transcribe_reservation: Optional[str] = None
+    diarize_reservation: Optional[str] = None
     # whisperx-backend diarization (pyannote) + the word-alignment model it needs
     diarize_pipeline: Optional[Any] = None
     diarize_device: Optional[str] = None

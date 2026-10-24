@@ -25,7 +25,7 @@ checked while downloading.
 ## Setup
 
 It comes with ai-serve (`plugins/image-serve`). Nothing has to be done by hand (tried on Linux): the plugin starts even
-before ComfyUI is set up, and the Spielwiese or the dashboard (*Compute & models → Downloads*) offer ComfyUI and the models -- a
+before ComfyUI is set up, and the Playground or the dashboard (*Compute & models → Downloads*) offer ComfyUI and the models -- a
 model download sets up ComfyUI first. By hand:
 
 ```bash
@@ -41,12 +41,12 @@ use a ComfyUI you already have, set `COMFYUI_DIR` (and `COMFYUI_PYTHON`, `COMFYU
 
 **MOSS-Image with `layout`:** `/v1/images/generations` with `"model": "moss-turbo-4"` (or `moss`, `moss-turbo-8`, the
 `-bf16` variants) takes an extra `layout`: up to 20 elements `{"box": [left, top, right, bottom] (0..1), "kind":
-"object"|"character"|"text", "caption": "...", "text": "..." (kind text)}` -- the Spielwiese's *With positions* page
+"object"|"character"|"text", "caption": "...", "text": "..." (kind text)}` -- the Playground's *With positions* page
 draws them. ComfyUI runs on 127.0.0.1:8192 behind this plugin (not 8188,
 so a ComfyUI you already run keeps its port).
 
 **Getting MOSS-Image on an older setup:** image-serve's own ComfyUI (`./ComfyUI`, e.g. set up before setup.sh pinned
-v0.42) is updated to the pinned release when you download MOSS-Image (Spielwiese → *With positions*, or the
+v0.42) is updated to the pinned release when you download MOSS-Image (Playground → *With positions*, or the
 dashboard's *Downloads*) or run `./setup.sh` again; a running ComfyUI is restarted once it's idle. A ComfyUI of your
 own (`COMFYUI_DIR` in `.env`) is never changed: MOSS is then listed with the reason, and you update that ComfyUI
 yourself (`git fetch --depth 1 origin tag v0.42.4 && git checkout v0.42.4`, then its `requirements.txt` into its

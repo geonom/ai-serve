@@ -229,7 +229,7 @@ def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool) -> None:
     ENV_FILE.write_text(O.merge_env(text, O.env_updates(picked, llama_server)), encoding="utf-8")
     port = os.environ.get("AI_SERVE_PORT") or "8030"
     print(f"\nDone. Settings: {ENV_FILE.name}. Start: ./ai-serve start  -> http://localhost:{port}"
-          + ("  (Spielwiese: Apps & Services)" if (HERE / "apps" / "spielwiese").is_dir() else ""))
+          + ("  (Playground: Apps & Services)" if (HERE / "apps" / "playground").is_dir() else ""))
 
 
 def plugin_add(url: str, name: Optional[str], yes: bool) -> None:
@@ -293,7 +293,7 @@ def model_add(url: str, file: Optional[str], mmproj: str, yes: bool) -> None:
             print()
             raise ValueError(str(e))
         print("  -- checked")
-    print(f"Ready: {plan['model']} -- use it with \"model\": \"{plan['model']}\" (or pick it in the Spielwiese).")
+    print(f"Ready: {plan['model']} -- use it with \"model\": \"{plan['model']}\" (or pick it in the Playground).")
 
 
 def main(argv=None) -> int:

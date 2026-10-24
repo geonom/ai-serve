@@ -1,6 +1,6 @@
 """/api/comfyui/* -- ComfyUI's job API (generate / edit / style-transfer / batch / task / loras / workflows / images /
 start / stop / unload / status ...), from before image plugins existed and still used by several apps (Munin,
-dynasty, language_learning, train-serve, Liruna, the Spielwiese). Since 2026-10-21 ComfyUI is the image-serve plugin;
+dynasty, language_learning, train-serve, Liruna, the Playground). Since 2026-10-21 ComfyUI is the image-serve plugin;
 this forwards the whole prefix to the image plugin that declares `comfyui_api` (docs/plugins.md), unchanged.
 Tests: tests/unit/test_comfyui_compat.py."""
 from __future__ import annotations

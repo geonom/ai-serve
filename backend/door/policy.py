@@ -13,6 +13,9 @@ Threat model / rules (tests/unit/test_door_policy.py):
 - The dashboard (8030) trusts loopback, and the door connects from loopback -> never published.
 - Names are plain DNS labels, unique, not the door's own (`login`, `www`).
 - Every share names at least one group or person -- there is no "everyone".
+- A renamed share keeps its old addresses (`previous`) as redirects to its own new name, for the same
+  people (the door builds them; never to another host). They follow the name rules and belong to no
+  other share, old or new.
 - Rules are re-applied whenever routes are built, so a manifest that later becomes `single`
   (or `ui: false`, or disappears) drops out of the door instead of staying open.
 """
@@ -40,9 +43,16 @@ class Share:
     name: str
     groups: Tuple[str, ...] = ()
     users: Tuple[str, ...] = ()
+    previous: Tuple[str, ...] = ()   # earlier names, redirected to `name` by the door
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"name": self.name, "groups": list(self.groups), "users": list(self.users)}
+        d = {"name": self.name, "groups": list(self.groups), "users": list(self.users)}
+        if self.previous:
+            d["previous"] = list(self.previous)
+        return d
+
+    def names(self) -> Tuple[str, ...]:
+        return (self.name, *self.previous)
 
 
 def _principals(value: Any) -> Tuple[str, ...]:
@@ -53,21 +63,37 @@ def _principals(value: Any) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(value))
 
 
-def make_share(app: str, name: Any, groups: Any, users: Any) -> Share:
-    if not isinstance(name, str) or not _NAME.match(name) or name in RESERVED:
+def _label(name: Any) -> bool:
+    return isinstance(name, str) and bool(_NAME.match(name)) and name not in RESERVED
+
+
+def make_share(app: str, name: Any, groups: Any, users: Any, previous: Any = None) -> Share:
+    if not _label(name):
         raise DoorError("Address: only lowercase letters, digits and hyphens (not login/www)")
-    return Share(app=app, name=name, groups=_principals(groups), users=_principals(users))
+    previous = [] if previous is None else previous
+    if not isinstance(previous, (list, tuple)) or not all(_label(p) for p in previous):
+        raise DoorError("Earlier addresses: only lowercase letters, digits and hyphens (not login/www)")
+    if name in previous:
+        raise DoorError("An earlier address can't be the address itself.")
+    return Share(app=app, name=name, groups=_principals(groups), users=_principals(users),
+                 previous=tuple(dict.fromkeys(previous)))
+
+
+def taken_names(shares) -> Dict[str, str]:
+    """Every address in use, old or new -> its app."""
+    return {n: s.app for s in shares for n in s.names()}
 
 
 def check_share(m: ServiceManifest, s: Share, *, owner: Optional[str], taken: Mapping[str, str]) -> None:
     """Raises DoorError if the share must not exist. `taken`: name -> app id of the other shares."""
-    make_share(s.app, s.name, list(s.groups), list(s.users))  # shape (also for Share built elsewhere)
+    make_share(s.app, s.name, list(s.groups), list(s.users), list(s.previous))  # shape (also for Share built elsewhere)
     if not m.ui:
         raise DoorError(f"{m.name} has no page of its own and is never shared outside.")
     if m.port in FORBIDDEN_PORTS:
         raise DoorError(f"Port {m.port} is never shared outside.")
-    if taken.get(s.name, s.app) != s.app:
-        raise DoorError(f"The address {s.name} already belongs to {taken[s.name]}.")
+    for n in s.names():
+        if taken.get(n, s.app) != s.app:
+            raise DoorError(f"The address {n} already belongs to {taken[n]}.")
     if not s.groups and not s.users:
         raise DoorError("Choose at least one group or person.")
     if m.identity == "single":
@@ -84,7 +110,7 @@ def parse_shares(data: Any) -> Tuple[Dict[str, Share], List[str]]:
         try:
             if not isinstance(v, dict):
                 raise DoorError("object expected")
-            shares[app] = make_share(app, v.get("name"), v.get("groups"), v.get("users"))
+            shares[app] = make_share(app, v.get("name"), v.get("groups"), v.get("users"), v.get("previous"))
         except DoorError as e:
             errors.append(f"{app}: {e}")
     return shares, errors
@@ -95,7 +121,7 @@ def routes_doc(shares: Mapping[str, Share], manifests: Mapping[str, ServiceManif
     """The door's routes.json from the shares; shares that no longer pass are left out (with why)."""
     routes: List[Dict[str, Any]] = []
     errors: Dict[str, str] = {}
-    taken = {s.name: s.app for s in shares.values()}
+    taken = taken_names(shares.values())
     for app, s in sorted(shares.items()):
         m = manifests.get(app)
         if m is None:
@@ -108,6 +134,8 @@ def routes_doc(shares: Mapping[str, Share], manifests: Mapping[str, ServiceManif
             continue
         route = {"name": s.name, "upstream": f"http://127.0.0.1:{m.port}", "groups": list(s.groups),
                  "users": list(s.users), "app": m.id, "title": m.name[:80], "description": m.description[:400]}
+        if s.previous:
+            route["previous"] = list(s.previous)   # the door redirects these to the new name
         if m.maturity:
             route["maturity"] = m.maturity   # shown on the overview page for the people it is shared with
         routes.append(route)

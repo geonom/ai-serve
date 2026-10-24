@@ -1,4 +1,4 @@
-"""What stt-serve offers, described for clients (owner, 2026-10-20: the Spielwiese should offer whatever
+"""What stt-serve offers, described for clients (owner, 2026-10-20: the Playground should offer whatever
 the gateway can do, open for future models). Pure: availability comes in as arguments.
 
 Each engine lists its options as plain form fields -- `name` is an STTTranscribeRequest field, `type`
@@ -32,7 +32,7 @@ def engine_catalog(*, nemotron_ready: bool, moss_ready: bool, loaded: Iterable[s
     moss = {
         "id": "moss", "label": "MOSS-Transcribe-Diarize",
         "description": "Text, speakers and times in one pass, up to 90 minutes; no word timestamps."
-                       + ("" if moss_ready else " Not set up yet -- it can be downloaded (dashboard or Spielwiese) on a machine with an NVIDIA GPU."),
+                       + ("" if moss_ready else " Not set up yet -- it can be downloaded (dashboard or Playground) on a machine with an NVIDIA GPU."),
         "available": bool(moss_ready), "loaded": "moss" in loaded,
         "outputs": ["text", "segments", "speakers"],
         "fields": [

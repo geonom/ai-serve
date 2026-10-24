@@ -481,7 +481,7 @@ async def start_server(req: StartRequest):
         need = int(get_model_size_mb(req.model_path) + estimate_kv_overhead_mb(req.ctx_size))
         try:
             reservation, _, why = await MANAGER.reserve(target_gpu_id, need,
-                                                        f"llm:{os.path.basename(req.model_path)}")
+                                                        f"llm:{os.path.basename(req.model_path)}@{req.ctx_size}")
         except HTTPException:
             if state.managed_processes.get(port, {}).get("reserving"):
                 state.managed_processes.pop(port, None)

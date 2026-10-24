@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, StrictStr
 
 from backend.config import DOOR_SHARES_FILE
-from backend.door.policy import DoorError, Share, check_share, make_share, parse_shares, routes_doc
+from backend.door.policy import DoorError, Share, check_share, make_share, parse_shares, routes_doc, taken_names
 from backend.plugins import registry
 from backend.routers import services as services_router
 from backend.services import tailscale
@@ -181,9 +181,13 @@ async def put_share(service_id: str, req: ShareRequest, request: Request):
     if m is None:
         raise HTTPException(status_code=404, detail="unknown service")
     shares = load_shares()
+    old = shares.get(m.id)
+    # a renamed share keeps its earlier addresses: the door redirects them (links people already have keep working)
+    previous = [p for p in ((*old.previous, old.name) if old and old.name != req.name else (old.previous if old else ()))
+                if p != req.name]
     try:
-        s = make_share(m.id, req.name, req.groups, req.users)
-        check_share(m, s, owner=owner_sub(), taken={x.name: x.app for x in shares.values()})
+        s = make_share(m.id, req.name, req.groups, req.users, previous)
+        check_share(m, s, owner=owner_sub(), taken=taken_names(shares.values()))
     except DoorError as e:
         raise HTTPException(status_code=400, detail=str(e))
     restart = m.id not in shares or shares[m.id].name != s.name

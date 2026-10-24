@@ -1,4 +1,4 @@
-"""GET /v1/audio/models: every speech engine the gateway can drive (owner, 2026-10-20: the Spielwiese should
+"""GET /v1/audio/models: every speech engine the gateway can drive (owner, 2026-10-20: the Playground should
 offer whatever runs through the gateway, open for future models). Pure: tts-serve's /v1/engines and
 stt-serve's /v1/engines come in, the client-facing catalog goes out. The engines describe themselves there
 (modes/inputs/params resp. form fields); the gateway only adds what it knows itself -- a clone engine with

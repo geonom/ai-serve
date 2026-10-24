@@ -94,3 +94,29 @@ def test_routes_carry_maturity():
                         port=5180, bind="127.0.0.1", match=("v",), identity="multi", maturity="beta")
     doc, _ = routes_doc({"pv-calc": share()}, {"pv-calc": m}, owner="alex")
     assert doc["routes"][0]["maturity"] == "beta"
+
+
+def test_a_renamed_share_keeps_its_old_address_as_a_redirect():
+    """2026-10-24: spielwiese -> playground; the door redirects the old name for the same people."""
+    m = manifest(id="playground")
+    s = share(app="playground", name="playground", previous=("spielwiese",))
+    check_share(m, s, owner="alex", taken={})
+    doc, errors = routes_doc({"playground": s}, {"playground": m}, owner="alex")
+    assert errors == {} and doc["routes"][0]["previous"] == ["spielwiese"]
+    assert s.to_dict()["previous"] == ["spielwiese"]
+    # no previous names: the route stays as before (the door compares the routes)
+    doc, _ = routes_doc({"pv-calc": share()}, {"pv-calc": manifest()}, owner="alex")
+    assert "previous" not in doc["routes"][0] and "previous" not in share().to_dict()
+
+
+def test_previous_names_follow_the_rules_and_are_never_someone_elses():
+    shares, errors = parse_shares({"playground": {"name": "playground", "groups": ["apps"], "previous": ["spielwiese"]},
+                                   "x": {"name": "x", "groups": ["apps"], "previous": ["login"]},
+                                   "y": {"name": "y", "groups": ["apps"], "previous": "spielwiese"}})
+    assert shares["playground"].previous == ("spielwiese",) and len(errors) == 2
+    m = manifest(id="playground")
+    with pytest.raises(DoorError):   # an old name that is another share's address
+        check_share(m, share(app="playground", name="playground", previous=("sonne",)), owner="alex",
+                    taken={"sonne": "pv-calc"})
+    with pytest.raises(DoorError):   # or its own
+        check_share(m, share(app="playground", name="playground", previous=("playground",)), owner="alex", taken={})

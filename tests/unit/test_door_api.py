@@ -162,3 +162,16 @@ def test_domain_is_remembered_while_the_door_is_down(client):
     client.fake.down = True
     assert door_router.identity_env_for("pv-calc")["LLAMA_SERVE_IDENTITY_AUDIENCE"] == "sonne.apps.example.org"
     assert client.get("/api/door").json()["domain"] == "apps.example.org"
+
+
+def test_renaming_a_share_keeps_the_old_address_as_a_redirect(client):
+    client.put("/api/door/shares/pv-calc", json={"name": "sonne", "groups": ["apps"]})
+    r = client.put("/api/door/shares/pv-calc", json={"name": "sonnenrechner", "groups": ["apps"]})
+    assert r.status_code == 200 and r.json()["share"]["previous"] == ["sonne"]
+    assert client.fake.routes["routes"][0]["previous"] == ["sonne"]
+    # renaming back takes the name out of the old ones
+    r = client.put("/api/door/shares/pv-calc", json={"name": "sonne", "groups": ["apps"]})
+    assert r.json()["share"]["previous"] == ["sonnenrechner"]
+    # nobody else can take an old address
+    r = client.put("/api/door/shares/story", json={"name": "sonnenrechner", "users": ["alex"]})
+    assert r.status_code == 400 and "already belongs" in r.json()["detail"]

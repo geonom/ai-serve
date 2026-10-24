@@ -197,7 +197,7 @@ def test_chat_start_body_stays_compatible_with_older_agents(svc, monkeypatch):
 
 # --------------------------------------------------------------------------- snapshots without waiting
 # Found 2026-10-22: with an enrolled Mac asleep, every expired snapshot cache made the next /v1/llm/models wait the
-# full 5 s connect timeout (every other call took 5.3 s; the Spielwiese stalled loading).
+# full 5 s connect timeout (every other call took 5.3 s; the Playground stalled loading).
 
 class SlowOffline:
     """mac: unreachable (counts the attempts); pi: answers."""

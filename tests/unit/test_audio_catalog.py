@@ -1,5 +1,5 @@
 """GET /v1/audio/models: every speech engine the gateway can drive, as tts-serve and stt-serve describe
-them (owner, 2026-10-20: the Spielwiese should offer whatever runs through the gateway, open for future
+them (owner, 2026-10-20: the Playground should offer whatever runs through the gateway, open for future
 models). The gateway adds only what it knows itself: a clone engine with `default_reference` doesn't need
 a clip here (the gateway brings DEFAULT_TTS_VOICE), and a service that's down is reported, not hidden."""
 import pytest

@@ -1,6 +1,6 @@
 """Pure rules of sd-serve's ai-serve plugin (no I/O; tests tests/test_rules.py).
 
-Threat model: requests come from ai-serve, which forwards callers it doesn't fully trust (Spielwiese guests through
+Threat model: requests come from ai-serve, which forwards callers it doesn't fully trust (Playground guests through
 the door, other apps). sd-server reads generation parameters out of the prompt itself -- a
 `<sd_cpp_extra_args>{json}</sd_cpp_extra_args>` block can set any field, including file paths it then loads
 (`ad_model`, upscalers). `build_request` is therefore the only way to a body: such a block in a prompt is refused,

@@ -1,5 +1,5 @@
 """'Auto' / 'default' in a chat picks a running instance -- but only one that can chat (2026-10-20: with
-bge-m3 and the reranker running, the Spielwiese's Auto chat went to the reranker and got
+bge-m3 and the reranker running, the Playground's Auto chat went to the reranker and got
 "the current context does not logits computation")."""
 import pytest
 

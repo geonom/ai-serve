@@ -1,6 +1,6 @@
 """External model servers (backend/plugins/external.py): a standard OpenAI-compatible server the owner already runs
 -- Ollama, LM Studio, llama-server, vLLM -- added by port only, without an adapter app (owner, 2026-10-21: the
-Spielwiese and every extension should work with standard Ollama or LM Studio). Rules: loopback only (the gateway
+Playground and every extension should work with standard Ollama or LM Studio). Rules: loopback only (the gateway
 never calls elsewhere), plain ids, no ports of this gateway, the OpenAI path ends in /v1; never started or stopped
 from here (the owner runs them), no GPU of their own in the GPU manager's books."""
 import json

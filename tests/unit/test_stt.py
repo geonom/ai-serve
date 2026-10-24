@@ -137,6 +137,18 @@ def test_openai_transcriptions_forward_language(stt):
     assert stt.calls[0][2]["language"] == "de"
 
 
+def test_openai_transcriptions_take_a_keep_alive(stt):
+    """Extension (2026-10-24): how long Whisper stays loaded after this call -- V-Noveller keeps it warm during a
+    spoken conversation instead of a cold load after every 5 idle minutes."""
+    r = client.post("/v1/audio/transcriptions", files={"file": ("a.wav", b"RIFF")},
+                    data={"language": "de", "keep_alive": "1800"})
+    assert r.status_code == 200 and stt.calls[0][2]["keep_alive"] == 1800
+    client.post("/v1/audio/transcriptions", files={"file": ("a.wav", b"RIFF")})
+    assert stt.calls[1][2]["keep_alive"] == 300   # the default
+    r = client.post("/v1/audio/transcriptions", files={"file": ("a.wav", b"RIFF")}, data={"keep_alive": "-5"})
+    assert r.status_code == 400
+
+
 @pytest.mark.parametrize("method, url, body, target", [
     ("post", "/api/stt/live/start", {"language": "de"}, "/v1/live/start"),
     ("post", "/api/stt/live/chunk", {"session_id": "s", "audio_base64": "eA=="}, "/v1/live/chunk"),

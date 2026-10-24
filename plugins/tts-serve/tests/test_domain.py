@@ -249,7 +249,7 @@ class TestStatusFacts:
 
 
 # --------------------------------------------------------------------------- modes (self-description)
-# Each engine says what it can do and which inputs each mode needs, so a client (the Spielwiese,
+# Each engine says what it can do and which inputs each mode needs, so a client (the Playground,
 # StoryTime) can build its form from /v1/engines instead of knowing every engine (owner, 2026-10-20:
 # "möglichst offen für zukünftige Modelle").
 

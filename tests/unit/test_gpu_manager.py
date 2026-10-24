@@ -245,3 +245,41 @@ def test_snapshot_on_unified_memory_measures_the_consumers(tmp_path, monkeypatch
     monkeypatch.setattr(local, "_parents", lambda pids: {})
     _, cons, att = asyncio.run(m.snapshot())
     assert cons == [iris] and att == {("sd-serve:sd-server", 0): 5400}
+
+
+def roomy(tmp_path, monkeypatch):
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"), needs_file=str(tmp_path / "needs.json"))
+
+    async def snapshot():
+        return [{"index": 0, "name": "3090", "total": 24576, "free": 20000}], [], {}
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    m._procs, m._parents = [], {}
+    return m
+
+
+def test_a_load_is_reserved_what_its_purpose_needed_before(tmp_path, monkeypatch):
+    """2026-10-24: Whisper medium announced 1500 MB and used 2690 -- the manager now reserves the learned need."""
+    import json
+    (tmp_path / "needs.json").write_text(json.dumps({"stt:whisperx:medium": [2690]}))
+    m = roomy(tmp_path, monkeypatch)
+    m.load_needs()
+    res, _, _ = asyncio.run(m.reserve(0, 1500, "stt:whisperx:medium"))
+    assert res is not None and res.mb == 2959
+    assert m.need("stt:whisperx:medium", 1500) == 2959 and m.need("other", 1500) == 1500
+
+
+def test_confirm_measures_the_baseline_and_release_learns_the_peak(tmp_path, monkeypatch):
+    import json
+    m = roomy(tmp_path, monkeypatch)
+    m._procs, m._parents = [(70, 0, 300)], {}                 # stt-serve holds its CUDA context already
+    res, _, _ = asyncio.run(m.reserve(0, 1500, "stt:whisperx:medium"))
+    assert m.confirm(res.id, 70)
+    assert m.reservations.get(res.id).baseline_mb == 300
+
+    async def grown():                                        # loaded and transcribed once: 2990 MB in all
+        m._procs = [(70, 0, 2990)]
+        return [], [], {}
+    monkeypatch.setattr(m, "snapshot", grown)
+    asyncio.run(m.release_measured(res.id))
+    assert json.loads((tmp_path / "needs.json").read_text()) == {"stt:whisperx:medium": [2690]}
+    assert m.need("stt:whisperx:medium", 1500) == 2959

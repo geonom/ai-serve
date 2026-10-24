@@ -1,5 +1,5 @@
 """GET /v1/llm/models: every language model the gateway can reach, for apps to pick from (owner, 2026-10-20:
-the Spielwiese should offer everything that runs through the gateway; it listed only local files, without
+the Playground should offer everything that runs through the gateway; it listed only local files, without
 Strata or device-only models, and put embedding models into the chat list). Pure: the gateway passes in
 what it found (local files with their header traits, running instances, device snapshots, llm plugins' models).
 

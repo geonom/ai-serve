@@ -62,8 +62,8 @@ def test_broken_layout_file_falls_back_to_default(client, tmp_path):
 
 def test_events_keep_template_and_values_for_the_ui_language():
     events.clear()
-    events.record("service", "{name} started", name="Spielwiese")
+    events.record("service", "{name} started", name="Playground")
     events.record("gpu", "plain {text} without values")
     got = events.recent(2)
-    assert got[1] == {**got[1], "text": "Spielwiese started", "template": "{name} started", "vars": {"name": "Spielwiese"}}
+    assert got[1] == {**got[1], "text": "Playground started", "template": "{name} started", "vars": {"name": "Playground"}}
     assert got[0]["text"] == "plain {text} without values" and "template" not in got[0]

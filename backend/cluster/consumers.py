@@ -190,6 +190,8 @@ class Reservation:
     pid: Optional[int] = None
     confirmed_at: Optional[float] = None
     exclusive: bool = False   # the whole GPU, for as long as the process lives (Strata)
+    baseline_mb: int = 0      # what the process already held when it confirmed (only growth after that counts)
+    peak_mb: int = 0          # the most it grew by since -- handed to NeedBook when the reservation ends
 
 
 class Reservations:
@@ -203,6 +205,7 @@ class Reservations:
         self.bound_max_s = bound_max_s
         self._items: Dict[str, Reservation] = {}
         self._n = 0
+        self._finished: List[Reservation] = []   # ended bound reservations, for learning (drain_finished)
 
     def add(self, gpu: int, mb: int, purpose: str, now: float, exclusive: bool = False) -> Reservation:
         self._n += 1
@@ -214,16 +217,25 @@ class Reservations:
     def get(self, rid: str) -> Optional[Reservation]:
         return self._items.get(rid)
 
-    def confirm(self, rid: str, pid: int, now: float) -> bool:
+    def confirm(self, rid: str, pid: int, now: float, baseline_mb: int = 0) -> bool:
         r = self._items.get(rid)
         if r is None or r.pid is not None or now - r.created > self.hold_s:
             self._items.pop(rid, None)
             return False
-        r.pid, r.confirmed_at = int(pid), now
+        r.pid, r.confirmed_at, r.baseline_mb = int(pid), now, max(0, int(baseline_mb))
         return True
 
+    def _end(self, rid: str) -> None:
+        r = self._items.pop(rid, None)
+        if r is not None and r.pid is not None and not r.exclusive:
+            self._finished.append(r)
+
     def release(self, rid: str) -> None:
-        self._items.pop(rid, None)
+        self._end(rid)
+
+    def drain_finished(self) -> List[Reservation]:
+        out, self._finished = self._finished, []
+        return out
 
     def prune(self, now: float, alive: Set[int]) -> None:
         for rid, r in list(self._items.items()):
@@ -231,15 +243,23 @@ class Reservations:
                 del self._items[rid]
             elif r.pid is not None and (r.pid not in alive or
                                         (not r.exclusive and now - (r.confirmed_at or now) > self.bound_max_s)):
-                del self._items[rid]
+                self._end(rid)
+
+    def observe(self, measured: Mapping[int, int]) -> None:
+        """Remember how far each bound process has grown past its baseline."""
+        for r in self._items.values():
+            if r.pid is not None and r.pid in measured:
+                r.peak_mb = max(r.peak_mb, int(measured[r.pid]) - r.baseline_mb)
 
     def outstanding(self, gpu: int, now: float, alive: Set[int], measured: Mapping[int, int]) -> int:
-        """measured: MiB already allocated per PID (the reserving process's own)."""
+        """measured: MiB allocated per PID (the reserving process's own, incl. what it held before confirming)."""
+        self.observe(measured)
         self.prune(now, alive)
         total = 0
         for r in self._items.values():
             if r.gpu == gpu and not r.exclusive:
-                total += max(0, r.mb - int(measured.get(r.pid, 0))) if r.pid is not None else r.mb
+                grown = max(0, int(measured.get(r.pid, 0)) - r.baseline_mb) if r.pid is not None else 0
+                total += max(0, r.mb - grown)
         return total
 
     def exclusive_holder(self, gpu: int, now: float, alive: Set[int]) -> Optional[str]:
@@ -248,6 +268,44 @@ class Reservations:
 
     def all(self) -> List[Reservation]:
         return list(self._items.values())
+
+
+class NeedBook:
+    """What each purpose ("stt:whisperx:medium", "tts:cosyvoice", "image:Z-Image Turbo" ...) really needed: the peaks
+    of its finished reservations (Reservation.peak_mb). A load is reserved max(declared, largest of the last
+    SAMPLES peaks * 1.1) -- a declared need that is too low (found 2026-10-24: Whisper medium announced 1500 MB, used
+    2690, ran out of memory) corrects itself after one run, and still follows a model that got smaller."""
+    SAMPLES = 5
+    HEADROOM_PCT = 10
+
+    def __init__(self, samples: Optional[Dict[str, List[int]]] = None):
+        self._samples: Dict[str, List[int]] = samples or {}
+
+    def observe(self, purpose: str, mb: int) -> None:
+        if not purpose or not isinstance(mb, int) or mb <= 0:
+            return
+        self._samples[purpose] = (self._samples.get(purpose, []) + [mb])[-self.SAMPLES:]
+
+    def need(self, purpose: str, declared: int) -> int:
+        seen = self._samples.get(purpose)
+        if not seen:
+            return declared
+        peak = max(seen)
+        return max(declared, -(-peak * (100 + self.HEADROOM_PCT) // 100))   # ceil, in integers
+
+    def to_dict(self) -> Dict[str, List[int]]:
+        return {k: list(v) for k, v in self._samples.items() if v}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "NeedBook":
+        out: Dict[str, List[int]] = {}
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(k, str) and k and isinstance(v, list):
+                    good = [x for x in v if isinstance(x, int) and not isinstance(x, bool) and x > 0]
+                    if good:
+                        out[k] = good[-cls.SAMPLES:]
+        return cls(out)
 
 
 MOVE_MARGIN_MB = 2048   # less difference than this isn't worth a restart

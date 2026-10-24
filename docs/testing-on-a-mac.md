@@ -13,7 +13,7 @@ gateway's in `logs/`.
     ./install.sh --offers llm-gemma-e2b --yes
     AI_SERVE_PORT=8031 ./ai-serve start
 
-Open `http://localhost:8031`, then the Spielwiese (Apps & Services → Spielwiese → Open), Chat, attach any photo and
+Open `http://localhost:8031`, then the Playground (Apps & Services → Playground → Open), Chat, attach any photo and
 ask what is in it. **Send back:** how long the install took, the answer, and:
 
     curl -s localhost:8031/api/version | python3 -m json.tool
@@ -25,14 +25,14 @@ want), `psutil_system_ram` means it fell back to the whole system's RAM. Also no
 
     ./ai-serve setup --offers tts-chatterbox,stt-whisper --yes
 
-Then in the Spielwiese: Speech → speak a sentence with Chatterbox (it uses MLX on a Mac), and transcribe a short
+Then in the Playground: Speech → speak a sentence with Chatterbox (it uses MLX on a Mac), and transcribe a short
 recording with Whisper. **Send back:** setup time, whether both worked, and roughly how long each took.
 
 ## 3. Images with Iris
 
     ./ai-serve setup --offers image-iris --yes
 
-Spielwiese → Create images → Iris-3B Turbo, any prompt. **Send back:** the time per image, and whether Compute & models →
+Playground → Create images → Iris-3B Turbo, any prompt. **Send back:** the time per image, and whether Compute & models →
 "Who uses the GPUs" showed Iris while it was loaded.
 
 ## 4. ComfyUI (image-serve) without NVIDIA
@@ -40,7 +40,7 @@ Spielwiese → Create images → Iris-3B Turbo, any prompt. **Send back:** the t
     ./ai-serve setup --offers image-comfyui --yes
 
 This is the least certain part: the Qwen-Image-Edit text encoder is an fp8 file made for CUDA. Try, in the
-Spielwiese (Create images): a Z-Image picture and an edit of it with Qwen-Image-Edit 2511. Then download `birefnet`
+Playground (Create images): a Z-Image picture and an edit of it with Qwen-Image-Edit 2511. Then download `birefnet`
 and `moss-gguf` in the dashboard (Compute & models → Downloads), cut out the Z-Image picture
 
     curl -s localhost:8031/v1/images/edits -F image=@picture.png -F task=remove_background \

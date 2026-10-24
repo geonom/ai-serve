@@ -72,12 +72,35 @@ def test_preflight_reserves_and_confirm_binds_to_pid(gpus, monkeypatch):
     assert r.status_code == 200 and confirmed == [("r7", 4242)]
 
 
-def test_refused_preflight_says_why(gpus, monkeypatch):
+def test_refused_preflight_is_a_507_that_says_why(gpus, monkeypatch):
+    """A no is 507 (2026-10-24): it used to be 200 + granted false, and stt-serve and tts-serve loaded anyway --
+    every client already treats 507 as "no, retry later"."""
     async def reserve(gpu, need, purpose):
         return None, [], "GPU 0: held by gemma (busy, 9000 MB)"
     monkeypatch.setattr(coordination.MANAGER, "reserve", reserve)
-    body = _pre(need_mb=20000).json()
+    r = _pre(need_mb=20000)
+    body = r.json()
+    assert r.status_code == 507 and "gemma" in body["detail"]
     assert body["granted"] is False and "gemma" in body["reason"] and body["reservation_id"] is None
+
+
+def test_the_gpu_is_chosen_for_the_learned_need(gpus, monkeypatch):
+    """Whisper announced 1500 MB but needed 2690 before: the manager picks a GPU with room for what it learned."""
+    from backend.cluster.consumers import NeedBook, Reservation
+    asked = []
+
+    async def room():
+        return {0: 2500, 1: 3200}   # 1500 would fit where it runs (GPU 0); what it really needs doesn't
+
+    async def reserve(gpu, need, purpose):
+        asked.append((gpu, need))
+        return Reservation(id="r1", gpu=gpu, mb=need, purpose=purpose, created=0.0), [], ""
+    monkeypatch.setattr(coordination.MANAGER, "room", room)
+    monkeypatch.setattr(coordination.MANAGER, "reserve", reserve)
+    monkeypatch.setattr(coordination.MANAGER, "needs", NeedBook({"stt:whisperx:medium": [2690]}))
+    r = client.post("/api/coordination/gpu-preflight", json={"purpose": "stt:whisperx:medium", "need_mb": 1500,
+                                                                        "current_gpu": 0, "movable": True})
+    assert r.status_code == 200 and (r.json()["gpu"], r.json()["mode"]) == (1, "move") and asked == [(1, 1500)]
 
 
 def test_confirm_late_or_unknown(gpus, monkeypatch):
@@ -87,8 +110,12 @@ def test_confirm_late_or_unknown(gpus, monkeypatch):
 
 
 def test_release(gpus, monkeypatch):
+    """Released after a fresh measurement, so what the process grew to is learned."""
     released = []
-    monkeypatch.setattr(coordination.MANAGER, "release", lambda rid: released.append(rid))
+
+    async def measured(rid):
+        released.append(rid)
+    monkeypatch.setattr(coordination.MANAGER, "release_measured", measured)
     assert client.delete("/api/coordination/reservations/r7").status_code == 200 and released == ["r7"]
 
 

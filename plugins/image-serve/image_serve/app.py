@@ -163,22 +163,36 @@ async def generations(req: comfy.ImageGenerationRequest, x_request_id: Optional[
     return {"created": int(time.time()), "data": data}
 
 
+def _out_of_memory(e: HTTPException) -> bool:
+    text = str(e.detail).lower()
+    return e.status_code == 500 and ("out of memory" in text or "allocation on device" in text)
+
+
 async def _run(submit, comfy_req, rid: Optional[str]) -> str:
-    """Queue one ComfyUI job, register how to cancel exactly it, wait for the image."""
-    res = await submit(comfy_req)
-    pid = res["task_id"]
-    if rid:
-        async def stop():
-            task = state.comfyui_tasks.get(pid)
-            if task is not None and task.get("status") not in ("completed", "failed"):
-                task.update(status="failed", error="cancelled")
-            await jobs.interrupt_comfy(f"http://127.0.0.1:{state.comfyui_port}", pid)
-        jobs.JOBS.register(rid, stop)
-    try:
-        return await comfy._await_comfyui_task(pid)
-    finally:
+    """Queue one ComfyUI job, register how to cancel exactly it, wait for the image. Out of memory mid-job
+    (2026-10-24; ComfyUI says "Allocation on device"): its models are freed and the job queued once more -- which asks
+    ai-serve's GPU manager for the full need again (it may unload an idle model or move ComfyUI); again -> 507."""
+    for attempt in (1, 2):
+        res = await submit(comfy_req)
+        pid = res["task_id"]
         if rid:
-            jobs.JOBS.unregister(rid)
+            async def stop(pid=pid):
+                task = state.comfyui_tasks.get(pid)
+                if task is not None and task.get("status") not in ("completed", "failed"):
+                    task.update(status="failed", error="cancelled")
+                await jobs.interrupt_comfy(f"http://127.0.0.1:{state.comfyui_port}", pid)
+            jobs.JOBS.register(rid, stop)
+        try:
+            return await comfy._await_comfyui_task(pid)
+        except HTTPException as e:
+            if not _out_of_memory(e):
+                raise
+            logger.warning(f"ComfyUI ran out of memory (attempt {attempt}): {e.detail} -- freeing its models")
+            await comfy.unload_comfyui(force=True)
+        finally:
+            if rid:
+                jobs.JOBS.unregister(rid)
+    raise HTTPException(status_code=507, detail="The image model ran out of GPU memory -- try again in a moment")
 
 
 @app.post("/v1/images/edits")

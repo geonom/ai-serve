@@ -46,7 +46,7 @@ stop it in the dashboard (or set `STRATA_KEEP_ALIVE`).
    More settings (port, start timeout, keep-alive, extra model names): `.env.example`.
 4. `./ai-serve restart`
 
-The model now appears in the dashboard and the Spielwiese (marked as using every GPU), and requests with
+The model now appears in the dashboard and the Playground (marked as using every GPU), and requests with
 `"model": "strata"` go to it. The first one starts Strata and waits until it's loaded.
 
 ## Without the adapter

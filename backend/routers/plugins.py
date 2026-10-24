@@ -42,7 +42,7 @@ async def release_plugin(plugin_id: str, worker: Optional[str] = None, force: bo
 
 
 # ------------------------------------------------------------------ downloads plugins offer (models, engines)
-# Owner only: the dashboard access policy lets only this machine and the owner's devices reach /api/ (the Spielwiese
+# Owner only: the dashboard access policy lets only this machine and the owner's devices reach /api/ (the Playground
 # passes these on only for its owner). The request names an item id; the plugin decides which files.
 
 _ITEM_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")

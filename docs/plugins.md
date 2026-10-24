@@ -45,13 +45,13 @@ A plugin is an ordinary app (`docs/service-manifest.md`) whose `llama-serve.serv
 
 ## Standard first (for apps and plugins)
 
-Owner, 2026-10-21: the Spielwiese -- and every extension -- should also work with a standard Ollama or LM Studio.
+Owner, 2026-10-21: the Playground -- and every extension -- should also work with a standard Ollama or LM Studio.
 So:
 - **Apps** talk the standard OpenAI API first (`/v1/models`, `/v1/chat/completions`, `/v1/embeddings`, `/v1/audio/…`,
   `/v1/images/…`) and treat ai-serve's additions (`/v1/llm/models`, `/v1/audio/models`, `/v1/images/models`,
   `/api/…`) as optional: when one answers 404, fall back to the standard call or show that page as "needs ai-serve"
-  instead of failing. Make the server URL configurable and send an optional Bearer key. Reference: the Spielwiese
-  (`spielwiese/backends.py`, `/sw/backend`).
+  instead of failing. Make the server URL configurable and send an optional Bearer key. Reference: the Playground
+  (`playground/backends.py`, `/sw/backend`).
 - **Plugins** speak standard APIs wherever one exists (`llm` = OpenAI; `moderation` = OpenAI moderations), so a
   standard server can be one without an adapter -- see "A standard server without an app" below.
 
@@ -209,11 +209,23 @@ apps a signed identity (`docs/identity.md`). Without an access plugin, ai-serve 
 ## GPU: asking before loading
 
 A plugin with `gpu: shared` asks before it loads a model:
-`POST /api/coordination/gpu-preflight {"purpose", "gpu", "need_mb"}` → `{granted, free_mb, reservation_id,
-hold_s, reason}`. A grant is held a few seconds; confirm it with the process that will use the memory
-(`POST /api/coordination/reservations/{id}/confirm {"pid"}`) and release it when done loading
-(`DELETE /api/coordination/reservations/{id}`). A refusal is quick (507-style, "try again"): the gateway never
-queues. A `gpu: exclusive` plugin asks `POST /api/coordination/gpu-exclusive {"purpose"}` → `{granted,
+`POST /api/coordination/gpu-preflight {"purpose", "need_mb", "gpu"?, "current_gpu"?, "movable"?}` → `{gpu, mode,
+granted, free_mb, reservation_id, hold_s, reason}`. Rules (2026-10-24, after Whisper ran out of memory because it
+announced too little, always asked for GPU 0 and gave its reservation back before its first transcription):
+- **Leave out `gpu`**: the manager picks one with room (`gpu` in the answer, `mode` start / stay / move) and may unload
+  idle models of any kind for it. Start the worker on that GPU (e.g. `CUDA_VISIBLE_DEVICES`).
+- **A no is 507** with the reason as `detail` -- never load anyway. Either fall back (e.g. the CPU) or answer 507
+  yourself, so the caller retries; the gateway never queues.
+- **`purpose` names what is loaded** (`stt:whisperx:medium`, `tts:cosyvoice`, `llm:<file>@<ctx>`): the manager learns
+  each purpose's real peak (what the confirmed process grew by) and reserves at least that + 10 % next time, so
+  `need_mb` only has to be in the right range (learned values: `gpu_needs.json`).
+- A grant is held a few seconds: confirm it with the process that will use the memory
+  (`POST /api/coordination/reservations/{id}/confirm {"pid"}`; what that process already holds is its baseline)
+  and **release it after the first use** -- the first transcription, image, utterance -- not right after loading
+  (`DELETE /api/coordination/reservations/{id}`). Unreleased, it ends when the process exits or after 2 minutes.
+- **Out of memory while working**: free what you hold, ask again (the manager may now unload an idle model or pick the
+  other GPU), retry once; out of memory again -> 507 ("try again"), never a bare 500.
+- Report `last_used` per worker in `status`: the least recently used idle model is unloaded first. A `gpu: exclusive` plugin asks `POST /api/coordination/gpu-exclusive {"purpose"}` → `{granted,
 reservation_ids, unloaded, reason}` before it starts its server and confirms every id with that server's PID: it then
 has every GPU for as long as that process lives. Its `status.workers` name that process (and only while it runs --
 an exclusive plugin without workers holds nothing); it is never unloaded automatically, only by `release` (from the
@@ -233,7 +245,7 @@ dashboard, `/api/stop` on its port, `unload_all`).
 ## Downloads: `install` (every capability, optional)
 
 What a plugin can still download for this machine -- models, engines, their environments. Owner, 2026-10-22: a
-missing model should be downloadable from the Spielwiese and the dashboard instead of leaving an empty list.
+missing model should be downloadable from the Playground and the dashboard instead of leaving an empty list.
 
 - `GET {install}` → `{"items": [{"id", "label", "description", "size_mb", "state", "done_mb", "error", "license"}]}`;
   `state` is `missing | downloading | installed | failed`; `size_mb`/`done_mb` may be null (unknown). List only what
@@ -246,7 +258,7 @@ missing model should be downloadable from the Spielwiese and the dashboard inste
 - The gateway: `GET /api/plugins/installs` (every plugin's items, tagged `plugin`, `plugin_name`, `capability`;
   fields checked by `normalize_install`; plugins that couldn't be started are listed under `down` with the reason
   from their log, and `POST /api/plugins/{plugin}/start` starts one -- only plugins, never other apps), `POST /api/plugins/{plugin}/install {"id"}` (only `{"id"}`; dashboard
-  access = this machine and the owner's devices). The Spielwiese forwards the start only for its owner.
+  access = this machine and the owner's devices). The Playground forwards the start only for its owner.
 
 ## Which plugins exist
 

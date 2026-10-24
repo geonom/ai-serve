@@ -19,7 +19,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException
 
-from stt_serve.coordination import preflight, preflight_sync, release_sync
+from stt_serve import coordination
+from stt_serve.coordination import preflight, preflight_sync, release_sync, reserve_sync, whisper_need_mb
 from stt_serve.domain import (RELIABLE_EMBEDDING_MIN_SECONDS, apply_speaker_matches, embedding_windows, match_known_speakers,
                               mean_speaker_embeddings, rms_trailing_silence_s, speaker_turns)
 from stt_serve.models import (
@@ -72,14 +73,23 @@ def _release_cuda_memory() -> None:
         pass
 
 
+def _drop_whisperx_model() -> None:
+    """The model out of memory (no keep-alive change) -- also between a failed GPU try and the next one."""
+    if state.whisperx_model is not None:
+        state.whisperx_model = None
+        state.whisperx_device = None
+        _release_cuda_memory()
+
+
 def _unload_whisperx():
     if state.whisperx_keep_alive_task:
         state.whisperx_keep_alive_task.cancel()
         state.whisperx_keep_alive_task = None
+    release_sync(state.whisperx_reservation)
+    state.whisperx_reservation = None
     if state.whisperx_model is not None:
-        state.whisperx_model = None
+        _drop_whisperx_model()
         state.whisperx_status = "idle"
-        _release_cuda_memory()
         logger.info("WhisperX model unloaded.")
 
 
@@ -172,6 +182,8 @@ def _unload_worker(prefix: str, name: str) -> None:
             except Exception:
                 pass
         logger.info(f"{name} worker stopped.")
+    release_sync(getattr(state, f"{prefix}_reservation", None))
+    setattr(state, f"{prefix}_reservation", None)
     log_file = getattr(state, f"{prefix}_log_file", None)
     if log_file:
         try:
@@ -186,7 +198,26 @@ def _unload_worker(prefix: str, name: str) -> None:
         setattr(state, attr, val)
 
 
-async def _ensure_worker(cfg: _WorkerCfg) -> int:
+def _worker_purpose(cfg: _WorkerCfg) -> str:
+    return f"stt:{cfg.prefix}"
+
+
+def _worker_env(grant: Optional["coordination.Grant"]) -> Dict[str, str]:
+    """The worker sees only the GPU the manager picked (it uses cuda:0 = that one); no grant = the CPU;
+    a grant without a GPU (gateway unreachable, standalone) leaves the default."""
+    env = dict(os.environ, HF_HUB_ENABLE_HF_TRANSFER="0")
+    env.pop("CUDA_VISIBLE_DEVICES", None)
+    if grant is None:
+        env["CUDA_VISIBLE_DEVICES"] = ""
+    elif grant.gpu is not None:
+        env["CUDA_VISIBLE_DEVICES"] = str(grant.gpu)
+    return env
+
+
+async def _ensure_worker(cfg: _WorkerCfg, cpu_only: bool = False) -> int:
+    """Start the worker if needed -- on the GPU the GPU manager picks (tests/test_gpu_robust.py), on the CPU when it
+    says no (or cpu_only). The reservation is bound to the worker's PID and kept until its first job is done
+    (_finish_worker_first_use)."""
     async with _worker_lock(cfg.prefix):
         proc = getattr(state, f"{cfg.prefix}_process", None)
         if proc is not None and proc.poll() is None:
@@ -198,18 +229,27 @@ async def _ensure_worker(cfg: _WorkerCfg) -> int:
                 detail=f"{cfg.name} python interpreter not found at {cfg.python_bin}. {cfg.setup_hint}",
             )
 
-        await preflight(cfg.prefix)
+        grant = None
+        if not cpu_only:
+            try:
+                grant = await coordination.reserve(_worker_purpose(cfg), coordination.NEEDS_MB.get(cfg.prefix, 4000))
+            except HTTPException as e:
+                logger.warning(f"{cfg.name}: no room on the GPUs ({e.detail}) -- starting it on the CPU")
         port = _free_port()
         log_path = os.path.join(LOGS_DIR, cfg.log_name)
         log_file = open(log_path, "w", encoding="utf-8")
-        env = dict(os.environ, HF_HUB_ENABLE_HF_TRANSFER="0")
+        env = _worker_env(grant)
         if cfg.extra_env:
             env.update(cfg.extra_env)
-        logger.info(f"Starting {cfg.name} worker on port {port}...")
+        where = "the CPU" if grant is None else (f"GPU {grant.gpu}" if grant.gpu is not None else "the default GPU")
+        logger.info(f"Starting {cfg.name} worker on port {port} ({where})...")
         proc = subprocess.Popen(
             [cfg.python_bin, cfg.script, "--port", str(port)],
             stdout=log_file, stderr=subprocess.STDOUT, env=env,
         )
+        if grant is not None:
+            await coordination.confirm(grant.rid, proc.pid)
+        setattr(state, f"{cfg.prefix}_reservation", grant.rid if grant else None)
         setattr(state, f"{cfg.prefix}_process", proc)
         setattr(state, f"{cfg.prefix}_port", port)
         setattr(state, f"{cfg.prefix}_pid", proc.pid)
@@ -286,6 +326,33 @@ def _reset_moss_keep_alive(keep_alive_seconds: int) -> None:
     state.moss_transcribe_keep_alive_task = asyncio.create_task(_check())
 
 
+def _finish_worker_first_use(prefix: str) -> None:
+    rid = getattr(state, f"{prefix}_reservation", None)
+    if rid:
+        release_sync(rid)
+        setattr(state, f"{prefix}_reservation", None)
+
+
+async def _moss_job(wav_path: str, prompt: str, max_new_tokens: int, duration_s: float) -> Dict[str, Any]:
+    """One MOSS job. Out of memory -> restart the worker where the GPU manager has room (it may unload an idle model
+    or pick the other GPU) and retry; again -> on the CPU; out of memory there too -> 507 (retryable)."""
+    for cpu_only in (False, False, True):
+        port = await _ensure_worker(_MOSS_CFG, cpu_only=cpu_only)
+        state.moss_transcribe_status = "transcribing"
+        try:
+            return await _moss_worker_transcribe(port, wav_path, prompt, max_new_tokens, duration_s)
+        except HTTPException as e:
+            if not _is_oom(Exception(str(e.detail))):
+                raise
+            logger.warning(f"MOSS-Transcribe-Diarize ran out of memory -- restarting it (cpu={cpu_only})")
+            _unload_moss_transcribe()
+        finally:
+            state.moss_transcribe_status = "idle"
+            _finish_worker_first_use("moss_transcribe")
+    raise HTTPException(status_code=507, detail="MOSS-Transcribe-Diarize ran out of memory (GPU and CPU) -- "
+                                                "try again in a moment")
+
+
 async def _transcribe_moss(req: "STTTranscribeRequest") -> Dict[str, Any]:
     """engine 'moss': one pass through MOSS-Transcribe-Diarize. Audio is decoded the same way as for
     WhisperX (ffmpeg content-sniffing, so video works too), written as one 16 kHz WAV for the worker."""
@@ -309,17 +376,14 @@ async def _transcribe_moss(req: "STTTranscribeRequest") -> Dict[str, Any]:
     chunks = [await asyncio.to_thread(_decode_audio_base64_to_array, e) for e in entries]
     audio = chunks[0] if len(chunks) == 1 else np.concatenate(chunks)
     duration_s = len(audio) / 16000
-    port = await _ensure_worker(_MOSS_CFG)
-    _reset_moss_keep_alive(req.keep_alive or 300)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         wav_path = tmp.name
     try:
         sf.write(wav_path, audio, 16000, subtype="PCM_16")
-        state.moss_transcribe_status = "transcribing"
-        data = await _moss_worker_transcribe(port, wav_path, prompt, moss_max_new_tokens(duration_s), duration_s)
+        data = await _moss_job(wav_path, prompt, moss_max_new_tokens(duration_s), duration_s)
+        _reset_moss_keep_alive(req.keep_alive or 300)
         state.moss_transcribe_device = data.get("device")
     finally:
-        state.moss_transcribe_status = "idle"
         try:
             os.remove(wav_path)
         except OSError:
@@ -453,37 +517,117 @@ def _nemotron_diarize_sync(port: int, audio_data, num_speakers, min_speakers, ma
             pass
 
 
-def _ensure_whisperx_loaded():
-    """Lazy-load state.whisperx_model if not already resident. Shared by the one-shot
-    transcribe_stt() and the live-session endpoints below -- same model either way,
-    live sessions just add a buffering/VAD layer on top, not a separate model."""
+def _gpu_possible() -> bool:
     import torch
-    import whisperx
+    return sys.platform != "darwin" and torch.cuda.is_available()
 
+
+def _load_model(name: str, device: str, device_index: int, compute_type: str):
+    """whisperx.load_model on one device. Its VAD model loads on torch's current CUDA device, so that is set too."""
+    import whisperx
+    if device == "cuda":
+        import torch
+        torch.cuda.set_device(device_index)
+    return whisperx.load_model(name, device=device, device_index=device_index, compute_type=compute_type)
+
+
+def _whisper_purpose() -> str:
+    return f"stt:whisperx:{os.path.basename(WHISPER_MODEL.rstrip('/'))}"
+
+
+def _ensure_whisperx_loaded(cpu_only: bool = False):
+    """Have state.whisperx_model resident. Shared by the one-shot transcribe_stt() and the live sessions.
+    Robust against a full GPU (tests/test_gpu_robust.py): the GPU manager picks the GPU and reserves what this
+    model size needs; its reservation is kept (state.whisperx_reservation) until _whisper_transcribe() has finished
+    the first transcription. A no from the manager, or a failed CUDA load, -> the CPU. A model on the CPU moves to a
+    GPU as soon as the manager has room again."""
     if state.whisperx_model is not None:
-        return
-    rid = preflight_sync("whisperx")
+        if state.whisperx_device != "cpu" or cpu_only or not _gpu_possible():
+            return
+        try:   # on the CPU since the GPUs were full: room now?
+            grant = reserve_sync(_whisper_purpose(), whisper_need_mb(WHISPER_MODEL))
+        except HTTPException:
+            return
+        logger.info("WhisperX: room on a GPU again -- moving it off the CPU")
+        _drop_whisperx_model()
+    else:
+        grant = None
+        if not cpu_only and _gpu_possible():
+            try:
+                grant = reserve_sync(_whisper_purpose(), whisper_need_mb(WHISPER_MODEL))
+            except HTTPException as e:
+                logger.warning(f"WhisperX: no room on the GPUs ({e.detail}) -- loading on the CPU")
+                cpu_only = True
+    state.whisperx_status = "loading"
     try:
-        state.whisperx_status = "loading"
-        device = "cuda"
-        compute_type = "float16"
-        if sys.platform == "darwin" or not torch.cuda.is_available():
-            device = "cpu"
-            compute_type = "int8"
-        logger.info(f"Lazy loading WhisperX model ({WHISPER_MODEL}) onto {device} ({compute_type})...")
-        try:
-            state.whisperx_model = whisperx.load_model(WHISPER_MODEL, device=device, compute_type=compute_type)
-        except Exception as cuda_err:
-            logger.warning(f"WhisperX CUDA load failed, falling back to CPU: {cuda_err}")
-            state.whisperx_model = whisperx.load_model(WHISPER_MODEL, device="cpu", compute_type="int8")
-        logger.info("WhisperX model loaded.")
+        if not cpu_only and _gpu_possible():
+            gpu = grant.gpu if grant and grant.gpu is not None else 0
+            logger.info(f"Lazy loading WhisperX model ({WHISPER_MODEL}) onto cuda:{gpu} (float16)...")
+            try:
+                state.whisperx_model = _load_model(WHISPER_MODEL, "cuda", gpu, "float16")
+                state.whisperx_device = f"cuda:{gpu}"
+                state.whisperx_reservation = grant.rid if grant else None
+            except Exception as cuda_err:
+                logger.warning(f"WhisperX CUDA load failed, falling back to CPU: {cuda_err}")
+                release_sync(grant.rid if grant else None)
+                _release_cuda_memory()
+                cpu_only = True
+        if state.whisperx_model is None:
+            logger.info(f"Lazy loading WhisperX model ({WHISPER_MODEL}) onto cpu (int8)...")
+            state.whisperx_model = _load_model(WHISPER_MODEL, "cpu", 0, "int8")
+            state.whisperx_device = "cpu"
+        logger.info(f"WhisperX model loaded ({state.whisperx_device}).")
         state.whisperx_status = "idle"
     except Exception as e:
         state.whisperx_status = "error"
+        release_sync(state.whisperx_reservation)
+        state.whisperx_reservation = None
         logger.error(f"Failed to load WhisperX: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to load model: {e}")
+
+
+def _is_oom(e: BaseException) -> bool:
+    text = str(e).lower()
+    return isinstance(e, MemoryError) or "out of memory" in text or "cuda_error_out_of_memory" in text
+
+
+def _finish_first_use() -> None:
+    """The first transcription is done: the GPU manager counts the measured usage from now on."""
+    if state.whisperx_reservation:
+        release_sync(state.whisperx_reservation)
+        state.whisperx_reservation = None
+
+
+def _whisper_transcribe(audio, language: Optional[str]):
+    """The one place WhisperX transcribes (one-shot and live). Out of memory on a GPU -> ask the manager again (it may
+    unload an idle model or pick the other GPU), reload, retry once; again -> the CPU; out of memory there too ->
+    507, retryable. task="transcribe" always (see transcribe_stt)."""
+    state.whisperx_last_used = time.time()
+    try:
+        try:
+            return state.whisperx_model.transcribe(audio, batch_size=4, language=language, task="transcribe")
+        except Exception as e:
+            if not _is_oom(e):
+                raise
+            logger.warning(f"WhisperX ran out of memory on {state.whisperx_device} -- asking for room again")
+        for cpu_only in (False, True):
+            if cpu_only and state.whisperx_device == "cpu":
+                break   # already tried there
+            _finish_first_use()
+            _drop_whisperx_model()
+            _ensure_whisperx_loaded(cpu_only=cpu_only)
+            try:
+                return state.whisperx_model.transcribe(audio, batch_size=4, language=language, task="transcribe")
+            except Exception as e:
+                if not _is_oom(e):
+                    raise
+                logger.warning(f"WhisperX ran out of memory again on {state.whisperx_device}")
+        _drop_whisperx_model()
+        raise HTTPException(status_code=507, detail="Speech recognition ran out of memory (GPU and CPU) -- "
+                                                    "try again in a moment")
     finally:
-        release_sync(rid)
+        state.whisperx_last_used = time.time()
+        _finish_first_use()
 
 
 def _ensure_diarize_loaded():
@@ -494,10 +638,12 @@ def _ensure_diarize_loaded():
 
     if state.diarize_pipeline is not None:
         return
-    rid = preflight_sync("diarize")
+    # same process as WhisperX: on its GPU (torch's current device, set when WhisperX loaded)
+    gpu = int(state.whisperx_device.split(":")[1]) if (state.whisperx_device or "").startswith("cuda:") else 0
+    rid = preflight_sync("diarize", gpu=gpu)
     try:
         state.diarize_status = "loading"
-        ddevice = "cuda" if (sys.platform != "darwin" and torch.cuda.is_available()) else "cpu"
+        ddevice = f"cuda:{gpu}" if (sys.platform != "darwin" and torch.cuda.is_available()) else "cpu"
         logger.info(f"Lazy loading diarization pipeline ({DIARIZE_MODEL or 'default'}) onto {ddevice}...")
         state.diarize_pipeline = DiarizationPipeline(
             model_name=DIARIZE_MODEL or None, token=(HF_TOKEN or None), device=ddevice,
@@ -505,6 +651,7 @@ def _ensure_diarize_loaded():
         state.diarize_device = ddevice
         logger.info("Diarization pipeline loaded.")
         state.diarize_status = "idle"
+        state.diarize_reservation, rid = rid, None   # kept until the transcription that needed it is done
     except Exception as e:
         state.diarize_status = "error"
         logger.error(f"Failed to load diarization pipeline: {e}")
@@ -655,8 +802,7 @@ async def transcribe_stt(req: STTTranscribeRequest):
             # task="transcribe" is forced explicitly (not just relying on WhisperX's own
             # "transcribe" default) so a cold-load auto-detect misfire can never silently
             # produce a translation instead of a transcript -- see STTTranscribeRequest.language.
-            result = state.whisperx_model.transcribe(
-                audio_data, batch_size=4, language=req.language, task="transcribe")
+            result = _whisper_transcribe(audio_data, req.language)
             result["duration_s"] = duration_s
             if req.diarize:
                 align_device = state.diarize_device or state.nemotron_diarize_device or "cpu"
@@ -711,8 +857,14 @@ async def transcribe_stt(req: STTTranscribeRequest):
             return result
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, _run)
+        try:
+            result = await loop.run_in_executor(None, _run)
+        finally:   # the first use is done: the GPU manager counts what was really allocated from now on
+            _finish_worker_first_use("nemotron_diarize")
+            release_sync(state.diarize_reservation)
+            state.diarize_reservation = None
         state.whisperx_status = "idle"
+        _reset_whisperx_keep_alive(req.keep_alive or 300)   # a retry on another device dropped the model meanwhile
 
         duration_s = result.get("duration_s")
         speaker_embeddings = result.get("speaker_embeddings") if req.return_embeddings else None
@@ -787,6 +939,8 @@ async def transcribe_stt(req: STTTranscribeRequest):
             else:
                 state.diarize_status = "error"
         logger.error(f"STT transcription failed: {e}")
+        if _is_oom(e):   # retryable: memory may be free again in a moment
+            raise HTTPException(status_code=507, detail=f"Speech recognition ran out of memory -- try again ({e})")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if state.whisperx_status == "transcribing":
@@ -929,8 +1083,7 @@ def _transcribe_live_chunk_sync(session: Dict[str, Any], audio) -> Optional[Dict
     already paying for an alignment-model call on every few seconds of audio would add
     real latency to a live session for a case (a speaker change mid-chunk) that word
     alignment exists to fix, at a cost this path doesn't need to pay by default."""
-    result = state.whisperx_model.transcribe(
-        audio, batch_size=4, language=session["language"], task="transcribe")
+    result = _whisper_transcribe(audio, session["language"])
     text = " ".join(seg["text"].strip() for seg in result["segments"]).strip()
     if not text:
         return None

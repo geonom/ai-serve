@@ -174,7 +174,7 @@ Lists available benchmark suite JSON files.
 
 ### 8. Unified Inference Gateway
 **POST** `/api/chat/completions`
-A unified chat completion endpoint that acts as a gateway proxy. Auto-loads the requested model, implements automatic retries on JSON validation error, and handles GPU VRAM limit routing (failover & HTTP 507).
+A unified chat completion endpoint that acts as a gateway proxy. Auto-loads the requested model, implements automatic retries on JSON validation error (`retries`, default 3; not after a reply cut off by `max_tokens`, which usually repeats; the response reports `attempts`, `total_seconds` for all tries and `runtime_seconds` for the last one -- `/v1/chat/completions` too), and handles GPU VRAM limit routing (failover & HTTP 507).
 
 ---
 

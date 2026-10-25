@@ -77,7 +77,9 @@ class UnifiedChatResponse(BaseModel):
     data: Optional[Any] = None
     thinking: str
     model_used: str
-    runtime_seconds: float
+    runtime_seconds: float                            # the last (successful) try only
+    attempts: int = 1                                 # tries incl. the successful one
+    total_seconds: Optional[float] = None             # wall time of all tries
     tokens: int
     tps: float
 
@@ -110,7 +112,9 @@ class ChatCompletionResponse(BaseModel):
     choices: List[ChatCompletionChoice]
     usage: ChatCompletionUsage
     tps: Optional[float] = None
-    runtime_seconds: Optional[float] = None
+    runtime_seconds: Optional[float] = None          # the last (successful) try only
+    attempts: Optional[int] = None                    # tries incl. the successful one (structured-output retries)
+    total_seconds: Optional[float] = None             # wall time of all tries
 
 
 class ChatCompletionRequest(BaseModel):
@@ -252,6 +256,19 @@ def _is_tool_format_error(err: str) -> bool:
     parallel_tool_calls-forcing retry override right below it, so both react to the
     same failure class consistently instead of drifting apart if one changes."""
     return "does not match the expected" in err and "format" in err
+
+
+def _validation_failure(err: Exception, attempts: int, seconds: float, finish_reason: str,
+                        message: Dict[str, Any]) -> str:
+    """The 422 text when structured output never validated: how many tries, how long, and why it stopped."""
+    tries = f"{attempts} attempt" + ("" if attempts == 1 else "s")
+    if finish_reason == "length":
+        why = ("the reply was cut off by max_tokens (finish_reason 'length') and was not retried -- a model that "
+               "loops or runs long usually does it again; raise max_tokens or simplify the schema/prompt")
+    else:
+        why = f"last finish_reason '{finish_reason}'"
+    return (f"JSON validation failed after {tries} in {seconds:.1f} s: {err}. {why}. "
+            f"Content was: {message.get('content', '')}")
 
 
 def _build_retry_nudge(last_error: str) -> str:
@@ -431,6 +448,7 @@ async def unified_chat_completion(req: UnifiedChatRequest):
         final_messages = _inject_thinking_instruction(processed_messages, req.thinking)
         retries_left = req.retries
         last_error = None
+        started = time.time()
 
         for attempt in range(retries_left + 1):
             try:
@@ -472,17 +490,12 @@ async def unified_chat_completion(req: UnifiedChatRequest):
                 except Exception as val_err:
                     last_error = str(val_err)
                     logger.warning(f"Validation attempt {attempt + 1} failed: {val_err}")
-                    if attempt < retries_left:
+                    # Cut off by max_tokens: the model looped or ran long, and a retry nearly always does the
+                    # same again (V-Noveller 2026-10-25: three more ~100 s tries, then the 422 anyway).
+                    if attempt < retries_left and upstream_finish_reason != "length":
                         continue
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"JSON validation failed after {req.retries} retries: {val_err}. "
-                               f"Last candidate's finish_reason was '{upstream_finish_reason}' "
-                               f"(if 'length', the schema-constrained response was truncated by "
-                               f"max_tokens before it could complete -- raise max_tokens rather than "
-                               f"assuming the model won't follow the schema). "
-                               f"Content was: {message.get('content', '')}",
-                    )
+                    raise HTTPException(status_code=422, detail=_validation_failure(
+                        val_err, attempt + 1, time.time() - started, upstream_finish_reason, message))
 
                 tokens = data.get("usage", {}).get("completion_tokens", 0)
                 tps = round(tokens / duration, 2) if duration > 0 else 0
@@ -493,6 +506,8 @@ async def unified_chat_completion(req: UnifiedChatRequest):
                     "thinking": reasoning,
                     "model_used": _model_label(up),
                     "runtime_seconds": round(duration, 2),
+                    "attempts": attempt + 1,
+                    "total_seconds": round(time.time() - started, 2),
                     "tokens": tokens,
                     "tps": tps,
                 }
@@ -604,6 +619,7 @@ async def openai_chat_completion(req: ChatCompletionRequest):
         final_messages = _inject_thinking_instruction(processed_messages, req.thinking)
         retries_left = req.retries or 3
         last_error = None
+        started = time.time()
 
         for attempt in range(retries_left + 1):
             try:
@@ -677,17 +693,12 @@ async def openai_chat_completion(req: ChatCompletionRequest):
                 except Exception as val_err:
                     last_error = str(val_err)
                     logger.warning(f"Validation attempt {attempt + 1} failed: {val_err}")
-                    if attempt < retries_left:
+                    # Cut off by max_tokens: the model looped or ran long, and a retry nearly always does the
+                    # same again (V-Noveller 2026-10-25: three more ~100 s tries, then the 422 anyway).
+                    if attempt < retries_left and upstream_finish_reason != "length":
                         continue
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"JSON validation failed after {req.retries} retries: {val_err}. "
-                               f"Last candidate's finish_reason was '{upstream_finish_reason}' "
-                               f"(if 'length', the schema-constrained response was truncated by "
-                               f"max_tokens before it could complete -- raise max_tokens rather than "
-                               f"assuming the model won't follow the schema). "
-                               f"Content was: {message.get('content', '')}",
-                    )
+                    raise HTTPException(status_code=422, detail=_validation_failure(
+                        val_err, attempt + 1, time.time() - started, upstream_finish_reason, message))
 
                 prompt_tokens = data.get("usage", {}).get("prompt_tokens", 0)
                 completion_tokens = data.get("usage", {}).get("completion_tokens", 0)
@@ -737,6 +748,8 @@ async def openai_chat_completion(req: ChatCompletionRequest):
                     ),
                     tps=tps,
                     runtime_seconds=round(duration, 2),
+                    attempts=attempt + 1,
+                    total_seconds=round(time.time() - started, 2),
                 )
             except httpx.HTTPError as http_err:
                 err_detail = get_upstream_error_detail(http_err)

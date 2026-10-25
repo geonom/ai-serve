@@ -11,6 +11,7 @@ from backend.public_api.domain import (
     ErrorPolicy,
     ExposureGuard,
     ImagePolicy,
+    ModelAlias,
     ModelCatalog,
     ModelKind,
     PayloadTooLarge,
@@ -284,6 +285,13 @@ class TestImagePolicy:
         assert (cmd.n, cmd.base_resolution, cmd.aspect_ratio, cmd.model_name) == \
             (1, 1024, "1:1", "z_image_turbo-Q6_K.gguf")
         assert self.policy.sanitize({"prompt": "a", "size": "1792x1024"}, _alias(ModelKind.IMAGE)).aspect_ratio == "16:9"
+
+    def test_steps_default_to_the_models_own(self):
+        # A fixed 4 under-sampled Z-Image (its default is 8) and Qwen-Image (40).
+        assert self.policy.sanitize({"prompt": "a"}, _alias(ModelKind.IMAGE)).steps is None
+        alias = ModelAlias.from_dict({"id": "img", "kind": "image", "target": "z-image-turbo",
+                                      "defaults": {"steps": 6}})
+        assert self.policy.sanitize({"prompt": "a"}, alias).steps == 6
 
     def test_nextcloud_default_size(self):
         # integration_openai's admin setting "default_image_size" ships as 768x768;

@@ -46,3 +46,4 @@ model_servers.json
 venv.*/
 services.json
 voice_library/
+public_models.json

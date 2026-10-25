@@ -332,7 +332,7 @@ The **only** path meant to be reachable from outside this machine, via `scripts/
 
 * **Auth:** `Authorization: Bearer <LLAMA_SERVE_PUBLIC_API_KEY>` (env or gitignored `.env.public`, ≥32 chars). Unset/too short → 503; wrong key → 401. Checked before the body is read. Independent of `LLAMA_SERVE_API_KEY`.
 * **Tunnel requests** (`Tailscale-Funnel-Request` / `Cf-Connecting-Ip` present) get 404 for every path outside `/public/` — the backend enforces this itself, not only the tunnel.
-* **Models** come only from `public_models.json` (path via `PUBLIC_MODELS_FILE`, re-read per request). Entry: `id` (what clients see), `kind` (`chat` / `stt` / `tts` / `image`), `target` (bare GGUF filename / TTS engine / ComfyUI UNET), optional `defaults` (fields applied unless the caller sets them — the only way to set `gpu_id`, `ctx_size`, `keep_alive`, …), for `tts` a `voices` allowlist. No `model` → first entry of that kind; unknown → **400** (`model_not_found`, listing the valid ids — not 404: Nextcloud probes endpoints with `model: "invalid-model"` and reads 404 as "endpoint missing").
+* **Models** come only from `public_models.json` (path via `PUBLIC_MODELS_FILE`, re-read per request; without it `public_models.example.json`: chat/tts/image `default` = what ai-serve picks, Whisper). Entry: `id` (what clients see), `kind` (`chat` / `stt` / `tts` / `image`), `target` (bare GGUF filename / TTS engine / an id from `/v1/images/models`, or `default`), optional `defaults` (fields applied unless the caller sets them — the only way to set `gpu_id`, `ctx_size`, `keep_alive`, …), for `tts` a `voices` allowlist (e.g. `synthetic:<id>`; anything else gets the engine's default voice). No `model` → first entry of that kind; unknown → **400** (`model_not_found`, listing the valid ids — not 404: Nextcloud probes endpoints with `model: "invalid-model"` and reads 404 as "endpoint missing").
 * **Limits:** body 25 MB (transcription uploads 100 MB), `PUBLIC_MAX_CONCURRENT` (3) GPU-bound requests in flight → else 429.
 * **Errors** use OpenAI's shape: `{"error": {"message", "type", "reference"}}`. Refusals by the public API itself say what's wrong; failures deeper in (model load, TTS worker, ComfyUI) only say a generic message — the `reference` matches the server log line with the details. Busy states (409/507) become 503.
 
@@ -364,6 +364,16 @@ Dashboard-only (blocked through tunnels). Every direct child of `SERVICE_ROOTS` 
 * **POST** `/api/services/{id}/stop` body `{"pid": <instance pid>}` (optional when exactly one instance runs) → `{"status": "stopped", terminated, killed}`; 404 for a pid that isn't an instance of that service, 409 if ambiguous.
 * **POST** `/api/services/{id}/exposure` body `{"level": "local" | "tailnet" | "owner"}` → who can reach it via Tailscale Serve (tailnet only, never public). 403 unless called from this machine or one of the owner's tailnet devices; 400 when the level can't apply (e.g. no valid tailnet port); 503 without Tailscale; 422 for any other level.
 * **GET** `/api/services/{id}/log?tail=200` → output of copies started from the dashboard.
+
+### 15. Model advice (which model for what)
+
+From an `advice` plugin (llm-benchy; contract in [`docs/plugins.md`](plugins.md#advice----which-language-model-for-what)).
+Scores, speed and GPU memory are measurements from the benchmark, not estimates.
+
+* **GET** `/v1/llm/advice/domains` → `{"data": [{id, kind: use_case|dimension, label, dimensions, languages, provider}]}`.
+* **POST** `/v1/llm/advice/recommend` body e.g. `{"domain": "creative_writing", "language": "de", "gpus": ["4060 Ti"], "max_vram_mb": 15000, "min_gen_tps": 40}` → `{"models": [{id, rank, tier, score, reliable, dimensions, speed: [{gpu, ctx, gen_tps, prefill_tps}], memory: {vram_mb, gpu, ctx}, file_mb, warnings, where, loaded}], "excluded": [{id, reason}], ...}`. `installed_only` (default true) limits it to models this machine serves.
+* **POST** `/v1/llm/advice/ask` body `{"question": "Welches Modell für deutsche Kurzgeschichten auf der 4060 Ti?", "model"?: "<chat model>"}` → `{"answer", "request", "recommendation"}`.
+* **POST** `/v1/llm/advice/mcp` → MCP server for agents (tools `list_model_domains`, `recommend_models`).
 
 ---
 

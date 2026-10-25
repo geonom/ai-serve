@@ -15,6 +15,7 @@ before the body is even parsed.
 import asyncio
 import json
 import logging
+import os
 import random
 import time
 import uuid
@@ -165,12 +166,16 @@ router = APIRouter(prefix="/public/v1", tags=["public"], route_class=PublicRoute
 
 
 def load_catalog() -> ModelCatalog:
-    """Re-read per request: edits to the file need no restart."""
+    """Re-read per request: edits to the file need no restart. Without an own file, the example next to it (what a
+    fresh install has: aliases on the installer's models and the defaults)."""
+    path = PUBLIC_MODELS_FILE
+    if not os.path.exists(path):
+        path = os.path.join(os.path.dirname(path), "public_models.example.json")
     try:
-        with open(PUBLIC_MODELS_FILE, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return ModelCatalog.from_dict(json.load(f))
     except (OSError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Public model catalog {PUBLIC_MODELS_FILE}: {e}")
+        raise HTTPException(status_code=500, detail=f"Public model catalog {path}: {e}")
 
 
 @router.get("/models", summary="Public model list (aliases only)")
@@ -271,7 +276,7 @@ async def public_speech(body: Dict[str, Any] = Body(...)):
     cmd = SPEECH.sanitize(body, alias)
     speech_req = media.OpenAISpeechRequest(model=cmd.engine, input=cmd.text, voice=cmd.voice,
                                            language=cmd.language)
-    wav_resp = await media.openai_audio_speech(speech_req)
+    wav_resp = await media.openai_audio_speech(speech_req, None)   # no person: synthetic voices only, by the allowlist
     if not isinstance(wav_resp, Response):
         raise HTTPException(status_code=500, detail="TTS engine returned no audio.")
     return await _transcode_audio(wav_resp.body, cmd.response_format, cmd.speed)

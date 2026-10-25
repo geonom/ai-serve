@@ -1,0 +1,27 @@
+{
+  "_comment": "Models exposed at /public/v1 (backend/routers/public_gateway.py) -- an example; copy it to public_models.json and edit that (PUBLIC_MODELS_FILE), it then replaces this one. id = what remote clients see; target = the real model: a GGUF file name for chat ('default' = the chat model ai-serve picks, DEFAULT_CHAT_MODEL), a TTS engine for tts ('default' = the TTS plugin's default engine), an id from /v1/images/models for image ('default' = the image plugin's default). The first entry per kind is the default when a request omits `model`. defaults = request fields applied unless the caller sets them (and the only way to set gpu_id/ctx_size/parallel/keep_alive/mtp; image steps, else the model's own). tts `voices` = the only voices callers may pick (e.g. 'synthetic:<id>' from voices/synthetic.json -- never clips of real people); anything else -> the engine's default voice. Re-read per request, no restart needed.",
+  "models": [
+    {
+      "id": "chat",
+      "kind": "chat",
+      "target": "default",
+      "defaults": {"thinking": false}
+    },
+    {
+      "id": "whisper-1",
+      "kind": "stt",
+      "target": "whisper-1"
+    },
+    {
+      "id": "tts-1",
+      "kind": "tts",
+      "target": "default",
+      "voices": []
+    },
+    {
+      "id": "image",
+      "kind": "image",
+      "target": "default"
+    }
+  ]
+}

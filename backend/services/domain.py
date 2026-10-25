@@ -237,7 +237,7 @@ def manifest_schema() -> Dict[str, Any]:
                          "description": "Optional capabilities this app provides to the gateway as a plugin: "
                                         "{capability: {endpoint: path, gpu?}} with capability llm | image | video | "
                                         "audio | tts | stt | documents | translate | moderation | model3d | vision | tools | "
-                                        "realtime | access -- spec in docs/plugins.md."},
+                                        "realtime | access | advice -- spec in docs/plugins.md."},
             "status_path": {**path, "description": "Optional; GET answers {\"facts\": [{\"label\", \"value\"}]} "
                                                    "(at most 6, plain text) shown on the overview."},
         },

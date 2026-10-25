@@ -17,7 +17,7 @@ count as the riskiest kind (execute).
 
 Vocabulary:
 - capability  llm | image | video | audio | tts | stt | documents | translate | moderation | model3d | tools |
-              realtime | access
+              realtime | access | advice
 - endpoint    a named path of the plugin for one part of a capability (catalog, generate, jobs, ...)
 - jobs        the one pattern for long work: POST {jobs} -> 202 {id}; GET {jobs}/{id} -> status; POST
               {jobs}/{id}/cancel; result files under the plugin's own paths
@@ -56,6 +56,9 @@ CAPABILITIES: Dict[str, Dict[str, Any]] = {
     "realtime": {"required": ("catalog", "realtime"), "optional": (), "list": "data"},
     # access for other people (the door): the gateway pushes the owner's shares, reads status
     "access": {"required": ("shares",), "optional": ("status", "security", "people"), "list": None, "no_gpu": True},
+    # model advice (2026-10-25, first plugin: llm-benchy): which language models suit a domain under speed / memory
+    # limits, from measurements; catalog = the domains it can rank for, `recommend` ranks (normalize_recommendation)
+    "advice": {"required": ("catalog", "recommend"), "optional": (), "list": "data", "no_gpu": True},
 }
 GPU_MODES = ("none", "shared", "exclusive")
 # every capability may have these: status (what it holds, which processes), release (free idle GPU memory), logs,
@@ -64,6 +67,7 @@ GPU_MODES = ("none", "shared", "exclusive")
 COMMON_ENDPOINTS = ("status", "release", "logs", "install")
 INSTALL_STATES = ("missing", "downloading", "installed", "failed")
 MAX_ENTRIES = 500
+MAX_LIMIT_ADVICE = 100
 JOB_STATUSES = ("queued", "running", "done", "failed", "cancelled")
 
 _PATH = re.compile(r"^/[A-Za-z0-9._~/-]{0,200}$")
@@ -181,6 +185,8 @@ MODEL3D_TASKS = ("text_to_3d", "image_to_3d")
 VISION_TASKS = ("faces", "objects")
 LLM_KINDS = ("chat", "embedding", "rerank", "sparse")
 TOOL_RISKS = ("read", "write", "external", "execute")      # from harmless to "runs code / changes things"
+ADVICE_KINDS = ("use_case", "dimension")
+_DIM = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 
 
 def _image(raw):
@@ -258,6 +264,14 @@ def _realtime(raw):
     return {"voices": _strings(raw.get("voices"), pattern=_TOKEN), "languages": _strings(raw.get("languages"), pattern=_LANG)}
 
 
+def _advice(raw):
+    kind = raw.get("kind", "use_case")
+    if kind not in ADVICE_KINDS:
+        raise ContractError(f"kind: {' | '.join(ADVICE_KINDS)}")
+    return {"kind": kind, "dimensions": _strings(raw.get("dimensions"), pattern=_DIM),
+            "languages": _strings(raw.get("languages"), pattern=_LANG)}
+
+
 def _kind_from_name(name: Any) -> str:
     """A standard OpenAI server's /models says nothing about the kind (Ollama, LM Studio): guess from the name."""
     n = name.lower() if isinstance(name, str) else ""
@@ -276,7 +290,7 @@ def _llm(raw):
 _SHAPES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "llm": _llm, "image": _image, "video": _video, "audio": _audio, "tts": _tts, "stt": _stt,
     "documents": _documents, "translate": _translate, "moderation": _moderation, "model3d": _model3d,
-    "realtime": _realtime, "vision": _vision,
+    "realtime": _realtime, "vision": _vision, "advice": _advice,
 }
 
 
@@ -346,6 +360,72 @@ def merge_catalogs(parts: Sequence[Tuple[str, List[Dict[str, Any]]]]) -> Tuple[L
             owner[e["id"]] = plugin_id
             merged.append(e)
     return merged, clashes
+
+
+# ------------------------------------------------------------------ advice (which model for what)
+
+def _num(v: Any, lo: float, hi: float) -> Optional[float]:
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi else None
+
+
+def _advice_model(m: Any) -> Dict[str, Any]:
+    if not isinstance(m, dict) or not isinstance(m.get("id"), str) or not _LLM_ID.match(m["id"]):
+        raise ContractError(f"invalid model id {m.get('id') if isinstance(m, dict) else m!r}")
+    score = _num(m.get("score"), 0, 1)
+    if score is None:
+        raise ContractError(f"{m['id']}: score 0..1")
+    dims = {}
+    for d, c in (m.get("dimensions") or {}).items() if isinstance(m.get("dimensions"), dict) else ():
+        if _DIM.match(d) and isinstance(c, dict) and _num(c.get("score"), 0, 1) is not None:
+            ci = c.get("ci") if isinstance(c.get("ci"), list) and len(c["ci"]) == 2 else None
+            dims[d] = {"score": _num(c["score"], 0, 1), "n": _int(c.get("n"), 0, 10**9),
+                       "ci": [_num(x, 0, 1) for x in ci] if ci else None,
+                       "templates": _int(c.get("templates"), 0, 10**6),
+                       "templates_total": _int(c.get("templates_total"), 0, 10**6)}
+    speed = []
+    for r in m.get("speed") if isinstance(m.get("speed"), list) else []:
+        if isinstance(r, dict) and _text(r.get("gpu"), 80):
+            speed.append({"gpu": _text(r["gpu"], 80), "ctx": _int(r.get("ctx"), 1, 10**8),
+                          "covers_ctx": r.get("covers_ctx") is True,
+                          "gen_tps": _num(r.get("gen_tps"), 0, 10**6), "gen_n": _int(r.get("gen_n"), 0, 10**9),
+                          "prefill_tps": _num(r.get("prefill_tps"), 0, 10**7),
+                          "prefill_n": _int(r.get("prefill_n"), 0, 10**9)})
+    mem = m.get("memory")
+    memory = {"vram_mb": _int(mem.get("vram_mb"), 1, 10**8), "gpu": _text(mem.get("gpu"), 80),
+              "ctx": _int(mem.get("ctx"), 1, 10**8), "covers_ctx": mem.get("covers_ctx") is True,
+              "n": _int(mem.get("n"), 0, 10**9)} if isinstance(mem, dict) and _int(mem.get("vram_mb"), 1, 10**8) else None
+    return {"id": m["id"], "rank": _int(m.get("rank"), 1, 10**6), "tier": _int(m.get("tier"), 1, 10**6),
+            "score": score, "coverage": _num(m.get("coverage"), 0, 1), "reliable": m.get("reliable") is True,
+            "dimensions": dims, "speed": speed[:16], "memory": memory, "file_mb": _int(m.get("file_mb"), 0, 10**8),
+            "warnings": [_text(w, 200) for w in (m.get("warnings") or [])[:10] if isinstance(w, str)]}
+
+
+def normalize_recommendation(plugin_id: str, raw: Any) -> Tuple[Dict[str, Any], List[str]]:
+    """An advice plugin's `recommend` answer -> (checked, errors): ranked `models` (score, per-dimension evidence,
+    measured speed per GPU, measured memory), `excluded` with the reason for each, the `domain` it ranked for.
+    A row that doesn't check out is dropped and reported, the rest still answer."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("models"), list):
+        raise ContractError(f"{plugin_id}: recommendation must be an object with a 'models' list")
+    models, errors = [], []
+    for i, m in enumerate(raw["models"][:MAX_LIMIT_ADVICE]):
+        try:
+            models.append(_advice_model(m))
+        except ContractError as e:
+            errors.append(f"{plugin_id}: model {i}: {e}")
+    excluded = [{"id": e["id"], "score": _num(e.get("score"), 0, 1), "reason": _text(e.get("reason"), 300)}
+                for e in (raw.get("excluded") if isinstance(raw.get("excluded"), list) else [])[:MAX_ENTRIES]
+                if isinstance(e, dict) and isinstance(e.get("id"), str) and _LLM_ID.match(e["id"])]
+    dom = raw.get("domain") if isinstance(raw.get("domain"), dict) else {}
+    weights = dom.get("weights") if isinstance(dom.get("weights"), dict) else {}
+    return {"object": "advice.recommendation",
+            "domain": {"id": _text(dom.get("id"), 64) or None, "label": _text(dom.get("label"), 120),
+                       "weights": {d: _num(w, 0, 1000) for d, w in weights.items()
+                                   if isinstance(d, str) and _DIM.match(d) and _num(w, 0, 1000) is not None}},
+            "language": raw["language"] if isinstance(raw.get("language"), str) and _LANG.match(raw["language"]) else None,
+            "ctx": _int(raw.get("ctx"), 1, 10**8), "models": models, "excluded": excluded,
+            "notes": [_text(n, 300) for n in (raw.get("notes") or [])[:10] if isinstance(n, str)],
+            "source": _text(raw.get("source"), 60) or plugin_id, "data_as_of": _text(raw.get("data_as_of"), 40) or None,
+            "provider": plugin_id}, errors
 
 
 # ------------------------------------------------------------------ status (what a plugin holds)

@@ -20,7 +20,7 @@ MODELS = {
         {"id": "chat", "kind": "chat", "target": "small.gguf", "defaults": {"thinking": False, "ctx_size": 8192}},
         {"id": "chat-large", "kind": "chat", "target": "large.gguf"},
         {"id": "whisper-1", "kind": "stt"},
-        {"id": "tts", "kind": "tts", "target": "cosyvoice", "voices": ["narrator"]},
+        {"id": "tts", "kind": "tts", "target": "cosyvoice", "voices": ["narrator", "synthetic:calm-narrator"]},
     ]
 }
 
@@ -176,7 +176,7 @@ def test_stream_model_field_rewritten(client, monkeypatch):
 def test_tts_voice_outside_allowlist_falls_back(client, monkeypatch):
     voices = []
 
-    async def fake_speech(req):
+    async def fake_speech(req, request):     # the real handler's signature (it lost `request` once: a TypeError)
         voices.append(req.voice)
         return Response(content=b"RIFF", media_type="audio/wav")
 
@@ -185,10 +185,10 @@ def test_tts_voice_outside_allowlist_falls_back(client, monkeypatch):
 
     monkeypatch.setattr(media, "openai_audio_speech", fake_speech)
     monkeypatch.setattr(pg, "_transcode_audio", fake_transcode)
-    for voice in ("some-actor-clip", "narrator"):
+    for voice in ("some-actor-clip", "narrator", "synthetic:calm-narrator", "synthetic:other"):
         assert client.post("/public/v1/audio/speech", headers=_auth(),
                            json={"input": "Hallo", "voice": voice}).status_code == 200
-    assert voices == ["alloy", "narrator"]
+    assert voices == ["alloy", "narrator", "synthetic:calm-narrator", "alloy"]
 
 
 def test_transcription_bad_language_rejected(client):
@@ -279,3 +279,19 @@ def test_nextcloud_capability_probes_see_an_existing_endpoint(client, path, body
     count anything but 404/401 as "available"."""
     r = client.post(path, headers=_auth(), json=body)
     assert r.status_code not in (401, 404)
+
+
+def test_example_catalog_when_there_is_no_own_file(tmp_path, monkeypatch):
+    # a fresh install has only public_models.example.json (the owner's own file isn't published)
+    (tmp_path / "public_models.example.json").write_text(json.dumps({"models": [{"id": "chat", "kind": "chat"}]}))
+    monkeypatch.setattr(pg, "PUBLIC_MODELS_FILE", str(tmp_path / "public_models.json"))
+    assert [a.id for a in pg.load_catalog().aliases] == ["chat"]
+    (tmp_path / "public_models.json").write_text(json.dumps({"models": [{"id": "own", "kind": "chat"}]}))
+    assert [a.id for a in pg.load_catalog().aliases] == ["own"]
+
+
+def test_the_shipped_example_is_valid():
+    from pathlib import Path
+    ex = Path(__file__).resolve().parents[2] / "public_models.example.json"
+    cat = pg.ModelCatalog.from_dict(json.loads(ex.read_text()))
+    assert {a.kind.value for a in cat.aliases} == {"chat", "stt", "tts", "image"}

@@ -1,0 +1,28 @@
+{
+  "id": "vision-serve",
+  "name": "vision-serve (faces)",
+  "description": "Image analysis plugin for ai-serve: finds faces (box, 5 landmarks, quality) and describes them for recognising people (AuraFace + YuNet, free licences). Keeps nothing; the models load on the first image and unload after 5 minutes.",
+  "command": ["./run.sh"],
+  "env": {"PORT": "{port}"},
+  "port": 8068,
+  "bind": "127.0.0.1",
+  "match": ["vision_plugin.app"],
+  "health_path": "/health",
+  "ui": false,
+  "category": "ai",
+  "icon": "image",
+  "identity": "none",
+  "maturity": "alpha",
+  "status_path": "/plugin/status",
+  "provides": {
+    "vision": {
+      "catalog": "/v1/vision/models",
+      "analyze": "/v1/vision/analyze",
+      "status": "/plugin/status",
+      "release": "/plugin/release",
+      "logs": "/plugin/logs",
+      "install": "/plugin/install",
+      "gpu": "shared"
+    }
+  }
+}

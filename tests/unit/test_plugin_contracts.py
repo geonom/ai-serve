@@ -19,8 +19,9 @@ IMAGE = {"catalog": "/v1/images/models", "generate": "/v1/images/generations", "
 
 def test_known_capabilities():
     # 2026-10-21: owner chose to plan for these now so they don't each invent their own interface later
+    # 2026-10-25: advice (which model for what), owner request
     assert set(CAPABILITIES) == {"llm", "image", "video", "audio", "tts", "stt", "documents", "translate",
-                                 "moderation", "model3d", "tools", "realtime", "access", "vision"}
+                                 "moderation", "model3d", "tools", "realtime", "access", "vision", "advice"}
 
 
 def test_provides_parsed():

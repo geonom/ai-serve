@@ -58,7 +58,7 @@ each kind, in [docs/models.md](docs/models.md).
 
 Everything except llama.cpp is a **plugin**: a separate program with a small manifest (`llama-serve.service.json`)
 that ai-serve starts when it's needed. Bundled: `plugins/tts-serve`, `plugins/stt-serve`, `plugins/sd-serve`, `plugins/image-serve`
-(ComfyUI). Models a plugin offers but that aren't installed yet can be downloaded from the Playground or the
+(ComfyUI), `plugins/vision-serve` (faces in photos: YuNet + AuraFace, `/v1/vision/analyze`). Models a plugin offers but that aren't installed yet can be downloaded from the Playground or the
 dashboard (*Compute & models → Downloads*). More
 from any git repository:
 
@@ -106,6 +106,7 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | Chatterbox (TTS), Whisper (STT) offers in `./ai-serve setup` | engines run here; the offers themselves not run on a clean machine | not tried (Chatterbox uses MLX there) | – |
 | Iris (sd-serve) | ✅ clean setup, Vulkan build | memory check fixed after a refusal; an image not confirmed | – |
 | ComfyUI (image-serve): Z-Image, Qwen-Image-Edit, style transfer, MOSS | ✅ clean setup | not tried (int8/fp8 weights are made for CUDA; may be slow or fail) | – |
+| Faces in photos (vision-serve: YuNet + AuraFace) | ✅ through the gateway, CUDA and CPU | not tried (CPU should work) | – |
 | Downloads from the Playground / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
 | More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |
 | `./ai-serve plugin add <git-url>` | ✅ with [ai-serve-strata](https://github.com/geonom/ai-serve-strata) and [ai-serve-piper](https://github.com/geonom/ai-serve-piper) (cloned, manifest checked, setup.sh) | – | – |

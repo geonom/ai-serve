@@ -339,7 +339,7 @@ class ImageCommand:
     n: int
     base_resolution: int
     aspect_ratio: str
-    steps: int
+    steps: Optional[int]      # None = the model's own default
 
 
 class ImagePolicy:
@@ -367,7 +367,7 @@ class ImagePolicy:
         if size not in self.SIZES:
             raise PolicyViolation(f"size must be one of {', '.join(self.SIZES)}.")
         base_res, aspect = self.SIZES[size]
-        steps = alias.defaults.get("steps", 4)
+        steps = alias.defaults.get("steps")
         return ImageCommand(model_name=alias.target, prompt=prompt, n=n, base_resolution=base_res,
                             aspect_ratio=aspect, steps=steps)
 

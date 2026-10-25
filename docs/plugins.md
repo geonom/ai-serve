@@ -33,7 +33,7 @@ A plugin is an ordinary app (`docs/service-manifest.md`) whose `llama-serve.serv
 ```
 
 - **capability**: `llm`, `image`, `video`, `audio`, `tts`, `stt`, `documents`, `translate`, `moderation`,
-  `model3d`, `vision`, `tools`, `realtime` or `access` (below). One app may provide several.
+  `model3d`, `vision`, `tools`, `realtime`, `access` or `advice` (below). One app may provide several.
 - **endpoints**: plain paths on the app's own port. The gateway only ever calls
   `http://127.0.0.1:<port><path>` -- no hosts, queries, `..` or `//` are accepted, so a manifest can't point the
   gateway anywhere else.
@@ -208,6 +208,32 @@ biometric data:** a vision plugin never stores or logs them.
 things up), `write` (changes the plugin's own data), `external` (reaches the internet or other services),
 `execute` (runs code / changes the machine). A tool without a risk counts as `execute`. The owner decides which
 tools models may call; nothing is enabled just because a plugin offers it.
+
+### advice -- which language model for what
+
+`{"advice": {"catalog": "/v1/advice/catalog", "recommend": "/v1/advice/recommend"}}` (first plugin: llm-benchy,
+which ranks from its own benchmark measurements). `catalog` entries are the **domains** it can rank for and add
+`kind` (`use_case` | `dimension`), `dimensions` and `languages` (prompt languages with data). `recommend`:
+`POST {"domain" | "weights": {dimension: weight}, "language"?, "ctx"?, "gpus"?: [name parts], "min_gen_tps"?,
+"min_prefill_tps"?, "max_vram_mb"?, "models"?: [ids], "include_thin"?, "limit"?}` →
+`{"domain", "language", "ctx", "models": [...], "excluded": [{"id", "score", "reason"}], "notes", "source",
+"data_as_of"}`; each model: `id` (the GGUF/model id the gateway serves), `rank`, `tier` (same tier = about equally
+good), `score` 0..1, `coverage`, `reliable` (enough trials and templates), `dimensions` {dim: {score, ci, n,
+templates, templates_total}}, `speed` [{gpu, ctx, covers_ctx, gen_tps, gen_n, prefill_tps, prefill_n}] (measured
+medians), `memory` {vram_mb, gpu, ctx, covers_ctx, n} (measured peak, `null` when not measured -- never a formula),
+`file_mb`, `warnings`. The gateway checks it field by field (`normalize_recommendation`).
+
+The gateway's side, for everyone (`backend/plugins/advice.py`, `routers/advice.py`):
+- `GET /v1/llm/advice/domains` -- every advice plugin's domains, with `provider`.
+- `POST /v1/llm/advice/recommend` -- the request above plus `installed_only` (default `true`: only models this
+  machine can serve, from `/v1/llm/models`); each model comes back with `where` and `loaded`.
+- `POST /v1/llm/advice/ask` `{"question", "model"?, "limit"?}` -- a question in words: a chat model
+  (`DEFAULT_CHAT_MODEL` unless named) turns it into a request (JSON schema over the domain ids), the plugin ranks,
+  the model words the answer from those rows only. Returns `answer` plus the `request` and `recommendation` it
+  used, so each number can be checked.
+- `/v1/llm/advice/mcp` -- an MCP server (streamable HTTP, JSON answers, no server push) for agents, tools
+  `list_model_domains` and `recommend_models` (both `risk: read`). Claude Code:
+  `claude mcp add --transport http model-advice http://127.0.0.1:8030/v1/llm/advice/mcp`.
 
 ### realtime -- talking with a model
 

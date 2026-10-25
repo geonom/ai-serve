@@ -169,6 +169,7 @@ I18N.add({
     "Lies on": "Liegt auf",
     "Light / dark": "Hell / Dunkel",
     "Listens on 127.0.0.1 only -- from this device only reachable through Tailscale": "Lauscht nur auf 127.0.0.1 -- von diesem Gerät aus nur über Tailscale erreichbar",
+    "Runs the Vite development server while shared through the door -- it can hand out any file of the project (people's data too). Start it in production mode (build + its own server, see docs/service-manifest.md).": "Läuft mit dem Vite-Entwicklungsserver, obwohl über die Tür freigegeben -- der kann jede Datei des Projekts ausliefern (auch Daten der Leute). Im Betriebsmodus starten (Build + eigener Server, siehe docs/service-manifest.md).",
     "Listens on {addr} -- reachable in the LAN/tailnet, bypassing the dashboard. Stop it here and start it again from here.": "Lauscht auf {addr} -- im LAN/Tailnet erreichbar, am Dashboard vorbei. Hier stoppen und von hier neu starten.",
     "Live sessions": "Live-Sitzungen",
     "llama.cpp installation failed: {err}": "llama.cpp-Installation fehlgeschlagen: {err}",

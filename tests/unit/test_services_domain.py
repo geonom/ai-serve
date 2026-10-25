@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from backend.services.domain import (
+    is_vite_dev_server,
     MANIFEST_NAME,
     ManifestError,
     ObservedProcess,
@@ -753,3 +754,27 @@ def test_apps_get_this_machines_names_and_a_manifest_cannot_widen_them():
                             {"LLAMA_SERVE_LOCAL_HOSTS": "evil.example"})
     assert env["LLAMA_SERVE_LOCAL_HOSTS"] == "my-pc,100.1.2.3"
     assert "LLAMA_SERVE_LOCAL_HOSTS" not in child_environment({"PATH": "/usr/bin"}, {"LLAMA_SERVE_LOCAL_HOSTS": "x"})
+
+
+class TestDevServer:
+    """2026-10-25: the Vite dev server hands out any project file -- an instance running one is flagged, so the
+    dashboard can warn when such an app is shared through the door."""
+
+    @pytest.mark.parametrize("cmdline,dev", [
+        (["node", "/p/node_modules/.bin/vite", "--host", "127.0.0.1"], True),
+        (["node", "/p/node_modules/vite/bin/vite.js"], True),
+        (["npx", "vite", "dev"], True),
+        (["node", "/p/node_modules/.bin/vite", "preview"], False),
+        (["node", "/p/node_modules/.bin/vite", "build"], False),
+        (["node", "server/prod.js"], False),
+        (["python3", "vite_helper.py"], False),
+    ])
+    def test_is_vite_dev_server(self, cmdline, dev):
+        assert is_vite_dev_server(cmdline) is dev
+
+    def test_instance_flag(self, tmp_path):
+        m = _manifest(tmp_path, match=["vite", "prod.js"])
+        procs = [_proc(10, m.project_dir, ["bash", "./run.sh"]),
+                 _proc(11, m.project_dir, ["node", "node_modules/.bin/vite", "--port", "8008"], ports=[8008], ppid=10),
+                 _proc(20, m.project_dir, ["node", "server/prod.js"], ports=[8018], started=2000.0)]
+        assert [(i.root_pid, i.dev_server) for i in discover_instances(m, procs)] == [(10, True), (20, False)]

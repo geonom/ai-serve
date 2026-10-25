@@ -48,6 +48,8 @@ CAPABILITIES: Dict[str, Dict[str, Any]] = {
     "translate": {"required": ("catalog", "translate"), "optional": (), "list": "data"},
     "moderation": {"required": ("catalog", "moderate"), "optional": (), "list": "data"},  # OpenAI moderations shape
     "model3d": {"required": ("catalog", "jobs"), "optional": (), "list": "data"},
+    # image analysis: faces (boxes, landmarks, embeddings), objects; `analyze` takes images + the tasks wanted
+    "vision": {"required": ("catalog", "analyze"), "optional": (), "list": "data"},
     # agent tools: an MCP server (streamable HTTP); its tools/list result is the catalog
     "tools": {"required": ("mcp",), "optional": (), "list": "tools", "no_gpu": True},
     # realtime speech conversation over a WebSocket (OpenAI-Realtime-like)
@@ -176,6 +178,7 @@ IMAGE_TASKS = ("generate", "edit", "style", "inpaint", "upscale", "remove_backgr
 VIDEO_TASKS = ("text_to_video", "image_to_video", "video_to_video")
 AUDIO_TASKS = ("music", "sound")
 MODEL3D_TASKS = ("text_to_3d", "image_to_3d")
+VISION_TASKS = ("faces", "objects")
 LLM_KINDS = ("chat", "embedding", "rerank", "sparse")
 TOOL_RISKS = ("read", "write", "external", "execute")      # from harmless to "runs code / changes things"
 
@@ -237,6 +240,20 @@ def _model3d(raw):
             "formats": _strings(raw.get("formats"), allowed=("glb", "gltf", "obj", "ply", "stl", "usdz"))}
 
 
+def _vision(raw):
+    emb = raw.get("embedding") if isinstance(raw.get("embedding"), dict) else None
+    th = emb.get("thresholds") if emb and isinstance(emb.get("thresholds"), dict) else {}
+    # what a face embedding is: vectors of different models (or versions) are never comparable -- apps store
+    # `model` next to each vector and re-embed when it changes
+    embedding = {"model": _text(emb.get("model"), 80), "dim": _int(emb.get("dim"), 1, 8192),
+                 "metric": "cosine" if emb.get("metric", "cosine") == "cosine" else _text(emb.get("metric"), 20),
+                 "thresholds": {k: float(v) for k, v in th.items()
+                                if k in ("maybe", "likely") and type(v) in (int, float) and -1 <= v <= 1}} \
+        if emb and _text(emb.get("model"), 80) else None
+    return {"tasks": _tasks(raw, VISION_TASKS, ["faces"]), "max_images": _int(raw.get("max_images"), 1, 64) or 1,
+            "embedding": embedding, "open_vocabulary": raw.get("open_vocabulary") is True}
+
+
 def _realtime(raw):
     return {"voices": _strings(raw.get("voices"), pattern=_TOKEN), "languages": _strings(raw.get("languages"), pattern=_LANG)}
 
@@ -259,7 +276,7 @@ def _llm(raw):
 _SHAPES: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "llm": _llm, "image": _image, "video": _video, "audio": _audio, "tts": _tts, "stt": _stt,
     "documents": _documents, "translate": _translate, "moderation": _moderation, "model3d": _model3d,
-    "realtime": _realtime,
+    "realtime": _realtime, "vision": _vision,
 }
 
 

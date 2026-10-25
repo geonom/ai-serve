@@ -33,7 +33,7 @@ A plugin is an ordinary app (`docs/service-manifest.md`) whose `llama-serve.serv
 ```
 
 - **capability**: `llm`, `image`, `video`, `audio`, `tts`, `stt`, `documents`, `translate`, `moderation`,
-  `model3d`, `tools`, `realtime` or `access` (below). One app may provide several.
+  `model3d`, `vision`, `tools`, `realtime` or `access` (below). One app may provide several.
 - **endpoints**: plain paths on the app's own port. The gateway only ever calls
   `http://127.0.0.1:<port><path>` -- no hosts, queries, `..` or `//` are accepted, so a manifest can't point the
   gateway anywhere else.
@@ -186,6 +186,20 @@ result files are videos (`video/mp4`).
 
 `catalog` entries add `tasks` (`text_to_3d`, `image_to_3d`) and `formats` (`glb`, `gltf`, `obj`, `ply`, `stl`,
 `usdz`). `jobs` body: `{"model", "prompt"?, "image_base64"?, "format"?, "seed"?}`; result files are models.
+
+### vision -- faces and objects in images
+
+`{"vision": {"catalog": "/v1/vision/models", "analyze": "/v1/vision/analyze", ...}}`. `catalog` entries add `tasks`
+(`faces`, `objects`), `max_images` per call, `open_vocabulary` (objects by free-text labels) and, for face models,
+`embedding` `{model, dim, metric, thresholds: {maybe, likely}}` -- `model` names the vector space: vectors of
+different models or versions are never comparable, so apps store it next to each vector and re-embed when it
+changes. `analyze`: multipart `image` (repeated), `model`, `tasks` (comma-separated, only ones the model lists),
+`embed`, `labels`; answer `{"images": [{"width", "height", "faces"?: [...], "objects"?: [...], "error"?}]}`, one row
+per image in order. Faces: `{"box": [x, y, w, h], "landmarks": [[x, y] x 5], "score", "quality", "embedding"?}`
+in pixels of the image after its EXIF rotation; objects: `{"label", "box", "score"}`. The gateway's
+`/v1/vision/analyze` takes `tasks` = faces | objects | both and sends each task to its model (`face_model`,
+`object_model`, else the default for it), one call when one model does both. **Images and embeddings are
+biometric data:** a vision plugin never stores or logs them.
 
 ### tools -- tools for agents (MCP)
 

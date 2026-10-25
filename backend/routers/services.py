@@ -316,6 +316,7 @@ async def list_services():
                            or any(descends_from(i.root_pid, mp, procs) for mp in managed_pids),
                 "healthy": healthy,
                 "exposed": [f"{a}:{p}" for a, p in i.exposed],
+                "dev_server": i.dev_server,
                 "open": open_target(m, port),
             })
         if instances:

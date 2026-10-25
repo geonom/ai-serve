@@ -96,3 +96,19 @@ There is no public level; publishing to the internet is only possible for the da
 **The dashboard is the only authority over reachability.** Consequently:
 - a `tailscale serve` root route that points at a service's port but wasn't created by the dashboard is **removed** when levels are applied (path mounts on the same port stay);
 - a running instance that listens beyond loopback (e.g. started by hand with `HOST=0.0.0.0`) is flagged red on its card — stop it and start it from the dashboard.
+
+## 5. Production mode, not a development server
+
+An app that other people reach (through the door, `docs/identity.md`) must not run on a development server. Vite's
+dev server hands out **any file under the project root** -- people's data, `.env` files, the server code -- and its
+`fs.deny` guard was bypassed several times in 2025 (CVE-2025-30208 and after). The pattern (Liruna, Sonnenrechner,
+Kristallhelden, Dynasty since 2026-10-25):
+
+- `serve.sh` builds the app (`vite build`, or for a plain-JS app a fresh copy of its pages/js/css/assets into
+  `dist/`) and starts a small server of its own -- e.g. `server/prod.js` with `sdk/serve/prodServer.js` (copy it
+  into the app): only regular files inside `dist/` (realpath-checked, no dotfiles, no listings, ranges for audio),
+  plus the app's own `/api` handlers in front; everything else is 404. `match` names that server (`server/prod.js`).
+- People's data lives **outside the project**: `~/.local/share/<app>/`, overridable by an env var.
+- `npm run dev` stays the way to develop on this machine.
+
+Apps & Services flags a door-shared app whose running instance is a Vite dev server (red hint on its card).

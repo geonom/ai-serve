@@ -236,7 +236,7 @@ def manifest_schema() -> Dict[str, Any]:
             "provides": {"type": "object",
                          "description": "Optional capabilities this app provides to the gateway as a plugin: "
                                         "{capability: {endpoint: path, gpu?}} with capability llm | image | video | "
-                                        "audio | tts | stt | documents | translate | moderation | model3d | tools | "
+                                        "audio | tts | stt | documents | translate | moderation | model3d | vision | tools | "
                                         "realtime | access -- spec in docs/plugins.md."},
             "status_path": {**path, "description": "Optional; GET answers {\"facts\": [{\"label\", \"value\"}]} "
                                                    "(at most 6, plain text) shown on the overview."},
@@ -566,6 +566,17 @@ class ServiceInstance:
     cmdline: Tuple[str, ...]
     started_at: float
     exposed: Tuple[Tuple[str, int], ...] = ()  # listening beyond loopback -> bypasses the dashboard
+    dev_server: bool = False   # runs the Vite dev server (serves any project file) -- never behind the door
+
+
+def is_vite_dev_server(cmdline: Sequence[str]) -> bool:
+    """`vite` / `vite dev` / `vite serve` (also via node_modules/.bin or vite.js), not `vite build|preview`."""
+    for i, a in enumerate(cmdline):
+        base = os.path.basename(a)
+        if base == "vite" or (base == "vite.js" and "/vite/bin/" in a.replace("\\", "/")):
+            rest = [x for x in cmdline[i + 1:] if not x.startswith("-")]
+            return not rest or rest[0] in ("dev", "serve") or not rest[0].isalpha()
+    return False
 
 
 def _belongs(m: ServiceManifest, p: ObservedProcess) -> bool:
@@ -615,7 +626,8 @@ def discover_instances(m: ServiceManifest, processes: Iterable[ObservedProcess])
                           if not _is_loopback_address(a[0])})
         roots[root.pid] = ServiceInstance(root_pid=root.pid, pids=pids, ports=ports,
                                           cmdline=root.cmdline, started_at=root.create_time,
-                                          exposed=tuple(exposed))
+                                          exposed=tuple(exposed),
+                                          dev_server=any(is_vite_dev_server(procs[x].cmdline) for x in pids if x in procs))
     # A "root" inside another instance's tree is part of that instance -- e.g. a
     # `sh -c` wrapper (which deliberately stops the climb) between the start script
     # and the listening process. Keep only the outermost roots.

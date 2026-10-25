@@ -181,6 +181,10 @@ function renderServiceCard(s) {
             parts.push(el('div', { class: 'service-hint service-error', text:
                 tx('Listens on {addr} -- reachable in the LAN/tailnet, bypassing the dashboard. Stop it here and start it again from here.', { addr: inst.exposed.join(', ') }) }));
         }
+        if (inst.dev_server && doorShare(s)) {
+            parts.push(el('div', { class: 'service-hint service-error', text:
+                tx('Runs the Vite development server while shared through the door -- it can hand out any file of the project (people\'s data too). Start it in production mode (build + its own server, see docs/service-manifest.md).') }));
+        }
         if (inst.healthy === false) parts.push(el('div', { class: 'service-hint', text: tx('The copy on :{ports} doesn\'t answer healthy.', { ports: inst.ports.join(', :') }) }));
     }
 

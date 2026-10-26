@@ -2,7 +2,7 @@
 # image-serve on a fresh machine: its own small venv, ComfyUI (pinned release) with ComfyUI-GGUF (pinned, plus the
 # patch in patches/ for Qwen-Image 2.1), ComfyUI's own Python environment with the PyTorch build for this machine
 # (CUDA with an NVIDIA GPU, else PyPI's build -- Metal on Apple Silicon -- or CPU), and optionally model bundles:
-#   ./setup.sh [--models z-image-turbo,qwen-edit-2511,ernie-turbo,moss,moss-bf16] [--dry-run]
+#   ./setup.sh [--models z-image-turbo,qwen-edit-2511,flux2-klein-4b,ernie-turbo,moss,moss-bf16] [--dry-run]
 # --dry-run makes every decision (which ComfyUI, which PyTorch build) and prints what it would run -- installs nothing
 # (the CI runs it on Linux and macOS: a missing nvidia-smi once ended the setup on a Mac).
 # An existing ComfyUI is used as it is when COMFYUI_DIR points at it (.env); then nothing is cloned there.

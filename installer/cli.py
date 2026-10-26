@@ -1,8 +1,10 @@
 """`./ai-serve` -- set up and run ai-serve.
 
-    ./ai-serve setup                      llama.cpp for this machine + the basic services you choose (asks)
+    ./ai-serve setup                      llama.cpp for this machine + the basic services you choose (asks; the
+                                          defaults follow the GPU, RAM and disk space found)
+    ./ai-serve setup --recommended --yes  exactly what fits this machine, without asking
     ./ai-serve setup --offers llm-gemma-e2b,image-iris --yes
-    ./ai-serve offers                     what setup can install, with sizes
+    ./ai-serve offers                     what setup can install, with sizes and what is suggested here
     ./ai-serve plugin add <git-url> [--name N]   another app or plugin from a git repository
     ./ai-serve plugin list
     ./ai-serve start [-d]                 the gateway (http://localhost:8030); -d: in the background
@@ -158,8 +160,27 @@ def status() -> int:
 
 
 def machine() -> O.Machine:
-    nvidia = bool(shutil.which("nvidia-smi")) and subprocess.run(["nvidia-smi", "-L"], capture_output=True).returncode == 0
-    return O.Machine(platform.system(), platform.machine(), nvidia=nvidia)
+    """What this machine has -- each figure 0/empty when it can't be read (the suggestions then fall back)."""
+    gpus: List[int] = []
+    nvidia = False
+    if shutil.which("nvidia-smi"):
+        try:
+            r = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                               capture_output=True, text=True, timeout=15)
+            nvidia = r.returncode == 0
+            gpus = [int(float(x)) for x in r.stdout.split() if x.strip()] if nvidia else []
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    try:
+        ram_mb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") >> 20
+    except (ValueError, OSError, AttributeError):
+        ram_mb = 0
+    try:
+        free_gb = shutil.disk_usage(HERE).free / 1e9
+    except OSError:
+        free_gb = 0
+    return O.Machine(platform.system(), platform.machine(), nvidia=nvidia, gpus_mb=tuple(gpus), ram_mb=ram_mb,
+                     disk_free_gb=free_gb)
 
 
 def ask(question: str, default: bool = False) -> bool:
@@ -172,26 +193,37 @@ def ask(question: str, default: bool = False) -> bool:
 
 
 def choose(m: O.Machine) -> List[str]:
+    """Asks offer by offer; the defaults are the suggestions for this machine (offers.recommend)."""
     by_id = {o.id: o for o in O.offers(m)}
-    print("\nBasic set -- all optional, can be added any time later (./ai-serve setup):\n")
+    rec = {oid: (yes, why) for oid, yes, why in O.recommend(m)}
+    print("\nBasic set -- all optional, can be added any time later (./ai-serve setup).")
+    print("The defaults are suggestions for this machine.\n")
     picked: List[str] = []
-    e4b, e2b = by_id["llm-gemma-e4b"], by_id["llm-gemma-e2b"]
-    print(f"  Language model, also reads images: Gemma 4 E4B (~{e4b.size_gb} GB) or E2B, extra small (~{e2b.size_gb} GB)")
+    keys = {"12": "llm-gemma-12b", "4": "llm-gemma-e4b", "2": "llm-gemma-e2b"}
+    print("  Language model, also reads images: " + ", ".join(
+        f"Gemma 4 {by_id[i].label.split('Gemma 4 ')[1].split(' ')[0]} (~{by_id[i].size_gb} GB)" for i in keys.values()))
+    suggested = next(k for k, i in keys.items() if rec[i][0])
+    print(f"  Suggested: {by_id[keys[suggested]].label.split(' (')[0]} -- {rec[keys[suggested]][1]}")
     try:
-        a = input("  [4] E4B  [2] E2B  [n] none  (default 4): ").strip().lower() or "4"
+        a = input(f"  [12] 12B  [4] E4B  [2] E2B  [n] none  (default {suggested}): ").strip().lower() or suggested
     except EOFError:
-        a = "4"
-    picked += ["llm-gemma-e4b"] if a == "4" else ["llm-gemma-e2b"] if a == "2" else []
-    for oid in ("tts-chatterbox", "stt-whisper", "image-iris", "image-comfyui"):
+        a = suggested
+    picked += [keys[a]] if a in keys else []
+    for oid in ("tts-chatterbox", "tts-piper", "stt-whisper", "image-iris", "image-comfyui"):
         o = by_id[oid]
-        print(f"\n  {o.label}: {o.what}\n  ~{o.size_gb} GB, license {o.license}")
-        if ask("  Set it up?", default=oid != "image-comfyui"):   # ~30 GB: only when asked for
+        yes, why = rec[oid]
+        print(f"\n  {o.label}: {o.what}\n  ~{o.size_gb} GB, license {o.license}\n"
+              f"  {'Suggested' if yes else 'Not suggested'}: {why}")
+        if ask("  Set it up?", default=yes):
             picked.append(oid)
     return picked
 
 
 def run_setup(offer: O.Offer) -> None:
     d = HERE / "plugins" / offer.plugin
+    if not d.is_dir() and offer.git:   # an external plugin: cloned and its manifest checked like `plugin add`
+        print(f"\n== {offer.label}: {offer.git} -> plugins/{offer.plugin}")
+        P.add(offer.git, HERE / "plugins", offer.plugin)
     if not d.is_dir():
         raise SystemExit(f"plugins/{offer.plugin} is missing -- is this a complete ai-serve checkout?")
     script, *args = offer.setup
@@ -199,9 +231,13 @@ def run_setup(offer: O.Offer) -> None:
     subprocess.run(["bash", str(d / script), *args], cwd=d, check=True)
 
 
-def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool) -> None:
+def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool, recommended: bool = False) -> None:
     m = machine()
-    print(f"ai-serve setup -- {m.system} {m.machine}" + (" with NVIDIA GPU" if m.nvidia else ""))
+    print(f"ai-serve setup -- {O.describe(m)}")
+    if recommended:
+        if chosen is not None:
+            raise ValueError("give either --offers or --recommended")
+        chosen = [oid for oid, ok, _ in O.recommend(m) if ok]
     if not shutil.which("uv"):
         raise SystemExit("uv is needed for the services' Python environments: https://docs.astral.sh/uv/ "
                          "(curl -LsSf https://astral.sh/uv/install.sh | sh), then run this again.")
@@ -209,6 +245,8 @@ def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool) -> None:
     picked = [o for o in O.offers(m) if o.id in ids]
     total = sum(o.size_gb for o in picked)
     print(f"\nChosen: {', '.join(o.label for o in picked) or 'only ai-serve itself'} -- together ~{total:.1f} GB")
+    if m.disk_free_gb and total > m.disk_free_gb - O.DISK_RESERVE_GB:
+        print(f"Note: only {m.disk_free_gb:.0f} GB free on the disk -- that is tight or too little.")
     if not yes and not ask("Go?", default=True):
         raise SystemExit("cancelled")
     llama_server = None
@@ -301,6 +339,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("setup")
     s.add_argument("--offers", help="comma-separated offer ids (see `offers`); without: ask")
+    s.add_argument("--recommended", action="store_true", help="the suggestions for this machine (see `offers`)")
     s.add_argument("--yes", action="store_true")
     s.add_argument("--skip-llamacpp", action="store_true")
     sub.add_parser("offers")
@@ -327,10 +366,16 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     try:
         if a.cmd == "setup":
-            setup(a.offers.split(",") if a.offers else None, a.yes, a.skip_llamacpp)
+            setup(a.offers.split(",") if a.offers else None, a.yes, a.skip_llamacpp, a.recommended)
         elif a.cmd == "offers":
-            for o in O.offers(machine()):
-                print(f"{o.id:16} ~{o.size_gb:4.1f} GB  {o.label}\n{'':24}{o.what}")
+            mach = machine()
+            rec = {oid: (yes, why) for oid, yes, why in O.recommend(mach)}
+            print(f"This machine: {O.describe(mach)}\n")
+            for o in O.offers(mach):
+                yes, why = rec[o.id]
+                print(f"{'*' if yes else ' '} {o.id:16} ~{o.size_gb:4.1f} GB  {o.label}\n{'':26}{o.what}\n"
+                      f"{'':26}{'suggested' if yes else 'not suggested'}: {why}")
+            print("\n* = suggested here; take them with ./ai-serve setup --recommended")
         elif a.cmd == "plugin" and a.pcmd == "add":
             plugin_add(a.url, a.name, a.yes)
         elif a.cmd == "plugin":

@@ -27,16 +27,20 @@ git clone https://github.com/geonom/ai-serve.git && cd ai-serve
 ```
 
 The installer fetches the right llama.cpp build for this machine and offers a basic set of services – all optional.
+It looks at the GPU memory (on a Mac: the part of the RAM the GPU may use), the RAM and the free disk space and
+suggests what fits; the suggestions are the defaults when it asks. `./ai-serve offers` shows them with the reasons,
+`./install.sh --recommended --yes` takes them without asking.
 llama.cpp, Gemma, Iris and the ComfyUI models are pinned and checked by sha256; Chatterbox and Whisper are fetched by
 their own libraries from Hugging Face (current version, not pinned). Sizes are estimates:
 
 | Offer | What | Approx. size |
 |---|---|---|
-| Gemma 4 E4B or E2B | Language model that also understands images | 5.5 / 3.8 GB |
+| Gemma 4 12B, E4B or E2B | Language model that also understands images (12B from ~12 GB on the GPU) | 7.3 / 5.5 / 3.8 GB |
 | Chatterbox Multilingual | Text-to-speech with voice cloning (through MLX on a Mac) | 3–7 GB |
+| Piper ([ai-serve-piper](https://github.com/geonom/ai-serve-piper), cloned by the installer) | Fast text-to-speech on the CPU, fixed voices (German, English; more in *Downloads*) – suggested instead of Chatterbox without a GPU | 0.3 GB |
 | Whisper (WhisperX small) | Speech-to-text; telling speakers apart with pyannote needs a free Hugging Face token (below) | 2–8 GB |
 | Iris-3B Turbo | Images from text descriptions (stable-diffusion.cpp) | 5.5 GB |
-| ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), Z-Image Turbo; MOSS-Image (text in images, placing things in boxes) as a later download | ~30 GB |
+| ComfyUI (image-serve) | Editing images by instruction, style transfer (Qwen-Image-Edit 2511), FLUX.2 [klein] 4B, Z-Image Turbo; MOSS-Image (text in images, placing things in boxes) as a later download. With 8–12 GB on the GPU only Z-Image + klein | ~35 GB (8–12 GB GPU: ~18.5 GB) |
 
 Telling speakers apart: with Whisper it uses pyannote's model, which is gated on Hugging Face – accept its terms on
 <https://huggingface.co/pyannote/speaker-diarization-community-1> and put `HF_TOKEN=<your token>` into

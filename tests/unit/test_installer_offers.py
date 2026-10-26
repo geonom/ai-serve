@@ -137,3 +137,12 @@ def test_piper_comes_from_its_own_repository():
     assert piper.git == "https://github.com/geonom/ai-serve-piper" and piper.plugin == "ai-serve-piper"
     assert piper.setup == ("setup.sh", "--voices", "de_DE-thorsten-medium,en_US-ljspeech-medium")
     assert piper.size_gb < 1
+
+
+def test_reasons_match_the_descriptions_on_a_mac():
+    """Found on the owner's Mac (2026-10-26): Whisper's reason said 'GPU or CPU' under a description saying 'on the
+    CPU', and ComfyUI's Mac note stood twice."""
+    assert "CPU" in _why(MAC24, "stt-whisper") and "GPU" not in _why(MAC24, "stt-whisper")
+    assert "GPU" in _why(BIG_NV, "stt-whisper")
+    comfy = {x.id: x for x in o.offers(MAC24)}["image-comfyui"]
+    assert _why(MAC24, "image-comfyui") not in comfy.what

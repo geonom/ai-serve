@@ -91,7 +91,7 @@ def _comfyui(m: Machine) -> Offer:
                         "MOSS-Image (text in images, positions) as a later download"), "z-image-turbo,qwen-edit-2511,flux2-klein-4b"
         size = 35.0 if m.nvidia else 32.0
     return Offer(id="image-comfyui", label="Image editing + more image models (ComfyUI)",
-                 what=what + (" -- slow on a Mac, editing untried there" if m.apple_silicon else ""),
+                 what=what,
                  size_gb=size, license="Apache-2.0 (Modelle), GPL-3.0 (ComfyUI)",
                  plugin="image-serve", setup=("setup.sh", "--models", models))
 
@@ -179,7 +179,7 @@ def recommend(m: Machine) -> List[Tuple[str, bool, str]]:
         want["tts-piper"] = (True, f"Chatterbox needs ~5 GB on the GPU, {on_gpu} here; Piper runs on the CPU")
     else:
         want["tts-piper"] = (False, "Chatterbox is suggested here (cloned voices); Piper can be added any time")
-    want["stt-whisper"] = (True, "the small Whisper also runs well on the CPU" if cpu_only else "runs on the GPU or the CPU")
+    want["stt-whisper"] = (True, "runs on the GPU" if m.nvidia else "the small Whisper also runs well on the CPU")
     if m.nvidia and known and gpu >= 12:
         want["image-comfyui"] = (True, f"both image editors fit ({on_gpu})")
     elif m.nvidia and known and gpu >= 8:

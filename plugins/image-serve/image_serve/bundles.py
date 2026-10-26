@@ -85,6 +85,15 @@ FILES: Tuple[BundleFile, ...] = (
     BundleFile("birefnet", "Comfy-Org/BiRefNet", "background_removal/birefnet.safetensors", "background_removal",
                "birefnet.safetensors", 444473596, "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154",
                rev="25511f8787e51912e1480706b4e47b8f467fbf72"),
+    # FLUX.2 [klein] 4B: unsloth's GGUF (Apache-2.0, pinned commit) + the Qwen3-4B text encoder Z-Image Turbo uses
+    # (same model; ComfyUI reads other layers of it for flux2) + FLUX.2's VAE (the one MOSS uses)
+    BundleFile("flux2-klein-4b", "unsloth/FLUX.2-klein-4B-GGUF", "flux-2-klein-4b-Q8_0.gguf", "unet",
+               "flux-2-klein-4b-Q8_0.gguf", 4300644928, "24a812e8f9b640e21c784164ea48571d8017ca22873696f4badeeabb006d509c",
+               rev="0084d1df98e2e2137fe776d55170bc4792ec1d66"),
+    BundleFile("flux2-klein-4b", "unsloth/Qwen3-4B-GGUF", "Qwen3-4B-UD-Q6_K_XL.gguf", "text_encoders",
+               "Qwen3-4B-UD-Q6_K_XL.gguf", 3658223392, "ac0767b5e9c9f16efe57ce422253a33747970c166c3131c4d4d59d20511f07e1"),
+    BundleFile("flux2-klein-4b", "Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors", "vae",
+               "flux2-vae.safetensors", 336213556, "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"),
     BundleFile("moss-bf16", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_bf16.safetensors", "diffusion_models",
                "moss_image_sft_bf16.safetensors", 10164655808, "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f"),
 )
@@ -98,6 +107,8 @@ BUNDLES: Dict[str, Dict[str, str]] = {
                     "description": "Fast images from text, a bit more illustrative"},
     "birefnet": {"label": "BiRefNet", "license": "MIT",
                  "description": "Remove the background of an image (cut-out figures with transparency)"},
+    "flux2-klein-4b": {"label": "FLUX.2 [klein] 4B", "license": "Apache-2.0",
+                       "description": "Edit images from up to four reference images in 4 steps (small and fast)"},
     "moss": {"label": "MOSS-Image", "license": "Apache-2.0",
              "description": "Text in images, long prompts, things placed where you draw them; with the 4- and 8-step turbo LoRAs"},
     "moss-gguf": {"label": "MOSS-Image (GGUF)", "license": "Apache-2.0",

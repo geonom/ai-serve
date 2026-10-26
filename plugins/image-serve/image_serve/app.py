@@ -37,7 +37,7 @@ LICENSES: Dict[str, tuple] = {
     "z-image-turbo": ("Apache-2.0", True), "qwen-image-2.1": ("Apache-2.0", True),
     "qwen-image-2.1-int8": ("Apache-2.0", True), "qwen-edit-2511": ("Apache-2.0", True),
     "qwen-edit-2511-q3": ("Apache-2.0", True), "ernie-turbo": ("", None), "ideogram-4": ("", None),
-    "birefnet": ("MIT", True),
+    "birefnet": ("MIT", True), "flux2-klein-4b": ("Apache-2.0", True),
 }
 
 

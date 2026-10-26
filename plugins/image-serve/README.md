@@ -9,6 +9,7 @@ back when idle. ComfyUI's own web interface is passed through as well.
 |---|---|---|
 | Z-Image Turbo (GGUF Q6_K) | fast, photorealistic images -- the default | ~9.1 GB |
 | Qwen-Image-Edit 2511 (GGUF Q2_K + Lightning 4-step LoRA) | editing by instruction, style transfer | ~16.7 GB |
+| FLUX.2 [klein] 4B (GGUF Q8_0) | editing from up to four reference images in 4 steps -- small and fast (shares Z-Image's text encoder) | ~7.7 GB |
 | ERNIE-Image Turbo (GGUF Q6_K) | fast, a bit more illustrative | ~13.7 GB |
 | MOSS-Image (int8 + 4- and 8-step turbo LoRAs) | text in images, long prompts, placing things where you draw boxes (`layout`) -- with an NVIDIA GPU | ~14.4 GB |
 | MOSS-Image (GGUF Q5 + the same LoRAs) | the same, for a Mac or a machine without NVIDIA | ~13.0 GB |

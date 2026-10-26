@@ -69,6 +69,11 @@ CATALOG: Tuple[ImageModel, ...] = (
     ImageModel("qwen-edit-2511-q3", "Qwen-Image-Edit 2511 (Q3_K_S)", "comfyui", "qwen-image-edit-2511-Q3_K_S.gguf",
                "Fastest (~40 s), but followed instructions less well in tests.", tasks=("edit", "style"),
                steps_default=4, steps_max=20, max_images=5),
+    # FLUX.2 [klein] 4B distilled (BFL, Apache-2.0; unsloth's GGUF Q8_0): edits with up to 4 reference images,
+    # 4 steps (2026-10-26, owner via V-Noveller -- a second edit model to compare with 2511; comfy.build_klein_edit_workflow)
+    ImageModel("flux2-klein-4b", "FLUX.2 [klein] 4B (Q8_0)", "comfyui", "flux-2-klein-4b-Q8_0.gguf",
+               "Edits from up to four reference images in 4 steps; small and fast, Apache-2.0. Trained on filtered data: "
+               "not for explicit pictures.", tasks=("edit",), steps_default=4, steps_max=50, max_images=4),
     # ComfyUI's own BiRefNet node (comfy_extras/nodes_bg_removal.py, since 2026-05); Comfy-Org's repackaged file
     ImageModel("birefnet", "BiRefNet (remove background)", "comfyui", "birefnet.safetensors",
                "Cuts out the foreground: the same image back as a PNG with transparency (~1 GB VRAM, seconds).",
@@ -106,7 +111,7 @@ def available(m: ImageModel, models_root: Optional[str] = None) -> bool:
 
 # catalog model -> the download bundle that brings it (image_serve/bundles.py)
 BUNDLE_OF = {"z-image-turbo": "z-image-turbo", "qwen-edit-2511": "qwen-edit-2511", "ernie-turbo": "ernie-turbo",
-             "birefnet": "birefnet"}
+             "birefnet": "birefnet", "flux2-klein-4b": "flux2-klein-4b"}
 
 
 def listing_row(m: ImageModel, models_root: Optional[str] = None) -> dict:

@@ -295,6 +295,70 @@ def patch_edit_workflow(workflow: Dict[str, Any], image_names: List[str], prompt
     return workflow
 
 
+# FLUX.2 [klein] 4B (2026-10-26, owner via V-Noveller: an Apache-2.0 edit model besides Qwen-Image-Edit 2511), built
+# like ComfyUI's own klein edit template (comfyui_workflow_templates: image_flux2_klein_*_image_edit): each image
+# scaled to ~1 MP, VAE-encoded, chained as a ReferenceLatent onto the prompt and onto the zeroed negative; distilled,
+# so cfg 1 and 4 steps. BFL: up to 4 reference images. Text encoder = the Qwen3-4B GGUF Z-Image Turbo uses.
+KLEIN_MAX_IMAGES = 4
+KLEIN_TEXT_ENCODER = "Qwen3-4B-UD-Q6_K_XL.gguf"
+KLEIN_VAE = "flux2-vae.safetensors"
+# ~1 MP, multiples of 16
+KLEIN_SIZES = {"1:1": (1024, 1024), "16:9": (1360, 768), "9:16": (768, 1360), "4:3": (1184, 896), "3:4": (896, 1184)}
+
+
+def is_klein(model_name: Optional[str]) -> bool:
+    return os.path.basename(model_name or "").lower().startswith("flux-2-klein")
+
+
+def build_klein_edit_workflow(image_names: List[str], prompt: str, model_name: str, seed: int,
+                              steps: Optional[int] = None, aspect_ratio: Optional[str] = None) -> Dict[str, Any]:
+    """A FLUX.2 [klein] edit with these uploaded pictures (in order, "image 1..4" in the prompt)."""
+    if not 1 <= len(image_names) <= KLEIN_MAX_IMAGES:
+        raise ValueError(f"FLUX.2 [klein] takes 1 to {KLEIN_MAX_IMAGES} images")
+    if aspect_ratio is not None and aspect_ratio not in KLEIN_SIZES:
+        raise ValueError(f"aspect_ratio: {', '.join(KLEIN_SIZES)}")
+    gguf = model_name.lower().endswith(".gguf")
+    wf: Dict[str, Any] = {
+        "1": {"class_type": "UnetLoaderGGUF" if gguf else "UNETLoader",
+              "inputs": {"unet_name": model_name} if gguf else {"unet_name": model_name, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoaderGGUF", "inputs": {"clip_name": KLEIN_TEXT_ENCODER, "type": "flux2"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": KLEIN_VAE}},
+        "4": {"class_type": "CLIPTextEncode", "_meta": {"title": "Positive"}, "inputs": {"text": prompt, "clip": ["2", 0]}},
+        "5": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["4", 0]}},
+    }
+    pos, neg, scaled = ["4", 0], ["5", 0], []
+    nid = 10
+    for name in image_names:
+        load, scale, enc, rp, rn = (str(nid + i) for i in range(5))
+        nid += 5
+        wf[load] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        wf[scale] = {"class_type": "ImageScaleToTotalPixels",
+                     "inputs": {"image": [load, 0], "upscale_method": "lanczos", "megapixels": 1.0, "resolution_steps": 1}}
+        wf[enc] = {"class_type": "VAEEncode", "inputs": {"pixels": [scale, 0], "vae": ["3", 0]}}
+        wf[rp] = {"class_type": "ReferenceLatent", "inputs": {"conditioning": pos, "latent": [enc, 0]}}
+        wf[rn] = {"class_type": "ReferenceLatent", "inputs": {"conditioning": neg, "latent": [enc, 0]}}
+        pos, neg = [rp, 0], [rn, 0]
+        scaled.append(scale)
+    if aspect_ratio is None:
+        wf["6"] = {"class_type": "GetImageSize", "inputs": {"image": [scaled[0], 0]}}
+        width, height = ["6", 0], ["6", 1]
+    else:
+        width, height = KLEIN_SIZES[aspect_ratio]
+    wf.update({
+        "7": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "8": {"class_type": "Flux2Scheduler", "inputs": {"steps": steps or 4, "width": width, "height": height}},
+        "9": {"class_type": "CFGGuider", "inputs": {"model": ["1", 0], "positive": pos, "negative": neg, "cfg": 1}},
+        "100": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+        "101": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "102": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["101", 0], "guider": ["9", 0],
+                                                                  "sampler": ["100", 0], "sigmas": ["8", 0],
+                                                                  "latent_image": ["7", 0]}},
+        "103": {"class_type": "VAEDecode", "inputs": {"samples": ["102", 0], "vae": ["3", 0]}},
+        "104": {"class_type": "SaveImage", "inputs": {"images": ["103", 0], "filename_prefix": "klein-edit"}},
+    })
+    return wf
+
+
 class ComfyUIEditRequest(BaseModel):
     image_base64: str
     prompt: str
@@ -1589,21 +1653,26 @@ async def comfyui_edit(req: ComfyUIEditRequest):
     state.comfyui_last_used = start_time
     await _ensure_comfyui_running(gpu_id=req.gpu_id)
     _reset_comfyui_idle_timer(state.comfyui_port)
-    _comfyui_dir = WORKFLOWS_DIR
-    workflow_path = os.path.join(_comfyui_dir, "Qwen-Image-Edit.json")
-    try:
-        with open(workflow_path, "r") as f:
-            workflow = json.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not load workflow template: {e}")
-
     if req.aspect_ratio is not None and req.aspect_ratio not in EDIT_SIZES:
         raise HTTPException(status_code=400, detail=f"aspect_ratio: {', '.join(EDIT_SIZES)}")
+    klein = is_klein(req.model_name)
+    if klein and 1 + len(req.extra_images_base64) > KLEIN_MAX_IMAGES:
+        raise HTTPException(status_code=400, detail=f"FLUX.2 [klein] takes at most {KLEIN_MAX_IMAGES} images")
+    if not klein:
+        try:
+            with open(os.path.join(WORKFLOWS_DIR, "Qwen-Image-Edit.json"), "r") as f:
+                workflow = json.load(f)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Could not load workflow template: {e}")
     names = [await _upload_image_to_comfyui(_decode_image_base64(b))
              for b in [req.image_base64, *req.extra_images_base64]]
-    workflow = patch_edit_workflow(workflow, names, prompt=req.prompt, model_name=req.model_name,
-                                   seed=req.seed if req.seed is not None else random.randint(1, 10**14 - 1),
-                                   steps=req.steps, denoise=req.denoise, aspect_ratio=req.aspect_ratio)
+    seed = req.seed if req.seed is not None else random.randint(1, 10**14 - 1)
+    if klein:   # its own graph; no LoRA node, so `loras` don't apply (like Ideogram 4)
+        workflow = build_klein_edit_workflow(names, prompt=req.prompt, model_name=req.model_name, seed=seed,
+                                             steps=req.steps, aspect_ratio=req.aspect_ratio)
+    else:
+        workflow = patch_edit_workflow(workflow, names, prompt=req.prompt, model_name=req.model_name, seed=seed,
+                                       steps=req.steps, denoise=req.denoise, aspect_ratio=req.aspect_ratio)
 
     if req.loras:
         lora_node_id = next((nid for nid, n in workflow.items() if n.get("class_type") == "LoraLoaderModelOnly"), None)
@@ -1611,7 +1680,7 @@ async def comfyui_edit(req: ComfyUIEditRequest):
             _extend_lora_chain(workflow, lora_node_id, req.loras)
 
     client_id = str(uuid.uuid4())
-    await _comfyui_gpu_preflight(workflow, getattr(req, "model", None) or "qwen-image-edit",
+    await _comfyui_gpu_preflight(workflow, getattr(req, "model", None) or ("flux2-klein" if klein else "qwen-image-edit"),
                                  pinned=getattr(req, "gpu_id", None) is not None)
     payload = {"prompt": workflow, "client_id": client_id}
     state.comfyui_progress = {"step": 0, "max_steps": 0, "node": "", "value": 0}

@@ -76,7 +76,8 @@ def test_steps_per_model():
 def test_edit_and_style_models_are_in_the_catalog():
     edit = {m.id for m in catalog.CATALOG if "edit" in m.tasks}
     style = {m.id for m in catalog.CATALOG if "style" in m.tasks}
-    assert edit == style == {"qwen-edit-2511", "qwen-edit-2511-q3"}
+    assert style == {"qwen-edit-2511", "qwen-edit-2511-q3"}
+    assert edit == style | {"flux2-klein-4b"}
     assert catalog.DEFAULTS == {"generate": "z-image-turbo", "edit": "qwen-edit-2511", "style": "qwen-edit-2511",
                                 "remove_background": "birefnet"}
 
@@ -91,7 +92,7 @@ def test_listing_by_task():
     gen = {r["id"] for r in catalog.listing()}
     assert "z-image-turbo" in gen and "qwen-edit-2511" not in gen          # generate stays as it was
     rows = {r["id"]: r for r in catalog.listing(task="edit")}
-    assert set(rows) == {"qwen-edit-2511", "qwen-edit-2511-q3"} and rows["qwen-edit-2511"]["default"]
+    assert set(rows) == {"qwen-edit-2511", "qwen-edit-2511-q3", "flux2-klein-4b"} and rows["qwen-edit-2511"]["default"]
     assert {r["id"] for r in catalog.listing(task="style") if r["default"]} == {"qwen-edit-2511"}
     assert len(catalog.listing(task="all")) == len(catalog.CATALOG)
     with pytest.raises(catalog.CatalogError):

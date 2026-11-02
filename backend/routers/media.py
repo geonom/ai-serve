@@ -1023,10 +1023,15 @@ async def openai_audio_transcriptions(
 # ComfyUI management
 # ---------------------------------------------------------------------------
 
-@router.get("/v1/audio/models", summary="Speech engines (text-to-speech and transcription) with their modes and options")
-async def openai_audio_models():
+@router.get("/v1/audio/models", summary="Speech engines (text-to-speech and transcription) with their modes and options; "
+                                     "with ?task=music|sound|all the music / sound effect models")
+async def openai_audio_models(task: Optional[str] = None):
     """What tts-serve and stt-serve offer, as they describe it themselves (backend/audio_catalog.py).
-    Starts either service if needed; one that stays down is reported with a reason."""
+    Starts either service if needed; one that stays down is reported with a reason. With `task`: the models of the
+    `audio` plugins (music, sound effects -- backend/routers/audio_jobs.py)."""
+    if task is not None:
+        from backend.routers.audio_jobs import generator_models
+        return await generator_models(task)
     from backend.audio_catalog import audio_catalog
     tts_view = await tts_client.engines() if await tts_client.ensure_running() else None
     stt_view = None
@@ -1070,9 +1075,22 @@ def _plugin_answer(r) -> Dict[str, Any]:
     return data
 
 
+# names OpenAI clients send without knowing our models -- they get the default model for the task
+_OPENAI_IMAGE_NAMES = frozenset({"default", "auto", "dall-e-2", "dall-e-3", "gpt-image-1", "gpt-image-1-mini",
+                                 "gpt-image-1.5", "gpt-image-2"})
+
+
+def _with_model(answer: Any, entry: Dict[str, Any]) -> Any:
+    """Which model made the picture (2026-10-30, V-Noveller: an answer must say it -- a name the gateway didn't know
+    gets the default model, as OpenAI clients expect)."""
+    if isinstance(answer, dict):
+        answer.setdefault("model", entry["id"])
+    return answer
+
+
 async def _image_target(model: Optional[str], task: str):
-    """(plugin, entry) for `model`; an unknown or missing name gets the default model for `task` (OpenAI clients
-    send e.g. dall-e-3 -- that has always meant "the default")."""
+    """(plugin, entry) for `model`; a missing name or one of OpenAI's (dall-e-3 ...) gets the default model for
+    `task`; any other unknown name is refused (400, or 503 while an image plugin doesn't answer)."""
     from backend.plugins import images as image_plugins
     found = await image_plugins.find(model)
     if found is not None:
@@ -1080,7 +1098,17 @@ async def _image_target(model: Optional[str], task: str):
             verb = "edits images; use /v1/images/edits" if task == "generate" else f"can't do {task}"
             raise HTTPException(status_code=400, detail=f"{found[1]['label']} {verb}")
         return found
-    entries, _ = await image_plugins.catalog()
+    entries, errors = await image_plugins.catalog()
+    if model and model.strip().lower() not in _OPENAI_IMAGE_NAMES:
+        # Only OpenAI's own names (and "default") mean "the default model". 2026-10-30, V-Noveller: image-serve's
+        # manifest was refused for a while, so z-image-turbo and moss-* were unknown -- and silently became Iris,
+        # byte for byte the same picture for both. A name we don't know is an error now: 503 while some image
+        # plugin doesn't answer (it may be the one listing it), else 400.
+        known = ", ".join(sorted(e["id"] for e in entries if task in e["tasks"])) or "none"
+        if errors:
+            raise HTTPException(status_code=503, detail=f"image model {model!r} not found while not every image "
+                                                        f"plugin answers ({'; '.join(errors)[:300]}) -- try again soon")
+        raise HTTPException(status_code=400, detail=f"unknown image model {model!r} for {task} (known: {known})")
     usable = [e for e in entries if task in e["tasks"] and e.get("available")]
     entry = next((e for e in usable if e.get("default")), usable[0] if usable else None)
     if entry is None:
@@ -1099,7 +1127,7 @@ async def openai_image_generation(req: ImageGenerationRequest, x_request_id: Opt
         r = await image_plugins.forward(p, "generate", request_id=rid, json=body)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    return _plugin_answer(r)
+    return _with_model(_plugin_answer(r), entry)
 
 
 class ImageCancelRequest(BaseModel):
@@ -1162,4 +1190,4 @@ async def openai_image_edit(
         r = await image_plugins.forward(p, "edit", request_id=rid, data=fields, files=files)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    return _plugin_answer(r)
+    return _with_model(_plugin_answer(r), entry)

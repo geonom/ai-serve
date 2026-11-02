@@ -229,6 +229,36 @@ class TestNeedBook:
         b.observe("x", 1000)                                          # the 5000 falls out of the window
         assert b.need("x", 0) == 1100
 
+    def test_the_headroom_is_optional_the_peak_is_not(self):
+        """2026-10-26: MOSS bf16 peaked at 14770 MB on the 3090 (ComfyUI caches everything there); +10 % = 16247 MB
+        is more than the 4060 Ti can ever give, so every picture there was refused although the peak fits."""
+        b = NeedBook()
+        b.observe("image:moss-turbo-4-bf16", 14770)
+        assert b.need("image:moss-turbo-4-bf16", 9000) == 16247
+        assert b.minimum("image:moss-turbo-4-bf16", 9000) == 14770
+        assert b.minimum("image:moss-turbo-4-bf16", 15000) == 15000   # the declared need still wins
+        assert b.minimum("never-seen", 1500) == 1500
+
+    def test_peaks_are_also_kept_per_gpu(self):
+        """2026-10-28 (V-Noveller): Qwen-Image-Edit peaked at 16754 MB on the 3090 (ComfyUI caches when it can); on
+        the 4060 Ti that could never fit. A GPU without a peak of its own falls back to the declared need."""
+        b = NeedBook()
+        b.observe("image:qwen-image-edit", 16754, gpu="GPU-3090")
+        assert b.minimum("image:qwen-image-edit", 10000) == 16754            # still the peak first
+        assert b.on_gpu("image:qwen-image-edit", 10000, "GPU-3090") == 16754
+        assert b.on_gpu("image:qwen-image-edit", 10000, "GPU-4060") == 10000  # never seen on the 4060 Ti
+        b.observe("image:qwen-image-edit", 14900, gpu="GPU-4060")
+        assert b.on_gpu("image:qwen-image-edit", 10000, "GPU-4060") == 14900
+        assert NeedBook.from_dict(b.to_dict()).on_gpu("image:qwen-image-edit", 0, "GPU-4060") == 14900
+
+    def test_figures_kept_by_gpu_number_move_to_the_card_uuid(self):
+        """2026-10-30: per-GPU figures follow the card, not its number (a third card can shift the numbers)."""
+        b = NeedBook.from_dict({"x": [5000], "x|gpu0": [5000], "x|gpu1": [3000], "llm:a.gguf@4096|gpu1": [900]})
+        assert b.rekey({"gpu0": "GPU-aaaa", "gpu1": "GPU-bbbb"})
+        assert b.to_dict() == {"x": [5000], "x|GPU-aaaa": [5000], "x|GPU-bbbb": [3000],
+                               "llm:a.gguf@4096|GPU-bbbb": [900]}
+        assert not b.rekey({"gpu0": "GPU-aaaa"})                              # nothing left to move
+
     def test_nonsense_is_ignored_and_it_round_trips(self):
         b = NeedBook()
         b.observe("x", 0)

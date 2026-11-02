@@ -84,6 +84,7 @@ DEFAULT_CHAT_MODEL = os.getenv("DEFAULT_CHAT_MODEL", "gemma-4-12b-it-qat-q4_0.gg
 # instances; a request's `parallel` field overrides it. 0 = leave llama.cpp's own
 # auto choice (4 slots).
 DEFAULT_PARALLEL = int(os.getenv("LLAMA_DEFAULT_PARALLEL", "1"))
+DEFAULT_CTX_SIZE = 32000   # a gateway load without ctx_size; a running instance is reused whatever its context
 
 
 API_KEY = os.getenv("LLAMA_SERVE_API_KEY", "")

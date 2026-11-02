@@ -207,3 +207,17 @@ async def release(consumer_id: str, force: bool = False) -> Dict[str, Any]:
         return r.json()
     except ValueError:
         return {}
+
+
+async def stop(plugin_id: str) -> None:
+    """Stop a GPU plugin's process (the GPU manager, when only its CUDA context is in the way). It asks the plugin
+    once more first -- busy or unreadable -> PermissionError; ensure_running() starts it again when needed.
+    Plugins the owner runs (`external`) and exclusive ones are never stopped from here."""
+    p = next((x for x in _all_gpu_plugins() if x.id == plugin_id), None)
+    if p is None or getattr(p.manifest, "external", False) or p.provision.gpu == "exclusive":
+        raise PermissionError(f"{plugin_id} isn't stopped by the GPU manager")
+    st = await status(p)
+    if st is None or st["busy"] or any(w["busy"] for w in st["workers"]):
+        raise PermissionError(f"{p.name} is busy or doesn't answer -- not stopping it")
+    from backend.routers import services as svc
+    await svc.stop_service(p.id)

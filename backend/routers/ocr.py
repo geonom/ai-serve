@@ -49,6 +49,8 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.gpu_ids import GpuRef
+
 from backend.model_manager import find_mmproj_path, get_or_load_model, get_upstream_error_detail, resolve_model_path
 from backend.response_processing import process_completion_response
 from backend.state import state
@@ -256,7 +258,7 @@ class OcrRequest(BaseModel):
                      "yourself if you deliberately want to deviate.",
     )
     model: str = DEFAULT_OCR_MODEL
-    gpu_id: Optional[int] = Field(
+    gpu_id: GpuRef = Field(
         None,
         description="Which GPU to load the OCR model onto -- passed straight through to "
                      "get_or_load_model(), the same auto-load mechanism every other gateway endpoint uses. "
@@ -343,7 +345,7 @@ class OcrBatchDefaults(BaseModel):
     max_tokens: int = 4096
     temperature: Optional[float] = None  # see OcrRequest.temperature for the default resolution rule
     model: str = DEFAULT_OCR_MODEL
-    gpu_id: Optional[int] = None
+    gpu_id: GpuRef = None
     keep_alive: Optional[int] = 300
     ctx_size: Optional[int] = None  # see OcrRequest.ctx_size for the default resolution rule
 

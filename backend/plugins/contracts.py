@@ -211,7 +211,9 @@ def _video(raw):
 
 
 def _audio(raw):
-    return {"tasks": _tasks(raw, AUDIO_TASKS, ["music"]), "max_seconds": _int(raw.get("max_seconds"), 1, 3600)}
+    return {"tasks": _tasks(raw, AUDIO_TASKS, ["music"]), "max_seconds": _int(raw.get("max_seconds"), 1, 3600),
+            "min_seconds": _int(raw.get("min_seconds"), 1, 3600), "default_seconds": _int(raw.get("default_seconds"), 1, 3600),
+            "lyrics": raw.get("lyrics") is True}
 
 
 def _tts(raw):

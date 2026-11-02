@@ -4,7 +4,8 @@ Strata or device-only models, and put embedding models into the chat list). Pure
 what it found (local files with their header traits, running instances, device snapshots, llm plugins' models).
 
 Vocabulary:
-- kind   chat | embedding | rerank | base (a model without a chat template: completion-only, e.g. YuE music)
+- kind   chat | embedding | rerank | decision | base (a model without a chat template: completion-only, e.g. YuE
+         music; decision = answers typed questions with probabilities on /v1/systemone, e.g. LiquidAI's d1, 2026-10-30)
          -- from the GGUF header (pooling type, classifier head, encoder architecture, chat template); for a
          file that only lives on a device, from its name (`kind_source: "name"`).
 - where  the places a model can run: local (this machine), device (an enrolled node, via the gateway's
@@ -28,6 +29,8 @@ def classify(metadata: Optional[Mapping[str, Any]], name: str) -> str:
             return "embedding"
         return "chat"
     arch = metadata.get("general.architecture") or ""
+    if f"{arch}.decision.type" in metadata:   # llama.cpp's mark of a native decision model (server-decision.cpp)
+        return "decision"
     pooling = metadata.get(f"{arch}.pooling_type")
     if pooling == 4 or f"{arch}.classifier.output_labels" in metadata or "rerank" in lname:
         return "rerank"
@@ -99,6 +102,6 @@ def build_catalog(local: Iterable[Mapping[str, Any]], loaded_local: Mapping[str,
                          "loaded": state == "ready"}])
     for r in rows.values():
         r["loaded"] = any(p.get("loaded") for p in r["where"])
-    order = {"chat": 0, "base": 1, "embedding": 2, "rerank": 3}
+    order = {"chat": 0, "base": 1, "embedding": 2, "rerank": 3, "decision": 4}
     models = sorted(rows.values(), key=lambda r: (order.get(r["kind"], 9), not r["exclusive"], r["label"].lower(), r["id"]))
     return {"models": models}

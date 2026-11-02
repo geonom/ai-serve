@@ -56,8 +56,16 @@ def _auth(extra=None):
     return {"Authorization": f"Bearer {KEY}", **(extra or {})}
 
 
+def test_the_fakes_have_the_real_handlers_signature():
+    """The fakes below stand in for gateway.openai_chat_completion -- with an older signature they hid a broken
+    call before (the TTS path, 2026-10-25)."""
+    import inspect
+    from backend.routers import gateway
+    assert list(inspect.signature(gateway.openai_chat_completion).parameters) == ["req", "request"]
+
+
 def _fake_chat(monkeypatch, result=None, seen=None):
-    async def fake(req):
+    async def fake(req, request):
         if seen is not None:
             seen["req"] = req
         return result if result is not None else {"model": req.model, "choices": []}
@@ -146,7 +154,7 @@ def test_chat_ssrf_url_rejected_400(client, monkeypatch):
 
 
 def test_inner_error_details_hidden(client, monkeypatch):
-    async def boom(req):
+    async def boom(req, request):
         raise HTTPException(status_code=400, detail="Model file not found: /media/owner/Extreme SSD/x.gguf")
     monkeypatch.setattr(pg, "openai_chat_completion", boom)
     r = client.post("/public/v1/chat/completions", headers=_auth(), json={"messages": [{"role": "user", "content": "x"}]})
@@ -155,7 +163,7 @@ def test_inner_error_details_hidden(client, monkeypatch):
 
 
 def test_unexpected_exception_hidden(client, monkeypatch):
-    async def boom(req):
+    async def boom(req, request):
         raise RuntimeError("secret /data path")
     monkeypatch.setattr(pg, "openai_chat_completion", boom)
     r = TestClient(client.app, raise_server_exceptions=False).post(
@@ -207,7 +215,7 @@ def test_concurrency_limit_429_and_release_after_stream(app, monkeypatch):
         await gate.wait()
         yield "data: [DONE]\n\n"
 
-    async def fake(req):
+    async def fake(req, request):
         return StreamingResponse(slow_gen(), media_type="text/event-stream")
 
     monkeypatch.setattr(pg, "openai_chat_completion", fake)

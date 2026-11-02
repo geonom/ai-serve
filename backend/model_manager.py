@@ -1,6 +1,7 @@
 """Model lifecycle: load, unload, GPU routing, keep-alive, process scanning."""
 import asyncio
 import glob
+import json
 import logging
 import os
 import platform
@@ -15,16 +16,18 @@ from typing import Any, Dict, List, Optional
 import httpx
 import psutil
 from fastapi import HTTPException
+from backend.gpu_ids import from_visible_devices, visible_devices
 from backend.procs import processes
 
-from backend.config import LLAMA_SERVER_BIN, LOGS_DIR, MODEL_DIRS, DEFAULT_PARALLEL, DEFAULT_CHAT_MODEL
+from backend.config import LLAMA_SERVER_BIN, LOGS_DIR, MODEL_DIRS, DEFAULT_PARALLEL, DEFAULT_CHAT_MODEL, DEFAULT_CTX_SIZE
 from backend.response_processing import (
     estimate_kv_overhead_mb,
     gguf_context_length,
     gguf_has_bundled_mtp,
     gguf_has_bundled_vision,
     is_loadable_gguf,
-    is_mtp_draft,
+    draft_flags,
+    is_draft_head,
 )
 from backend.state import state
 
@@ -71,24 +74,37 @@ def get_upstream_error_detail(exc: httpx.HTTPError) -> str:
 class LoadWatch:
     """How long a starting llama-server may take (2026-10-24, found by V-Noveller: a cold 11.5 GB file took 240 s
     just to read from disk, and the old fixed 60 s gave up every time). Wait as long as the load makes progress
-    (the process reads from disk or writes its log); give up after STALL_S without any, or MAX_S in all."""
+    (the process writes its log, or reads at least MIN_READ_BYTES from disk); give up after STALL_S without any,
+    or MAX_S in all. A trickle of reads is no progress (2026-10-26: the external SSD reset over USB every ~40 s and
+    let a few MB through after each reset, which kept the old any-change rule waiting for minutes)."""
     STALL_S = 60
     MAX_S = 20 * 60
+    MIN_READ_BYTES = 256 * 1024 * 1024   # a healthy disk -- even USB 2.0 -- reads this in well under 60 s
 
     def __init__(self, now: float):
         self.start = self.last_change = now
-        self.last = None
+        self.read = self.log = None       # figures at the last counted progress
+        self.latest_read = None
+        self.disk_stalled = False         # gave up while reads still trickled in
 
     def elapsed(self, now: float) -> int:
         return int(now - self.start)
 
     def verdict(self, now: float, progress) -> Optional[str]:
-        """None = keep waiting; else why to give up. `progress` = any comparable snapshot (None = unknown)."""
-        if progress is not None and progress != self.last:
-            self.last, self.last_change = progress, now
+        """None = keep waiting; else why to give up. `progress` = (bytes read, log size) or None = unknown."""
+        if progress is not None:
+            read, log = progress
+            if self.read is None or log != self.log or read - self.read >= self.MIN_READ_BYTES:
+                self.read, self.log, self.last_change = read, log, now
+            self.latest_read = read
         if now - self.start >= self.MAX_S:
             return f"did not become ready within {self.elapsed(now)}s"
         if now - self.last_change >= self.STALL_S:
+            trickle = (self.latest_read or 0) - (self.read or 0)
+            if trickle > 0:
+                self.disk_stalled = True
+                return (f"did not become ready: disk reads stalled -- only {trickle // 1_000_000} MB read in "
+                        f"{int(now - self.last_change)}s ({self.elapsed(now)}s in all)")
             return (f"did not become ready: no loading progress for {int(now - self.last_change)}s "
                     f"({self.elapsed(now)}s in all)")
         return None
@@ -219,7 +235,7 @@ def resolve_model_path(model_name_or_path: Optional[str]) -> str:
             if (
                 abs_path not in seen_paths
                 and "mmproj" not in name.lower()
-                and not is_mtp_draft(name)
+                and not is_draft_head(name)
                 and is_loadable_gguf(name)
             ):
                 models.append({"name": name, "path": abs_path})
@@ -293,8 +309,9 @@ def scan_all_gguf_paths() -> List[str]:
 
 
 def find_draft_model_path(model_path: str, all_gguf_paths: Optional[List[str]] = None) -> Optional[str]:
-    """Find an MTP draft head paired with a main model, e.g. mtp-gemma-4-12b-it.gguf
-    pairs with gemma-4-12b-it-UD-Q4_K_XL.gguf (main model name starts with the draft's stem).
+    """Find a draft head paired with a main model, e.g. mtp-gemma-4-12b-it.gguf pairs with
+    gemma-4-12b-it-UD-Q4_K_XL.gguf, dflash-Nemotron-3.5-Bolt-E4B.gguf with Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf
+    (main model name starts with the draft's stem).
     Pass a pre-scanned all_gguf_paths (scan_all_gguf_paths()) when calling this for many
     models in a loop to avoid re-walking the directory tree each time.
     """
@@ -303,9 +320,9 @@ def find_draft_model_path(model_path: str, all_gguf_paths: Optional[List[str]] =
 
     for f in paths:
         name = os.path.basename(f)
-        if not is_mtp_draft(name):
+        if not is_draft_head(name):
             continue
-        draft_stem = os.path.splitext(name)[0][len("mtp-"):].lower()
+        draft_stem = os.path.splitext(name)[0].split("-", 1)[1].lower()
         if draft_stem and main_stem.startswith(draft_stem):
             return f
     return None
@@ -391,6 +408,9 @@ def get_bundled_flags(path: str) -> tuple:
 
 
 _traits_cache: Dict[str, tuple] = {}  # path -> ((mtime, size), traits)
+
+
+DECISION_BATCH = 8192
 
 
 def get_model_traits(path: str) -> Optional[Dict[str, Any]]:
@@ -516,6 +536,7 @@ def llama_env() -> Dict[str, str]:
     """The environment for a llama-server: a prebuilt llama.cpp (installer, runtimes/) keeps its libraries next to
     the binary, so that folder goes first on the library path (harmless for a system install)."""
     env = os.environ.copy()
+    env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")   # numbers as nvidia-smi counts them (backend/gpu_ids.py)
     lib_dir = os.path.dirname(LLAMA_SERVER_BIN)
     if lib_dir:
         for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
@@ -561,7 +582,7 @@ async def fetch_gpu_status() -> Dict[str, Any]:
     try:
         cmd = [
             "nvidia-smi",
-            "--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free",
+            "--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free,uuid",
             "--format=csv,nounits,noheader",
         ]
         output = subprocess.check_output(cmd, encoding="utf-8")
@@ -578,6 +599,7 @@ async def fetch_gpu_status() -> Dict[str, Any]:
                 "used": int(parts[4]),
                 "free": int(parts[5]),
                 "usage_percent": round((int(parts[4]) / int(parts[3])) * 100, 1),
+                "uuid": parts[6] if len(parts) > 6 else None,   # names this card for good (backend/gpu_ids.py)
             })
         return {"gpus": gpus}
     except Exception as e:
@@ -860,8 +882,8 @@ async def is_port_busy(port: int, info: Dict[str, Any]) -> bool:
     port-replace path), which need the identical check before killing
     anything on demand.
     """
-    if info.get("active_requests", 0) > 0:
-        return True
+    if info.get("active_requests", 0) > 0 or info.get("loading"):
+        return True   # loading: /slots doesn't answer yet (2026-11-01 an unload_all killed a gateway load midway)
     try:
         async with httpx.AsyncClient(timeout=0.5) as client:
             resp = await client.get(f"http://127.0.0.1:{port}/slots")
@@ -870,6 +892,36 @@ async def is_port_busy(port: int, info: Dict[str, Any]) -> bool:
     except Exception:
         pass
     return False
+
+
+KEEP_ALIVE_POLL_S = 5.0
+ORIGINS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "instance_origins.json")
+
+
+def _read_origins() -> Dict[str, str]:
+    try:
+        with open(ORIGINS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def remember_origin(pid: int, origin: str) -> None:
+    """Who started a llama-server ("gateway" / "api_start"), by PID, so adoption after a restart still knows
+    (gitignored instance_origins.json; dead PIDs dropped on every write)."""
+    data = {k: v for k, v in _read_origins().items() if k.isdigit() and psutil.pid_exists(int(k))}
+    data[str(pid)] = origin
+    try:
+        with open(ORIGINS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except OSError as e:
+        logger.warning(f"Could not record instance origin: {e}")
+
+
+def recall_origin(pid: int) -> Optional[str]:
+    origin = _read_origins().get(str(pid))
+    return origin if isinstance(origin, str) and psutil.pid_exists(pid) else None
 
 
 def reset_keep_alive(port: int, keep_alive_seconds: int):
@@ -881,10 +933,15 @@ def reset_keep_alive(port: int, keep_alive_seconds: int):
     info["keep_alive"] = keep_alive_seconds
 
     async def _keep_alive_check():
+        # Idle means idle for the whole keep-alive time: any poll that sees it busy (gateway requests or its own
+        # /slots) starts the count over. 2026-11-01 it stopped llm-benchy's adopted Qwen3.8 at the first instant
+        # between two trials (it used to wait only while busy, then stop at once).
         try:
-            await asyncio.sleep(keep_alive_seconds)
-            while await is_port_busy(port, info):
-                await asyncio.sleep(5)
+            idle_since = time.monotonic()
+            while time.monotonic() - idle_since < keep_alive_seconds:
+                await asyncio.sleep(KEEP_ALIVE_POLL_S)
+                if await is_port_busy(port, info):
+                    idle_since = time.monotonic()
             logger.info(f"Keep-alive expired for model {info['model']} on port {port}. Unloading...")
             await stop_server_by_port(port)
         except asyncio.CancelledError:
@@ -994,7 +1051,7 @@ def scan_existing_llama_servers():
             # instance on the same physical GPU instead of reusing the adopted one.
             try:
                 gpu_id_env = proc.environ().get("CUDA_VISIBLE_DEVICES")
-                gpu_id = int(gpu_id_env) if gpu_id_env not in (None, "") else None
+                gpu_id = from_visible_devices(gpu_id_env)   # a number, or the UUID we pin with now
             except Exception:
                 gpu_id = None
 
@@ -1064,6 +1121,7 @@ def scan_existing_llama_servers():
                     "keep_alive_task": None,
                     "last_used": time.time(),
                     "active_requests": 0,
+                    "origin": recall_origin(proc.pid) or "adopted",
                     "embedding": embedding,
                     "reranking": reranking,
                     "pooling": pooling,
@@ -1080,7 +1138,8 @@ def scan_existing_llama_servers():
                 # adoption's own gpu_id parsing bug -- see above -- happened to make
                 # unmatchable) would otherwise run forever with no expiry mechanism at
                 # all, regardless of how long it actually sits idle.
-                reset_keep_alive(port, 300)
+                if state.managed_processes[port]["origin"] != "api_start":   # /api/start never sets an idle timer
+                    reset_keep_alive(port, 300)
         except Exception as e:
             logger.error(f"Error parsing process {proc.pid}: {e}")
 
@@ -1092,7 +1151,7 @@ def scan_existing_llama_servers():
 async def get_or_load_model(
     model_path: str,
     gpu_id: Optional[int] = None,
-    ctx_size: int = 32000,
+    ctx_size: Optional[int] = None,   # None: any running context will do; a new load gets DEFAULT_CTX_SIZE
     threads: int = 8,
     n_gpu_layers: int = -1,
     keep_alive: int = 300,
@@ -1127,7 +1186,7 @@ async def get_or_load_model(
 async def _load_locked(
     model_path: str,
     gpu_id: Optional[int],
-    ctx_size: int,
+    ctx_size: Optional[int],
     threads: int,
     n_gpu_layers: int,
     keep_alive: int,
@@ -1161,26 +1220,26 @@ async def _load_locked(
                 if proc and proc.poll() is None:
                     existing_ctx = info.get("ctx_size") or 0
                     existing_parallel = info.get("parallel") or 4
-                    # Confirmed live: stopping an instance out from under a caller
-                    # that's still using it is not hypothetical -- a multi-page
-                    # OCR document holds active_requests >= 1 across many
-                    # sequential per-page completions (see ocr.py's _run_ocr()),
-                    # and a second, concurrent caller requesting a bigger ctx_size
-                    # for the same model mid-document used to evict that instance
-                    # immediately, crashing the first caller's in-flight request
-                    # with a KeyError once its loop's next page tried to touch the
-                    # now-gone managed_processes[port] entry. Only evict an idle
-                    # instance; a busy one is served at its current (smaller)
-                    # ctx_size for this one request rather than interrupted --
-                    # the requester can retry once it frees up if it truly needs
-                    # the larger context.
-                    wants_more_slots = (parallel or 4) > existing_parallel
-                    if (ctx_size > existing_ctx or wants_more_slots) and info.get("active_requests", 0) == 0:
-                        # Reusing as-is would silently cap this request to a smaller
-                        # context than it asked for -- restart with the larger one
-                        # instead. The reverse (requested <= running) still reuses:
-                        # a smaller/equal ask doesn't justify evicting a bigger,
-                        # possibly-warm context that another caller may still want.
+                    wants_more = ((ctx_size is not None and ctx_size > existing_ctx)
+                                  or (parallel or 4) > existing_parallel)
+                    # Restart for a bigger context / more slots only an idle instance the gateway started itself.
+                    # 2026-11-01: V-Noveller's chats (no ctx_size -> the old default 32000) restarted llm-benchy's
+                    # /api/start-ed Qwen3.8 (ctx 8192, driven on its own port, so no gateway requests in flight)
+                    # twice, once while it loaded; benchy's trials failed. Before that (OCR) a busy one was
+                    # interrupted mid-document. Otherwise the running instance serves the request as it is.
+                    if wants_more and (info.get("origin") != "gateway" or info.get("loading")
+                                       or await is_port_busy(port, info)):
+                        if ctx_size is not None and ctx_size > existing_ctx:
+                            # an explicit context it can't hold: a load of our own, or the usual 507 when there's
+                            # no room -- never squeezed into someone else's smaller instance (V-Noveller, 2026-11-01)
+                            logger.info(f"Port {port} ({os.path.basename(model_path)}) runs ctx {existing_ctx}, "
+                                        f"{ctx_size} asked and it can't be restarted -- loading another instance")
+                            continue
+                        logger.info(
+                            f"Not restarting port {port} ({os.path.basename(model_path)}, parallel "
+                            f"{existing_parallel}, started by {info.get('origin') or 'adoption'}) for parallel "
+                            f"{parallel or 4}: it isn't an idle gateway instance -- serving the request with it")
+                    elif wants_more:
                         logger.info(
                             f"Requested ctx_size {ctx_size}/parallel {parallel or 4} exceeds running "
                             f"instance's {existing_ctx}/{existing_parallel} on port {port} for "
@@ -1192,6 +1251,7 @@ async def _load_locked(
                     reset_keep_alive(port, keep_alive)
                     return port
 
+    ctx_size = ctx_size or DEFAULT_CTX_SIZE
     check_model_file_exists(model_path, "Model file")
     # Strata holding the GPUs is the GPU manager's call now (exclusive reservation): the
     # reservation below answers 507 while it runs or loads.
@@ -1282,8 +1342,8 @@ async def _load_locked(
     port = await reserve_free_port()
     env = llama_env()
     if target_gpu_id is not None and sys.platform != "darwin":
-        env["CUDA_VISIBLE_DEVICES"] = str(target_gpu_id)
-        logger.info(f"CUDA_VISIBLE_DEVICES={target_gpu_id} for port {port}")
+        env["CUDA_VISIBLE_DEVICES"] = visible_devices(target_gpu_id)   # the UUID: the same card in CUDA's order
+        logger.info(f"CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']} (GPU {target_gpu_id}) for port {port}")
 
     cmd = [
         LLAMA_SERVER_BIN,
@@ -1305,8 +1365,8 @@ async def _load_locked(
         cmd.extend(["--mmproj", mmproj_path])
         logger.info(f"Enabling vision module: {mmproj_path}")
     if draft_model_path:
-        cmd.extend(["-md", draft_model_path, "--spec-type", "draft-mtp"])
-        logger.info(f"Enabling MTP speculative decoding with draft head: {draft_model_path}")
+        cmd.extend(draft_flags(draft_model_path))
+        logger.info(f"Enabling speculative decoding with draft head: {draft_model_path}")
     elif bundled_mtp:
         cmd.extend(["--spec-type", "draft-mtp"])
         logger.info(f"Enabling MTP speculative decoding using bundled nextn tensors in: {model_path}")
@@ -1317,6 +1377,10 @@ async def _load_locked(
     # With 1 slot, concurrent requests queue inside llama-server.
     if parallel:
         cmd.extend(["-np", str(parallel)])
+    # A decision model (d1, /v1/systemone) reads each question in ONE batch -- state and pictures must fit in it;
+    # 8192 keeps the full 4096 tokens per picture (LiquidAI's d1 model card, 2026-10-30)
+    if (get_model_traits(model_path) or {}).get("kind") == "decision":
+        cmd.extend(["-b", str(DECISION_BATCH), "-ub", str(DECISION_BATCH)])
 
     try:
         log_file_path = os.path.join(LOGS_DIR, f"llama-server-{port}.log")
@@ -1327,6 +1391,7 @@ async def _load_locked(
         if reservation is not None:
             from backend.cluster.local import MANAGER
             MANAGER.confirm(reservation.id, proc.pid)  # now bound to this process
+        remember_origin(proc.pid, "gateway")
         state.managed_processes[port] = {
             "process": proc,
             "log_file": log_file,
@@ -1338,6 +1403,7 @@ async def _load_locked(
             "gpu_id": target_gpu_id,
             "last_used": time.time(),
             "active_requests": 0,
+            "origin": "gateway",
             "keep_alive": keep_alive,
             "keep_alive_task": None,
             "embedding": embedding,
@@ -1376,9 +1442,15 @@ async def _load_locked(
             logger.error(f"Server on port {port} {reason}.")
             await stop_server_by_port(port)
             detail = f"llama-server {reason}."
+            status = 500
+            if not crashed and watch.disk_stalled:
+                # the file's disk, not the request: say which one, and that a retry may work
+                detail += (f" The model file ({os.path.realpath(model_path)}) is unreadable right now -- "
+                           f"is the drive it lies on healthy and connected?")
+                status = 503
             if log_tail:
                 detail += f" Last log lines:\n{log_tail}"
-            raise HTTPException(status_code=500, detail=detail)
+            raise HTTPException(status_code=status, detail=detail)
 
         logger.info(f"Server ready on port {port} after {elapsed}s.")
         from backend import events
@@ -1397,6 +1469,8 @@ async def _load_locked(
         reset_keep_alive(port, keep_alive)
         return port
 
+    except HTTPException:
+        raise   # already says what went wrong, with its own status (a stalled disk is a 503)
     except Exception as e:
         if reservation is not None and reservation.pid is None:
             from backend.cluster.local import MANAGER

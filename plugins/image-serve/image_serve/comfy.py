@@ -1005,8 +1005,10 @@ async def _track_and_retrieve_comfyui(
                             break
                         outputs = hist_data[prompt_id].get("outputs", {})
                         for _, node_output in outputs.items():
-                            if "images" in node_output:
-                                image_info = node_output["images"][0]
+                            # images, or the audio of a music / sound effect job (image_serve/audio.py)
+                            kind = next((k for k in ("images", "audio") if node_output.get(k)), None)
+                            if kind:
+                                image_info = node_output[kind][0]
                                 img_url = (f"http://127.0.0.1:{port}/view"
                                            f"?filename={image_info['filename']}"
                                            f"&subfolder={image_info['subfolder']}"

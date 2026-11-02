@@ -4,7 +4,8 @@ A catalog model needs several files: the diffusion model, its text encoder, its 
 Lightning LoRA its workflow uses). Each file is pinned here by Hugging Face repo, path, size and sha256 -- the same
 files this plugin was tested with (2026-10-22, sha256 compared with the files on the owner's machine). A download
 streams to a temp file next to its target, hashes while writing, and is moved into place only when the hash matches;
-nothing from the request but the bundle id is used. All models here: Apache-2.0, BiRefNet MIT. A bundle with `needs` only makes
+nothing from the request but the bundle id is used. All models here: Apache-2.0, BiRefNet and ACE-Step MIT,
+Stable Audio 3 the Stability AI Community License. A bundle with `needs` only makes
 sense on top of that one (and only where ComfyUI supports MOSS -- see app.py).
 """
 from __future__ import annotations
@@ -96,6 +97,26 @@ FILES: Tuple[BundleFile, ...] = (
                "flux2-vae.safetensors", 336213556, "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"),
     BundleFile("moss-bf16", "Comfy-Org/MOSS-Image", "diffusion_models/moss_image_sft_bf16.safetensors", "diffusion_models",
                "moss_image_sft_bf16.safetensors", 10164655808, "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f"),
+    # Sound effects (2026-10-30): Stable Audio 3 Small SFX + its T5Gemma text encoder, ComfyUI's single-file copies
+    # (Stability AI Community License: free below $1M annual revenue; outputs are yours)
+    BundleFile("sa3-sfx", "Comfy-Org/stable-audio-3", "checkpoints/stable_audio_3_small_sfx.safetensors", "checkpoints",
+               "stable_audio_3_small_sfx.safetensors", 2270384940, "ed9cf1b6172f1a8c2921a9560c21109ff3239524563ced9dce6dcdef41e2f515",
+               rev="75aad8836271cb5a5123fb58304fae5d3bb4b0f9"),
+    BundleFile("sa3-sfx", "Comfy-Org/stable-audio-3", "text_encoders/t5gemma_b_b_ul2.safetensors", "text_encoders",
+               "t5gemma_b_b_ul2.safetensors", 1187264003, "1e1eba25be8872edb0d3c6335c6658fd6388e7b14b60da6e454e404cfcd8150e",
+               rev="75aad8836271cb5a5123fb58304fae5d3bb4b0f9"),
+    # Music with vocals and lyrics (2026-10-30): ACE-Step 1.5 Turbo, ComfyUI's split files (repo Apache-2.0,
+    # upstream ACE-Step MIT)
+    *(BundleFile("ace-step", "Comfy-Org/ACE-Step-1.5", f"split_files/{d}/{n}", d, n, size, sha,
+                 rev="371bb1680f8c88d8c1083f6ffb6330d3d55bff76") for d, n, size, sha in (
+        ("diffusion_models", "acestep_v1.5_turbo.safetensors", 4787825604,
+         "3f6e0797fad420a39bd33979eb6e840e30989e34a3794e843d23b60ec6e422d7"),
+        ("text_encoders", "qwen_0.6b_ace15.safetensors", 1191588248,
+         "fd4590c82153b8ddb67e15a2e7aaa8afa8b83a858c8a9b82a4831063156aa7a7"),
+        ("text_encoders", "qwen_1.7b_ace15.safetensors", 3708523360,
+         "ed63e9247d1f55f3ace04fa11e95b085fc82d459c82c5626f0b2e37b91ebd710"),
+        ("vae", "ace_1.5_vae.safetensors", 337431732,
+         "6de92e3a862acd287e08b024ac90f0783a8635451b728721a33ff03565bcb2bb"))),
 )
 
 BUNDLES: Dict[str, Dict[str, str]] = {
@@ -114,6 +135,12 @@ BUNDLES: Dict[str, Dict[str, str]] = {
     "moss-gguf": {"label": "MOSS-Image (GGUF)", "license": "Apache-2.0",
                   "description": "MOSS-Image for Macs and machines without an NVIDIA GPU: a Q5 main model (3.7 GB) "
                                  "instead of int8, with the 4- and 8-step turbo LoRAs"},
+    "sa3-sfx": {"label": "Stable Audio 3 Small SFX", "license": "Stability AI Community License",
+                "description": "Sound effects and ambiences from a description (rain on a tin roof, a creaking door), "
+                               "up to two minutes"},
+    "ace-step": {"label": "ACE-Step 1.5 Turbo", "license": "MIT",
+                 "description": "Songs and background music from a description, with or without lyrics (in many "
+                                "languages, German too)"},
     "moss-bf16": {"label": "MOSS-Image bf16 main model", "license": "Apache-2.0", "needs": "moss",
                   "description": "The full-precision main model (10 GB) for the bf16 MOSS variants; needs MOSS-Image"},
 }

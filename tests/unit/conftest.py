@@ -76,6 +76,14 @@ def _gpu_manager_never_touches_real_gpus(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_gpu_uuids(monkeypatch):
+    """GPUs have numbers only, unless a test gives them UUIDs (backend/gpu_ids.py would ask this machine's
+    nvidia-smi)."""
+    from backend import gpu_ids
+    monkeypatch.setattr(gpu_ids, "table", lambda: {})
+
+
+@pytest.fixture(autouse=True)
 def _no_name_lookups(monkeypatch):
     """Test servers built on http.server call socket.getfqdn() while binding -- ~35 s each on a Mac CI runner whose
     name resolution hangs. Nothing in the tests needs the answer."""

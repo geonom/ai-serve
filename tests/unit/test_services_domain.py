@@ -457,6 +457,13 @@ class TestChildEnvironment:
         assert env["HOME"] == "/home/me" and env["LANG"] == "C" and env["STORYTIME_PORT"] == "8008"
         assert env["HF_TOKEN"] == "hf_x"  # not ours -- services may need it
 
+    def test_gpu_numbers_mean_nvidia_smis_order(self):
+        """2026-10-30: CUDA's default order is fastest card first; with a third card it may differ from nvidia-smi's,
+        whose numbers the GPU manager hands out."""
+        assert child_environment(self.BASE, {})["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
+        assert child_environment(self.BASE, {"CUDA_DEVICE_ORDER": "FASTEST_FIRST"})["CUDA_DEVICE_ORDER"] == \
+            "FASTEST_FIRST"
+
 
 # --------------------------------------------------------------------------- built-in services
 

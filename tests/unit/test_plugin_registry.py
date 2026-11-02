@@ -107,3 +107,23 @@ async def test_release_a_worker(plugins):
         await registry.release("tts-a:omnivoice")          # 409 from the plugin: busy
     with pytest.raises(KeyError):
         await registry.release("nobody:x")
+
+
+async def test_stop_a_plugin_process_only_when_nothing_of_it_is_busy(plugins, monkeypatch):
+    from backend.routers import services as svc
+    stopped = []
+
+    async def stop_service(sid, req=None):
+        stopped.append(sid)
+    monkeypatch.setattr(svc, "stop_service", stop_service)
+    with pytest.raises(PermissionError):
+        await registry.stop("tts-a")                        # its OmniVoice worker is busy
+    with pytest.raises(PermissionError):
+        await registry.stop("door")                         # no GPU plugin
+    idle = {"busy": False, "workers": [{"id": "cosyvoice", "busy": False}]}
+
+    async def status(p):
+        return idle
+    monkeypatch.setattr(registry, "status", status)
+    await registry.stop("tts-a")
+    assert stopped == ["tts-a"]

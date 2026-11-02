@@ -31,6 +31,7 @@ COMFYUI_DEFAULT_GPU_ID = "auto" if _gpu == "auto" else (int(_gpu) if _gpu else N
 GATEWAY = os.environ.get("AI_SERVE_URL", "http://127.0.0.1:8030").rstrip("/")
 LOGS_DIR = os.environ.get("LOGS_DIR", str(HERE / "logs"))
 GENERATED_IMAGES_DIR = os.environ.get("GENERATED_IMAGES_DIR", str(HERE / "generated_images"))
+GENERATED_AUDIO_DIR = os.environ.get("GENERATED_AUDIO_DIR", str(HERE / "generated_audio"))   # results of audio jobs, never pruned
 WORKFLOWS_DIR = str(HERE / "workflows")
 os.makedirs(LOGS_DIR, exist_ok=True)
 os.makedirs(GENERATED_IMAGES_DIR, exist_ok=True)

@@ -2,6 +2,7 @@
 .env
 logs/
 generated_images/
+generated_audio/
 __pycache__/
 .pytest_cache/
 comfyui-venv

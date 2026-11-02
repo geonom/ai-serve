@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from backend.gpu_ids import GpuRef, uuid_of
+
 from backend.cluster.local import MANAGER
 from backend.model_manager import fetch_gpu_status
 
@@ -20,9 +22,10 @@ router = APIRouter(tags=["coordination"])
 
 class PreflightRequest(BaseModel):
     purpose: str = Field(..., min_length=1, max_length=80, description="e.g. 'tts:cosyvoice'")
-    gpu: Optional[int] = Field(None, ge=0, description="omitted: the manager picks the GPU with room (answer: gpu, mode)")
+    gpu: GpuRef = Field(None, description="number or, optionally, UUID; omitted: the manager picks the GPU with room "
+                        "(answer: gpu, gpu_uuid, mode)")
     need_mb: int = Field(..., ge=0)
-    current_gpu: Optional[int] = Field(None, ge=0, description="the GPU the service runs on now (None: not running)")
+    current_gpu: GpuRef = Field(None, description="the GPU the service runs on now (None: not running)")
     movable: bool = Field(True, description="the service may be restarted on another GPU (it picks its GPU at start)")
 
 
@@ -45,7 +48,7 @@ async def gpu_preflight(req: PreflightRequest):
     elif res is None and reason:
         logger.info(f"{req.purpose}: {reason}")
     gpus = {g["index"]: g for g in (await fetch_gpu_status()).get("gpus", [])}
-    body = {"gpu": gpu, "mode": mode, "free_mb": gpus.get(gpu, {}).get("free"), "granted": res is not None,
+    body = {"gpu": gpu, "gpu_uuid": uuid_of(gpu), "mode": mode, "free_mb": gpus.get(gpu, {}).get("free"), "granted": res is not None,
             "reservation_id": res.id if res else None, "hold_s": int(MANAGER.reservations.hold_s),
             "reason": reason or None}
     if res is None:

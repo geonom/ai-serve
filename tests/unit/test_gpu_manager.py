@@ -42,6 +42,39 @@ def test_make_room_unloads_lru_and_waits_for_vram(tmp_path, monkeypatch):
     assert ok and done == ["comfyui"] and evicted == ["comfyui"]
 
 
+def test_when_an_unload_frees_less_than_counted_the_next_idle_one_goes_too(tmp_path, monkeypatch):
+    """2026-10-26: Qwen3.8-27B needed 22213 MB, 22098 free; the plan unloaded stt-serve (318 MB counted), but its
+    CUDA context stays, nothing came free, and the load was refused -- with an idle 1.7 GB MiniCPM next to it."""
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"))
+    cons = [Consumer(id="stt-serve", kind="stt", label="stt-serve", root_pids={1}, last_used=0.0),
+            Consumer(id="llm:46689", kind="llm", label="MiniCPM5-1B", root_pids={2}, last_used=5)]
+    evicted = []
+
+    def free():
+        return 22098 + (1680 if "llm:46689" in evicted else 0)
+
+    async def snapshot():
+        att = {("stt-serve", 0): 318}
+        if "llm:46689" not in evicted:
+            att[("llm:46689", 0)] = 1680
+        return [{"index": 0, "name": "3090", "total": 24576, "free": free()}], cons, att
+
+    async def evict(cid, consumers=None):
+        evicted.append(cid)
+
+    async def gpu_status():
+        return {"gpus": [{"index": 0, "free": free()}]}
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    monkeypatch.setattr(m, "evict", evict)
+    import backend.model_manager as mm
+    monkeypatch.setattr(mm, "fetch_gpu_status", gpu_status)
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(local.asyncio, "sleep", lambda s: real_sleep(0))
+    res, done, why = asyncio.run(m.reserve(0, 22213, "llm:Qwen3.8-27B"))
+    assert res is not None, why
+    assert done == ["stt-serve", "llm:46689"] and evicted == done
+
+
 def test_pinned_is_skipped(tmp_path, monkeypatch):
     m, evicted = make(tmp_path, monkeypatch, free_after=[11000])
     m.set_pin("comfyui", True)
@@ -120,6 +153,27 @@ def test_loading_llama_server_counts_as_busy(tmp_path, monkeypatch):
     c = next(c for c in cons if c.id == "llm:39999")
     assert c.busy
 
+
+
+def test_llama_server_used_directly_on_its_port_counts_as_busy(tmp_path, monkeypatch):
+    """llm-benchy talks to an /api/start-ed instance on its own port: no active_requests here, but /slots says it
+    is generating (2026-10-31: both GPUs at 95 % from benchy runs, the manager listed them as idle = evictable)."""
+    import types
+    from backend.state import state
+    import backend.model_manager as mm
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"))
+    proc = types.SimpleNamespace(pid=778, poll=lambda: None)
+    monkeypatch.setitem(state.managed_processes, 39998, {"process": proc, "model": "/m/granite.gguf",
+                                                          "active_requests": 0})
+    monkeypatch.setattr(local, "_cmdline_pid", lambda frag, cwd=None: None)
+    asked = []
+
+    async def busy(port, info):
+        asked.append(port)
+        return True
+    monkeypatch.setattr(mm, "is_port_busy", busy)
+    c = next(c for c in asyncio.run(m.consumers()) if c.id == "llm:39998")
+    assert c.busy and asked == [39998]
 
 def _fixed(m, monkeypatch, gpus, cons, att):
     async def snapshot():
@@ -268,6 +322,51 @@ def test_a_load_is_reserved_what_its_purpose_needed_before(tmp_path, monkeypatch
     assert m.need("stt:whisperx:medium", 1500) == 2959 and m.need("other", 1500) == 1500
 
 
+def test_without_room_for_the_headroom_the_learned_peak_is_reserved(tmp_path, monkeypatch):
+    """2026-10-26: MOSS bf16 learned 14770 MB (+10 % = 16247) and was refused for minutes on a 16 GB card with
+    15.2 GB free -- the peak itself fits, so it gets the peak; with less room than the peak it is still a no."""
+    import json
+    (tmp_path / "needs.json").write_text(json.dumps({"image:moss-turbo-4-bf16": [14770]}))
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"), needs_file=str(tmp_path / "needs.json"))
+    free = {"mb": 15200}
+
+    async def snapshot():
+        return [{"index": 1, "name": "4060 Ti", "total": 16380, "free": free["mb"]}], [], {}
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    m._procs, m._parents = [], {}
+    m.load_needs()
+    res, _, why = asyncio.run(m.reserve(1, 9000, "image:moss-turbo-4-bf16"))
+    assert res is not None and res.mb == 14770, why
+    m.release(res.id)
+    free["mb"] = 8000                                          # not even the declared need fits: a no
+    res, _, why = asyncio.run(m.reserve(1, 9000, "image:moss-turbo-4-bf16"))
+    assert res is None and "16247" in why
+
+
+def test_a_peak_learned_on_a_roomier_gpu_does_not_refuse_forever(tmp_path, monkeypatch):
+    """2026-10-28 (V-Noveller): Qwen-Image-Edit learned 16754 MB on the 3090; on the 4060 Ti (15.3 GB at most) every
+    edit got a 507 forever. Without a peak of its own there, the declared need is tried; once this GPU has its own
+    peak, that one counts."""
+    import json
+    (tmp_path / "needs.json").write_text(json.dumps({"image:qwen-image-edit": [16754],
+                                                     "image:qwen-image-edit|gpu0": [16754]}))
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"), needs_file=str(tmp_path / "needs.json"))
+    free = {"mb": 15057}
+
+    async def snapshot():
+        return [{"index": 1, "name": "4060 Ti", "total": 16380, "free": free["mb"]}], [], {}
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    m._procs, m._parents = [], {}
+    m.load_needs()
+    res, _, why = asyncio.run(m.reserve(1, 10500, "image:qwen-image-edit"))
+    assert res is not None and res.mb == 10500, why
+    m.release(res.id)
+    m.needs.observe("image:qwen-image-edit", 15500, gpu="gpu1")  # it really took 15.5 GB here
+    free["mb"] = 14000
+    res, _, why = asyncio.run(m.reserve(1, 10500, "image:qwen-image-edit"))
+    assert res is None
+
+
 def test_confirm_measures_the_baseline_and_release_learns_the_peak(tmp_path, monkeypatch):
     import json
     m = roomy(tmp_path, monkeypatch)
@@ -281,5 +380,68 @@ def test_confirm_measures_the_baseline_and_release_learns_the_peak(tmp_path, mon
         return [], [], {}
     monkeypatch.setattr(m, "snapshot", grown)
     asyncio.run(m.release_measured(res.id))
-    assert json.loads((tmp_path / "needs.json").read_text()) == {"stt:whisperx:medium": [2690]}
+    assert json.loads((tmp_path / "needs.json").read_text()) == {"stt:whisperx:medium": [2690],
+                                                                  "stt:whisperx:medium|gpu0": [2690]}
     assert m.need("stt:whisperx:medium", 1500) == 2959
+
+
+def _residue_case(tmp_path, monkeypatch, busy_after_release=False):
+    """2026-10-28, llm-benchy: Sketch-Cydonia-24B needed 15208 MB on the 4060 Ti, 14973 free; unloading stt-serve and
+    ComfyUI freed nothing -- both processes kept their CUDA context (158 + 244 MB) -- and the load got a 507 that
+    called them "pinned" (nobody had pinned them). Owner: stop such idle processes in a last round."""
+    m = local.LocalGpuManager(str(tmp_path / "pins.json"))
+    released, exited = [], []
+
+    def cons():
+        stt = Consumer(id="stt-serve", kind="stt", label="stt-serve", root_pids={1}, plugin="stt-serve")
+        comfy = Consumer(id="comfyui:comfyui", kind="image", label="ComfyUI", root_pids={2}, plugin="comfyui",
+                         last_used=5, busy=busy_after_release and bool(released))
+        return [c for c in (stt, comfy) if c.plugin not in exited]
+
+    def att():
+        out = {}
+        if "stt-serve" not in exited:
+            out[("stt-serve", 1)] = 158
+        if "comfyui" not in exited:
+            out[("comfyui:comfyui", 1)] = 244
+        return out
+
+    def free():
+        return 14973 + (158 if "stt-serve" in exited else 0) + (244 if "comfyui" in exited else 0)
+
+    async def snapshot():
+        return [{"index": 1, "name": "4060 Ti", "total": 16380, "free": free()}], cons(), att()
+
+    async def evict(cid, consumers=None):
+        released.append(cid)                       # models unloaded, process (and its context) stays
+
+    async def exit_process(cid, consumers=None):
+        c = next(c for c in (consumers or cons()) if c.id == cid)
+        exited.append(c.plugin)
+
+    async def gpu_status():
+        return {"gpus": [{"index": 1, "free": free()}]}
+    monkeypatch.setattr(m, "snapshot", snapshot)
+    monkeypatch.setattr(m, "evict", evict)
+    monkeypatch.setattr(m, "exit_process", exit_process)
+    import backend.model_manager as mm
+    monkeypatch.setattr(mm, "fetch_gpu_status", gpu_status)
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(local.asyncio, "sleep", lambda s: real_sleep(0))
+    return m, released, exited
+
+
+def test_idle_plugin_processes_whose_context_is_all_that_is_missing_are_stopped(tmp_path, monkeypatch):
+    m, released, exited = _residue_case(tmp_path, monkeypatch)
+    res, done, why = asyncio.run(m.reserve(1, 15208, "llm:Sketch-Cydonia"))
+    assert res is not None, why
+    assert sorted(released) == ["comfyui:comfyui", "stt-serve"] and sorted(exited) == ["comfyui", "stt-serve"]
+
+
+def test_a_process_that_became_busy_is_not_stopped_and_the_reason_says_what_is_left(tmp_path, monkeypatch):
+    m, released, exited = _residue_case(tmp_path, monkeypatch, busy_after_release=True)
+    res, done, why = asyncio.run(m.reserve(1, 15208, "llm:Sketch-Cydonia"))
+    assert res is None and exited == []
+    assert "pinned" not in why
+    assert "stt-serve (already unloaded; only its CUDA context is left (process still running), 158 MB)" in why
+    assert "ComfyUI (busy, 244 MB)" in why

@@ -185,3 +185,35 @@ def test_cancel_reaches_the_plugins(server):
     r = client.post("/v1/images/cancel", json={"request_id": "req-0123456789abcdef"})
     assert r.status_code == 200 and r.json()["cancelled"] is True
     assert ("POST", "/v1/images/cancel", {"request_id": "req-0123456789abcdef"}, None) in server.calls
+
+
+def test_the_answer_says_which_model_made_the_picture():
+    """2026-10-30 (V-Noveller): an answer must name its model -- also when an unknown name got the default."""
+    r = client.post("/v1/images/generations", json={"model": "iris-turbo", "prompt": "a fox"})
+    assert r.status_code == 200 and r.json()["model"] == "iris-turbo"
+    r = client.post("/v1/images/generations", json={"model": "dall-e-3", "prompt": "a fox"})
+    assert r.status_code == 200 and r.json()["model"] == "iris-turbo"          # the default, and it says so
+
+
+def test_an_unknown_model_is_not_replaced_while_a_plugin_is_missing(monkeypatch):
+    """2026-10-30 (V-Noveller): during an image plugin's restart a model it lists must not silently become the
+    default -- with a plugin not answering, an unknown name is a 503 (retry), not someone else's picture."""
+    async def partial(fresh=False):
+        entries, _ = await real(fresh=True)
+        return entries, ["comfyui: not reachable"]
+    real = image_plugins.catalog
+    monkeypatch.setattr(image_plugins, "catalog", partial)
+    r = client.post("/v1/images/generations", json={"model": "moss-turbo-4-bf16", "prompt": "a sign"})
+    assert r.status_code == 503 and "moss-turbo-4-bf16" in r.text
+    assert client.post("/v1/images/generations", json={"model": "iris-turbo", "prompt": "a fox"}).status_code == 200
+
+
+def test_an_unknown_model_name_is_refused_not_replaced():
+    """2026-10-30 (V-Noveller): with image-serve's manifest refused, z-image-turbo and moss-* silently became Iris.
+    Only OpenAI's own names (and "default") mean the default model now."""
+    r = client.post("/v1/images/generations", json={"model": "z-image-turbo", "prompt": "a fox"})
+    assert r.status_code == 400 and "iris-turbo" in r.text                       # says what exists
+    for name in ("dall-e-3", "gpt-image-1", "default", "DALL-E-3"):
+        r = client.post("/v1/images/generations", json={"model": name, "prompt": "a fox"})
+        assert r.status_code == 200 and r.json()["model"] == "iris-turbo", name
+    assert client.post("/v1/images/generations", json={"prompt": "a fox"}).json()["model"] == "iris-turbo"

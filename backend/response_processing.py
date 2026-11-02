@@ -1,3 +1,4 @@
+import os
 import json
 import re
 import struct
@@ -14,9 +15,22 @@ def is_loadable_gguf(name: str) -> bool:
     return (not m) or m.group(1) == "00001"
 
 
-def is_mtp_draft(name: str) -> bool:
-    """Return True for MTP (multi-token-prediction) draft head files, e.g. mtp-gemma-4-12b-it.gguf."""
-    return name.lower().startswith("mtp-")
+DRAFT_PREFIXES = ("mtp-", "dflash-")
+
+
+def is_draft_head(name: str) -> bool:
+    """Return True for draft files that pair with a main model by name: MTP (multi-token-prediction) heads, e.g.
+    mtp-gemma-4-12b-it.gguf, and DFlash block drafters, e.g. dflash-Nemotron-3.5-Bolt-E4B.gguf."""
+    return name.lower().startswith(DRAFT_PREFIXES)
+
+
+def draft_flags(draft_path: str) -> list:
+    """llama-server flags for a paired draft file. A DFlash drafter guesses a block of tokens at once (block size 8)
+    and is tiny (~0.7 GB) -- NVIDIA's model card for Nemotron 3.5 Bolt runs it with up to 7 drafted tokens, fully
+    on the GPU."""
+    if os.path.basename(draft_path).lower().startswith("dflash-"):
+        return ["-md", draft_path, "--spec-type", "draft-dflash", "--spec-draft-n-max", "7", "--spec-draft-ngl", "all"]
+    return ["-md", draft_path, "--spec-type", "draft-mtp"]
 
 
 _GGUF_INT_FMT = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 10: "<Q", 11: "<q"}

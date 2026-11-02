@@ -19,6 +19,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 import psutil
 from backend.procs import processes
+from backend import gpu_ids
 
 from backend.cluster.consumers import (Consumer, NeedBook, Reservation, Reservations, attribute_vram, gpu_view, unified_procs,
                                       plan_exclusive, plan_room)
@@ -114,6 +115,22 @@ def _cmdline_pid(fragment: str, cwd: Optional[str] = None) -> Optional[int]:
     return None
 
 
+def _spent(consumers: List[Consumer], tried: set) -> FrozenSet[str]:
+    """Consumers already unloaded for this request. A plugin whose only worker was released may come back as the
+    bare plugin (`<plugin>` instead of `<plugin>:<worker>`) -- that is the same process."""
+    plugins = {c.plugin for c in consumers if c.id in tried and c.plugin} | {t.split(":", 1)[0] for t in tried}
+    return frozenset(c.id for c in consumers if c.id in tried or (c.plugin and c.id == c.plugin and c.plugin in plugins))
+
+
+def _may_exit(ids: List[str], consumers: List[Consumer]) -> bool:
+    """Only idle plugin processes: every one is a plugin consumer, and nothing of that plugin is busy (on any GPU)."""
+    by_id = {c.id: c for c in consumers}
+    plugins = {by_id[i].plugin for i in ids if i in by_id}
+    if any(i not in by_id or not by_id[i].plugin or not by_id[i].evictable_kind for i in ids):
+        return False
+    return not any(c.busy for c in consumers if c.plugin in plugins)
+
+
 class LocalGpuManager:
     def __init__(self, pins_file: str, needs_file: Optional[str] = None):
         self.pins_file = pins_file
@@ -134,6 +151,10 @@ class LocalGpuManager:
                 self.needs = NeedBook.from_dict(json.load(f))
         except (OSError, ValueError):
             self.needs = NeedBook()
+            return
+        # figures learned per GPU number before 2026-10-30 follow their card from now on (its UUID)
+        if self.needs.rekey({f"gpu{i}": u for i, u in gpu_ids.table().items()}):
+            self._save_needs()
 
     def need(self, purpose: str, declared: int) -> int:
         return self.needs.need(purpose, int(declared))
@@ -143,11 +164,15 @@ class LocalGpuManager:
         for r in finished:
             if r.peak_mb > 0:
                 before = self.needs.need(r.purpose, 0)
-                self.needs.observe(r.purpose, r.peak_mb)
+                self.needs.observe(r.purpose, r.peak_mb, gpu_ids.key(r.gpu))
                 if r.peak_mb > r.mb:
                     logger.warning(f"GPU manager: {r.purpose} reserved {r.mb} MB but grew by {r.peak_mb} MB -- "
                                    f"reserving {self.needs.need(r.purpose, 0)} MB from now on (was {before})")
-        if finished and self.needs_file:
+        if finished:
+            self._save_needs()
+
+    def _save_needs(self) -> None:
+        if self.needs_file:
             try:
                 tmp = self.needs_file + ".tmp"
                 with open(tmp, "w", encoding="utf-8") as f:
@@ -176,17 +201,20 @@ class LocalGpuManager:
     # --- measuring
     async def consumers(self) -> List[Consumer]:
         from backend.state import state
+        from backend import model_manager
         out: List[Consumer] = []
-        for port, info in list(state.managed_processes.items()):
-            proc = info.get("process")
-            if not proc or proc.poll() is not None:
-                continue
+        live = [(port, info) for port, info in list(state.managed_processes.items())
+                if info.get("process") and info["process"].poll() is None]
+        # active_requests counts only calls through this gateway; a client on the instance's own port (llm-benchy
+        # after /api/start) shows up only in its /slots -- asked in parallel, 0.5 s each at most
+        working = await asyncio.gather(*(model_manager.is_port_busy(port, info) for port, info in live))
+        for (port, info), generating in zip(live, working):
             model = os.path.basename(info.get("model", "?"))
             out.append(Consumer(id=f"llm:{port}", kind="llm", label=model, pin_key=f"model:{model}",
-                                root_pids={proc.pid}, last_used=info.get("last_used") or 0,
+                                root_pids={info["process"].pid}, last_used=info.get("last_used") or 0,
                                 # still loading = busy: it has no requests yet but must
                                 # not be unloaded by the next load
-                                busy=info.get("active_requests", 0) > 0 or bool(info.get("loading"))))
+                                busy=generating or bool(info.get("loading"))))
         try:
             from backend.plugins import registry
             out += await registry.gpu_consumers()
@@ -293,6 +321,18 @@ class LocalGpuManager:
         from backend import events
         events.record("gpu", "{label} unloaded from GPU memory", label=c.label)
 
+    async def exit_process(self, consumer_id: str, consumers: Optional[List[Consumer]] = None) -> None:
+        """Stop an idle plugin's whole process -- after an unload its CUDA context still holds memory. It starts
+        again on its next request (Apps & Services). Never while the plugin or any of its workers is busy."""
+        c = next((c for c in (consumers or await self.consumers()) if c.id == consumer_id), None)
+        if c is None or not c.plugin:
+            raise PermissionError(f"{consumer_id} is no plugin process")
+        from backend.plugins import registry
+        await registry.stop(c.plugin)
+        logger.info(f"GPU manager: stopped {c.label}'s process ({c.plugin}) -- its CUDA context was in the way")
+        from backend import events
+        events.record("gpu", "{label} stopped to free its GPU memory", label=c.label)
+
     async def room(self) -> Dict[int, int]:
         """MB that could be had on each GPU right now without unloading anyone: hardware-free minus what
         is promised to loads in progress; 0 on a GPU someone holds exclusively (an exclusive plugin)."""
@@ -311,6 +351,7 @@ class LocalGpuManager:
         `need_mb` reserved: held 5 s until confirm(pid), then bound to that process.
         Promised-but-unallocated memory of other reservations counts as used.
         Returns (reservation or None, unloaded ids, reason)."""
+        declared = int(need_mb)
         need_mb = self.need(purpose, need_mb)   # at least what this purpose grew by before (NeedBook)
         lock = self._locks.setdefault(gpu, asyncio.Lock())
         async with lock:
@@ -322,15 +363,52 @@ class LocalGpuManager:
             reserved = self._outstanding(gpu)
             plan = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved)
             if not plan.ok:
-                return None, [], plan.reason
-            done = []
-            for cid in plan.evict:
-                try:
-                    await self.evict(cid, consumers)
-                    done.append(cid)
-                except Exception as e:
-                    logger.warning(f"GPU manager: could not unload {cid} for {purpose}: {e}")
-            if plan.evict:
+                # the learned headroom is a margin, not a must: if the measured peak itself fits, reserve that;
+                # failing that, a peak learned on another GPU gives way to what this GPU has seen (NeedBook.on_gpu)
+                for low in (self.needs.minimum(purpose, declared), self.needs.on_gpu(purpose, declared, gpu_ids.key(gpu))):
+                    if low >= need_mb:
+                        continue
+                    low_plan = plan_room(gpu, low, gpus, consumers, att, self.pins(), reserved_mb=reserved)
+                    if low_plan.ok:
+                        need_mb, plan = low, low_plan
+                        break
+                else:
+                    return None, [], plan.reason
+            done: List[str] = []
+            tried: set = set()
+            exited: set = set()
+            # An unload can free less than it was counted with (2026-10-26: stt-serve's 318 MB are mostly its CUDA
+            # context, which stays) -- then plan again on fresh figures without those and unload the next idle ones.
+            # If what is still missing is only such contexts of idle plugin processes, stop those processes (owner,
+            # 2026-10-28: Sketch-Cydonia-24B was 235 MB short on the 4060 Ti next to stt-serve's and ComfyUI's)
+            for round_ in range(4):
+                stop: List[str] = []
+                if round_:
+                    gpus, consumers, att = await self.snapshot()
+                    consumers = self._mark_loading(consumers)
+                    spent = _spent(consumers, tried)
+                    plan = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved,
+                                     spent=spent)
+                    if not plan.ok:
+                        full = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved,
+                                         spent=frozenset(exited))
+                        stop = [cid for cid in full.evict if cid in spent]
+                        if not (full.ok and stop and _may_exit(stop, consumers)):
+                            return None, done, f"GPU {gpu}: unloaded {done} but still short -- {plan.reason}"
+                        plan = full
+                if not plan.evict:
+                    break
+                for cid in plan.evict:
+                    tried.add(cid)
+                    try:
+                        if cid in stop:
+                            exited.add(cid)
+                            await self.exit_process(cid, consumers)
+                        else:
+                            await self.evict(cid, consumers)
+                        done.append(cid)
+                    except Exception as e:
+                        logger.warning(f"GPU manager: could not unload {cid} for {purpose}: {e}")
                 # Unloaded VRAM is handed back asynchronously -- give it a moment (this
                 # is about our own unloads finishing, not waiting for anyone busy)
                 from backend.model_manager import fetch_gpu_status
@@ -340,7 +418,11 @@ class LocalGpuManager:
                         break
                     await asyncio.sleep(0.5)
                 else:
-                    return None, done, f"GPU {gpu}: unloaded {done} but still short of {need_mb} MB"
+                    continue
+                break
+            else:
+                return None, done, f"GPU {gpu}: unloaded {done} but still short of {need_mb} MB"
+            if done:
                 logger.info(f"GPU manager: made {need_mb} MB room on GPU {gpu} for {purpose} by unloading {done}")
             res = self.reservations.add(gpu, need_mb, purpose, time.time())
             return res, done, ""

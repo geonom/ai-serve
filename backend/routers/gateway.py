@@ -9,9 +9,11 @@ import uuid
 from typing import Any, Dict, List, Optional, Union
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+
+from backend.gpu_ids import GpuRef
 
 from backend.config import MODEL_DIRS
 from backend.model_manager import (
@@ -23,10 +25,11 @@ from backend.model_manager import (
     find_active_model_port,
     find_draft_model_path,
 )
-from backend.response_processing import gguf_has_bundled_mtp, is_loadable_gguf, is_mtp_draft, process_completion_response
+from backend.response_processing import gguf_has_bundled_mtp, is_loadable_gguf, is_draft_head, process_completion_response
 from backend.plugins import llm as llm_plugins
 from backend.cluster.service import SERVICE as CLUSTER, Upstream
 from backend.state import state
+from backend import chat_jobs
 
 logger = logging.getLogger("ai-serve-ui.gateway")
 router = APIRouter()
@@ -51,7 +54,8 @@ _GPU_ID_DESC = (
     "multiple GPUs, the FIRST one registered is always picked (no load balancing), "
     "regardless of its current load; the other GPU's instance stays idle. Set this "
     "explicitly to target a specific GPU's instance. If no instance is running yet, "
-    "leaving this unset auto-picks the GPU with the most free VRAM."
+    "leaving this unset auto-picks the GPU with the most free VRAM. A GPU is its number or, "
+    "optionally, its UUID (GET /api/gpu/status lists both)."
 )
 
 
@@ -62,7 +66,7 @@ class UnifiedChatRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 2048
     thinking: Optional[bool] = None
-    gpu_id: Optional[int] = Field(None, description=_GPU_ID_DESC)
+    gpu_id: GpuRef = Field(None, description=_GPU_ID_DESC)
     keep_alive: int = 300
     ctx_size: Optional[int] = None
     parallel: Optional[int] = None  # llama-server -np at auto-load; default 1, 0 = llama.cpp auto (4)
@@ -143,7 +147,7 @@ class ChatCompletionRequest(BaseModel):
     modalities: Optional[List[str]] = None
     voice: Optional[str] = None
     thinking: Optional[bool] = None
-    gpu_id: Optional[int] = Field(None, description=_GPU_ID_DESC)
+    gpu_id: GpuRef = Field(None, description=_GPU_ID_DESC)
     keep_alive: Optional[int] = 300
     # Only takes effect on an auto-load. If a matching model_path is already
     # running, model_manager._load_locked() compares ctx_size against that
@@ -165,7 +169,7 @@ class EmbeddingRequest(BaseModel):
     encoding_format: Optional[str] = "float"
     dimensions: Optional[int] = None
     user: Optional[str] = None
-    gpu_id: Optional[int] = Field(None, description=_GPU_ID_DESC)
+    gpu_id: GpuRef = Field(None, description=_GPU_ID_DESC)
     keep_alive: Optional[int] = 300
     ctx_size: Optional[int] = None
     parallel: Optional[int] = None  # llama-server -np at auto-load; default 1, 0 = llama.cpp auto (4)
@@ -194,7 +198,7 @@ class RerankRequest(BaseModel):
     query: str
     documents: List[str]
     top_n: Optional[int] = None
-    gpu_id: Optional[int] = Field(None, description=_GPU_ID_DESC)
+    gpu_id: GpuRef = Field(None, description=_GPU_ID_DESC)
     keep_alive: Optional[int] = 300
     ctx_size: Optional[int] = None
     parallel: Optional[int] = None  # llama-server -np at auto-load; default 1, 0 = llama.cpp auto (4)
@@ -427,15 +431,16 @@ async def get_props(model: Optional[str] = None):
         return resp.json()
 
 @router.post("/api/chat/completions", summary="Unified chat completion", response_model=UnifiedChatResponse)
-async def unified_chat_completion(req: UnifiedChatRequest):
+async def unified_chat_completion(req: UnifiedChatRequest, request: Request):
     up = await _resolve_upstream(
         req.model_name, gpu_id=req.gpu_id, keep_alive=req.keep_alive,
-        ctx_size=req.ctx_size or 32000, parallel=req.parallel,
+        ctx_size=req.ctx_size, parallel=req.parallel,
         use_mtp=True if req.mtp is None else req.mtp,
     )
     _begin_request(up)
 
-    try:
+    # stoppable: client gone, or POST /v1/chat/cancel with its X-Request-Id (backend/chat_jobs.py)
+    async def _complete():
         processed_messages: List[Dict[str, Any]] = []
         has_system = False
         for msg in req.messages:
@@ -519,12 +524,15 @@ async def unified_chat_completion(req: UnifiedChatRequest):
                     continue
                 sc = http_err.response.status_code if isinstance(http_err, httpx.HTTPStatusError) else 502
                 raise HTTPException(status_code=sc, detail=f"Upstream error: {err_detail}")
+
+    try:
+        return await chat_jobs.run(_complete(), request.headers.get("x-request-id"), request.is_disconnected)
     finally:
         _end_request(up, req.keep_alive)
 
 
 @router.post("/v1/chat/completions", summary="OpenAI-compatible chat completions", response_model=ChatCompletionResponse)
-async def openai_chat_completion(req: ChatCompletionRequest):
+async def openai_chat_completion(req: ChatCompletionRequest, request: Request):
     # Handle audio input (STT preprocessing)
     processed_messages: List[Dict[str, Any]] = []
     for msg in req.messages:
@@ -546,7 +554,7 @@ async def openai_chat_completion(req: ChatCompletionRequest):
 
     up = await _resolve_upstream(
         req.model, gpu_id=req.gpu_id, keep_alive=req.keep_alive or 300,
-        ctx_size=req.ctx_size or 32000, parallel=req.parallel,
+        ctx_size=req.ctx_size, parallel=req.parallel,
         use_mtp=True if req.mtp is None else req.mtp,
     )
     _begin_request(up)
@@ -615,7 +623,9 @@ async def openai_chat_completion(req: ChatCompletionRequest):
             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
         )
 
-    try:
+    # stoppable: client gone, or POST /v1/chat/cancel with its X-Request-Id (backend/chat_jobs.py) -- a looping
+    # json_schema chat used to hold its GPU until max_tokens after its client was stopped (V-Noveller 2026-10-26)
+    async def _complete():
         final_messages = _inject_thinking_instruction(processed_messages, req.thinking)
         retries_left = req.retries or 3
         last_error = None
@@ -773,8 +783,24 @@ async def openai_chat_completion(req: ChatCompletionRequest):
                     continue
                 sc = http_err.response.status_code if isinstance(http_err, httpx.HTTPStatusError) else 502
                 raise HTTPException(status_code=sc, detail=f"Upstream error: {err_detail}")
+
+    try:
+        return await chat_jobs.run(_complete(), request.headers.get("x-request-id"), request.is_disconnected)
     finally:
         _end_request(up, req.keep_alive or 300)
+
+
+class ChatCancelRequest(BaseModel):
+    request_id: str
+
+
+@router.post("/v1/chat/cancel", summary="Stop one running non-streamed chat (the one sent with this X-Request-Id)")
+async def cancel_chat(req: ChatCancelRequest):
+    """{"cancelled": true} = it is being stopped (its caller gets 409); false = none runs with this id -- a request
+    arriving with it within 10 min is refused once. Streamed chats stop when their client closes the stream."""
+    if not chat_jobs.valid_id(req.request_id):
+        raise HTTPException(status_code=400, detail="request_id: 16-64 of A-Z, a-z, 0-9, _ and -")
+    return {"cancelled": chat_jobs.cancel(req.request_id)}
 
 
 @router.get("/v1/llm/models", summary="Language models on this machine, on devices and from llm plugins -- kind and abilities")
@@ -841,7 +867,7 @@ async def list_openai_models():
             if (
                 abs_path not in seen_paths
                 and "mmproj" not in name.lower()
-                and not is_mtp_draft(name)
+                and not is_draft_head(name)
                 and is_loadable_gguf(name)
             ):
                 draft_path = find_draft_model_path(abs_path)
@@ -861,7 +887,7 @@ async def list_openai_models():
 async def openai_embeddings(req: EmbeddingRequest):
     up = await _resolve_upstream(
         req.model, gpu_id=req.gpu_id, keep_alive=req.keep_alive or 300,
-        ctx_size=req.ctx_size or 32000, parallel=req.parallel, embedding=True, use_mtp=False,
+        ctx_size=req.ctx_size, parallel=req.parallel, embedding=True, use_mtp=False,
     )
     _begin_request(up)
     try:
@@ -876,6 +902,69 @@ async def openai_embeddings(req: EmbeddingRequest):
             resp = await client.post(up.url("/v1/embeddings"), json=payload, headers=up.headers)
             resp.raise_for_status()
             return EmbeddingResponse(**resp.json())
+    except httpx.HTTPError as http_err:
+        err_detail = get_upstream_error_detail(http_err)
+        sc = http_err.response.status_code if isinstance(http_err, httpx.HTTPStatusError) else 502
+        raise HTTPException(status_code=sc, detail=f"Upstream error: {err_detail}")
+    finally:
+        _end_request(up, req.keep_alive or 300)
+
+
+class SystemOneRequest(BaseModel):
+    """llama.cpp's /v1/systemone (TypeSafe-compatible System One API): typed questions about a `state`, answered by
+    a decision model with probabilities in one forward pass, no generated text. Other TypeSafe fields pass through."""
+    model_config = ConfigDict(extra="allow")
+    model: Optional[str] = Field(None, description="a decision model (kind 'decision' in /v1/llm/models); "
+                                                   "omitted or 'default': the first one found")
+    state: Any = Field(None, description="what the questions are about: text, an object or an array (JSON), or "
+                                         "chat messages with image_url parts")
+    questions: Dict[str, Any] = Field(..., description="id -> {type: choice|score|noul, instructions, criteria}")
+    files: Optional[List[str]] = Field(None, description="data URLs (pictures; video and audio where the model "
+                                                         "takes them)")
+    images: Optional[List[str]] = Field(None, description="alias of files")
+    gpu_id: GpuRef = Field(None, description=_GPU_ID_DESC)
+    keep_alive: Optional[int] = 300
+    ctx_size: Optional[int] = None
+
+
+def _default_decision_model() -> Optional[str]:
+    """A running decision model, else the first one on disk (by the GGUF header, backend/llm_catalog.py)."""
+    from backend.model_manager import get_model_traits, scan_all_gguf_paths
+    is_decision = lambda path: (get_model_traits(path) or {}).get("kind") == "decision"
+    for info in list(state.managed_processes.values()):
+        if info.get("model") and is_decision(info["model"]):
+            return info["model"]
+    for path in sorted(scan_all_gguf_paths()):
+        name = os.path.basename(path)
+        if "mmproj" not in name.lower() and not is_draft_head(name) and is_decision(path):
+            return path
+    return None
+
+
+@router.post("/v1/systemone", summary="Decisions with probabilities (decision models such as LiquidAI d1)")
+async def systemone(req: SystemOneRequest):
+    """Routing, triage, moderation, classification, judging: each question gets a typed answer (choice, score or
+    noul = probability of yes) with probabilities, in milliseconds (2026-10-30, owner: LFM3's d1-2B). The model loads
+    on demand with batch = ubatch = 8192 (a question is read in one batch, pictures included); a model that isn't a
+    decision model answers 501 from llama-server."""
+    model = req.model if req.model and req.model.lower() not in ("default", "auto") else _default_decision_model()
+    if not model:
+        raise HTTPException(status_code=400, detail="No decision model on this machine -- download one, e.g. "
+                                                    "https://huggingface.co/LiquidAI/d1-2B-GGUF (Q8_0 + its mmproj)")
+    up = await _resolve_upstream(model, gpu_id=req.gpu_id, keep_alive=req.keep_alive or 300,
+                                 ctx_size=req.ctx_size, use_mtp=False)
+    _begin_request(up)
+    try:
+        payload: Dict[str, Any] = {"state": req.state, "questions": req.questions, **(req.model_extra or {})}
+        for field in ("files", "images"):
+            if getattr(req, field) is not None:
+                payload[field] = getattr(req, field)
+        async with _upstream_client(up, 120.0) as client:
+            resp = await client.post(up.url("/v1/systemone"), json=payload, headers=up.headers)
+            resp.raise_for_status()
+            data = resp.json()
+        data["model"] = up.label or os.path.basename(model)   # llama-server names the absolute path
+        return data
     except httpx.HTTPError as http_err:
         err_detail = get_upstream_error_detail(http_err)
         sc = http_err.response.status_code if isinstance(http_err, httpx.HTTPStatusError) else 502
@@ -901,7 +990,7 @@ async def rerank(req: RerankRequest):
     """
     up = await _resolve_upstream(
         req.model, gpu_id=req.gpu_id, keep_alive=req.keep_alive or 300,
-        ctx_size=req.ctx_size or 32000, parallel=req.parallel, embedding=True, reranking=True, pooling=req.pooling,
+        ctx_size=req.ctx_size, parallel=req.parallel, embedding=True, reranking=True, pooling=req.pooling,
         use_mtp=False,
     )
     _begin_request(up)

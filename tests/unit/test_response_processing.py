@@ -9,7 +9,8 @@ from backend.response_processing import (
     extract_thinking,
     gguf_has_bundled_mtp,
     is_loadable_gguf,
-    is_mtp_draft,
+    draft_flags,
+    is_draft_head,
     process_completion_response,
     strip_thinking_tags,
 )
@@ -68,21 +69,36 @@ class TestIsLoadableGguf:
 
 
 # ---------------------------------------------------------------------------
-# is_mtp_draft
+# is_draft_head / draft_flags
 # ---------------------------------------------------------------------------
 
-class TestIsMtpDraft:
+class TestIsDraftHead:
     def test_mtp_prefixed_file(self):
-        assert is_mtp_draft("mtp-gemma-4-12b-it.gguf")
+        assert is_draft_head("mtp-gemma-4-12b-it.gguf")
 
     def test_case_insensitive(self):
-        assert is_mtp_draft("MTP-Gemma-4-12B-it.gguf")
+        assert is_draft_head("MTP-Gemma-4-12B-it.gguf")
 
     def test_regular_model_not_mtp(self):
-        assert not is_mtp_draft("gemma-4-12b-it-UD-Q4_K_XL.gguf")
+        assert not is_draft_head("gemma-4-12b-it-UD-Q4_K_XL.gguf")
 
     def test_mtp_substring_not_at_start_not_mtp(self):
-        assert not is_mtp_draft("gemma-4-12b-mtp-it.gguf")
+        assert not is_draft_head("gemma-4-12b-mtp-it.gguf")
+
+    def test_dflash_drafter(self):
+        assert is_draft_head("dflash-Nemotron-3.5-Bolt-E4B.gguf")
+        assert not is_draft_head("Nemotron-3.5-Bolt-E4B-DFlash-BF16.gguf")   # only the prefix pairs
+
+
+class TestDraftFlags:
+    def test_mtp_head(self):
+        assert draft_flags("/m/mtp-gemma-4-12b-it.gguf") == ["-md", "/m/mtp-gemma-4-12b-it.gguf", "--spec-type", "draft-mtp"]
+
+    def test_dflash_drafts_a_block_and_lives_on_the_gpu(self):
+        # NVIDIA's model card for Nemotron 3.5 Bolt: --spec-draft-n-max 7 --spec-draft-ngl 999
+        assert draft_flags("/m/dflash-Nemotron-3.5-Bolt-E4B.gguf") == [
+            "-md", "/m/dflash-Nemotron-3.5-Bolt-E4B.gguf", "--spec-type", "draft-dflash",
+            "--spec-draft-n-max", "7", "--spec-draft-ngl", "all"]
 
 
 # ---------------------------------------------------------------------------

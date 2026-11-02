@@ -77,7 +77,7 @@ def attribute_vram(procs: Iterable[Tuple[int, int, int]], parents: Mapping[int, 
 
 
 def _ledger(gpu: Mapping[str, Any], consumers: Sequence[Consumer], att: Mapping[Tuple[str, int], int],
-            pinned: FrozenSet[str]) -> Tuple[Ledger, str]:
+            pinned: FrozenSet[str], spent: FrozenSet[str] = frozenset()) -> Tuple[Ledger, str]:
     acc = Accelerator(node="local", index=int(gpu["index"]), kind=AccelKind.CUDA, name=str(gpu.get("name", "")),
                       total_mb=int(gpu["total"]), budget_mb=int(gpu["total"]))
     ledger = Ledger([acc])
@@ -87,23 +87,26 @@ def _ledger(gpu: Mapping[str, Any], consumers: Sequence[Consumer], att: Mapping[
             continue
         ledger.record(Lease(
             id=c.id, accel=acc.id, consumer=_KIND.get(c.kind, ConsumerKind.LLM), label=c.label, mb=mb,
-            last_used=c.last_used, busy=c.busy or not c.evictable_kind, pinned=c.pin in pinned,
+            last_used=c.last_used, busy=c.busy or not c.evictable_kind, pinned=c.pin in pinned or c.id in spent,
             exclusive=c.kind == "exclusive"))
     return ledger, acc.id
 
 
 def plan_room(gpu_index: int, need_mb: int, gpus: Sequence[Mapping[str, Any]], consumers: Sequence[Consumer],
               att: Mapping[Tuple[str, int], int], pinned: FrozenSet[str] = frozenset(),
-              reserved_mb: int = 0, exclusive_holder: Optional[str] = None) -> RoomPlan:
+              reserved_mb: int = 0, exclusive_holder: Optional[str] = None,
+              spent: FrozenSet[str] = frozenset()) -> RoomPlan:
     """reserved_mb: memory promised to loads that haven't allocated it yet;
-    exclusive_holder: who holds this GPU exclusively (Strata), if anyone."""
+    exclusive_holder: who holds this GPU exclusively (Strata), if anyone;
+    spent: consumers already unloaded for this request -- what they still hold is their process's CUDA context,
+    which another unload can't free (not counted again, and named as such in the reason)."""
     if exclusive_holder:
         return RoomPlan(False, [], f"GPU {gpu_index} is reserved exclusively for {exclusive_holder}",
                         exclusive_holder=exclusive_holder)
     gpu = next((g for g in gpus if int(g["index"]) == gpu_index), None)
     if gpu is None:
         return RoomPlan(False, [], f"no GPU {gpu_index}")
-    ledger, aid = _ledger(gpu, consumers, att, pinned)
+    ledger, aid = _ledger(gpu, consumers, att, pinned, spent)
     free = int(gpu.get("free") or 0) - int(reserved_mb)
     if free >= need_mb:
         return RoomPlan(True, [])
@@ -118,13 +121,21 @@ def plan_room(gpu_index: int, need_mb: int, gpus: Sequence[Mapping[str, Any]], c
         if free + freed >= need_mb:
             return RoomPlan(True, evict)
     blockers = [l for l in held if not l.evictable]
-    why = ", ".join(f"{l.label} ({'pinned' if l.pinned else 'busy'}, {l.mb} MB)" for l in blockers)
+    why = ", ".join(f"{l.label} ({_blocked(l, spent)}, {l.mb} MB)" for l in blockers)
     other = att.get((OTHER, gpu_index), 0)
     return RoomPlan(False, [], f"GPU {gpu_index}: needs {need_mb} MB, {free} MB free"
                     + (f" ({reserved_mb} MB promised to loads in progress)" if reserved_mb else "")
                     + (f", even after unloading every idle user only {free + freed} MB" if evict else "")
                     + (f"; held by {why}" if why else "")
                     + (f"; other programs use {other} MB" if other else ""))
+
+
+def _blocked(lease: Lease, spent: FrozenSet[str]) -> str:
+    if lease.busy:
+        return "busy"
+    if lease.id in spent:
+        return "already unloaded; only its CUDA context is left (process still running)"
+    return "pinned"
 
 
 CONTEXT_TOLERANCE_MB = 512   # a bare CUDA context; anything more blocks an exclusive start
@@ -281,10 +292,17 @@ class NeedBook:
     def __init__(self, samples: Optional[Dict[str, List[int]]] = None):
         self._samples: Dict[str, List[int]] = samples or {}
 
-    def observe(self, purpose: str, mb: int) -> None:
+    @staticmethod
+    def _on(purpose: str, gpu: str) -> str:
+        return f"{purpose}|{gpu}"
+
+    def observe(self, purpose: str, mb: int, gpu: Optional[str] = None) -> None:
+        """`gpu` = the card's key (backend/gpu_ids.py key(): its UUID, else 'gpu<n>')."""
         if not purpose or not isinstance(mb, int) or mb <= 0:
             return
-        self._samples[purpose] = (self._samples.get(purpose, []) + [mb])[-self.SAMPLES:]
+        keys = [purpose] + ([self._on(purpose, gpu)] if gpu else [])
+        for k in keys:
+            self._samples[k] = (self._samples.get(k, []) + [mb])[-self.SAMPLES:]
 
     def need(self, purpose: str, declared: int) -> int:
         seen = self._samples.get(purpose)
@@ -292,6 +310,33 @@ class NeedBook:
             return declared
         peak = max(seen)
         return max(declared, -(-peak * (100 + self.HEADROOM_PCT) // 100))   # ceil, in integers
+
+    def minimum(self, purpose: str, declared: int) -> int:
+        """Without the headroom: what is reserved when the GPU can't give peak + 10 % but the peak fits. Found
+        2026-10-26: MOSS bf16 peaked at 14770 MB on the 3090 (ComfyUI keeps every model cached when it can);
+        the 16247 MB with headroom don't exist on the 16 GB card, so every picture there was refused."""
+        seen = self._samples.get(purpose)
+        return max(declared, max(seen)) if seen else declared
+
+    def on_gpu(self, purpose: str, declared: int, gpu: str) -> int:
+        """The last resort when even the peak doesn't fit: what was seen on THIS GPU -- or, if nothing was, the
+        declared need. Found 2026-10-28 (V-Noveller): Qwen-Image-Edit peaked at 16754 MB on the 3090, where ComfyUI
+        keeps every model cached; on the 16 GB 4060 Ti, where it offloads, that peak can never fit, and every edit
+        got a 507 forever. A peak from a roomier card says what it uses when it can, not what it needs; a try here
+        teaches this GPU's own peak (a plugin that runs out of memory retries elsewhere, docs/plugins.md)."""
+        seen = self._samples.get(self._on(purpose, gpu))
+        return max(declared, max(seen)) if seen else declared
+
+    def rekey(self, keys: Mapping[str, str]) -> bool:
+        """Per-GPU samples stored under an old card key ('gpu<n>') move to its UUID (2026-10-30). True if any moved."""
+        moved = False
+        for k in list(self._samples):
+            purpose, sep, card = k.rpartition("|")
+            if sep and card in keys and keys[card] != card:
+                new = self._on(purpose, keys[card])
+                self._samples[new] = (self._samples.get(new, []) + self._samples.pop(k))[-self.SAMPLES:]
+                moved = True
+        return moved
 
     def to_dict(self) -> Dict[str, List[int]]:
         return {k: list(v) for k, v in self._samples.items() if v}

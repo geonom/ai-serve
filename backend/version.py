@@ -11,9 +11,49 @@ Do NOT bump for UI-only, ComfyUI, documentation, or other changes that
 don't touch the llama.cpp/model-serving path.
 """
 
-BACKEND_VERSION = 11
+BACKEND_VERSION = 15
 
 VERSION_LOG = [
+    {
+        "version": 15,
+        "date": "2026-11-01",
+        "change": (
+            "An idle stop needs the instance idle (gateway requests and its own /slots) for the whole keep-alive time, "
+            "not just at one instant; who started an instance survives a restart (instance_origins.json), and an "
+            "/api/start-ed one gets no idle timer after adoption."
+        ),
+    },
+    {
+        "version": 14,
+        "date": "2026-11-01",
+        "change": (
+            "A running llama-server is restarted for a bigger context / more slots only when the gateway started it, "
+            "it is idle by its own /slots and not loading, and the caller asked for that ctx_size explicitly (no "
+            "ctx_size = any running context). An /api/start-ed or adopted instance is never restarted by the gateway; "
+            "an explicit ctx_size it can't hold gets an instance of its own (or 507); a loading instance counts as busy for "
+            "manual stops too."
+        ),
+    },
+    {
+        "version": 13,
+        "date": "2026-10-31",
+        "change": (
+            "DFlash speculative decoding: a block drafter named dflash-<model stem>.gguf pairs with its main model "
+            "like an mtp- head and loads with --spec-type draft-dflash --spec-draft-n-max 7 --spec-draft-ngl all "
+            "(NVIDIA's drafter for Nemotron 3.5 Bolt E4B)."
+        ),
+    },
+    {
+        "version": 12,
+        "date": "2026-10-30",
+        "change": (
+            "llama.cpp b10820 -> b12010 (CUDA 12.9): LFM3 models and native decision models -- POST /v1/systemone "
+            "(kind 'decision', loaded with -b/-ub 8192). GPUs may be named by UUID; llama-servers are pinned by UUID "
+            "and every child process gets CUDA_DEVICE_ORDER=PCI_BUS_ID. The GPU manager keeps learned peaks per GPU "
+            "and, since 2026-10-26, treats the learned +10 % as optional, plans again when an unload frees less than "
+            "counted, and stops idle plugin processes whose CUDA context is all that is missing."
+        ),
+    },
     {
         "version": 11,
         "date": "2026-10-24",

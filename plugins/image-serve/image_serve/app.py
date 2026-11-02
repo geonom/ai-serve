@@ -24,9 +24,9 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 import httpx
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from image_serve import catalog, comfy, config, jobs, moss, moss_brief
+from image_serve import audio, catalog, comfy, config, jobs, moss, moss_brief
 from image_serve.config import LOGS_DIR
 from image_serve.state import state
 
@@ -310,6 +310,113 @@ async def cancel(body: Any = Body(...)):
 
 def _running() -> bool:
     return state.comfyui_process is not None and state.comfyui_process.poll() is None
+
+
+# ------------------------------------------------------------------ music and sound effects (image_serve/audio.py)
+
+AUDIO_JOBS_PATH = "/v1/audio/jobs"
+AUDIO_PROMPT_MODEL = os.environ.get("AUDIO_PROMPT_MODEL") or LAYOUT_MODEL   # rewrites sound descriptions
+
+
+@app.get("/v1/audio/models")
+async def audio_models():
+    return {"object": "list", "data": audio.listing(config.COMFYUI_MODELS_ROOT)}
+
+
+async def _run_audio_job(job: audio.Job, req: audio.AudioRequest) -> None:
+    try:
+        prompt, seconds = req.prompt, req.seconds
+        if req.model.task == "sound" and req.enhance:
+            job.message = "turning the description into a sound prompt"
+            prompt, suggested = await audio.enhance_sound(req.prompt, config.GATEWAY, AUDIO_PROMPT_MODEL)
+            if seconds is None and suggested:
+                seconds = min(max(suggested, req.model.min_seconds), req.model.max_seconds)
+        seconds = seconds or req.model.default_seconds
+        job.prompt_used, job.seconds, job.seed = prompt, seconds, req.seed
+        prefix = f"audio/{job.id}"
+        if req.model.id == "sa3-sfx":
+            workflow = audio.sa3_workflow(prompt, seconds, req.seed, prefix)
+        else:
+            workflow = audio.ace_workflow(req, seconds, prefix)
+        job.status, job.message = "running", "waiting for ComfyUI"
+        queued = await comfy.queue_workflow(workflow, req.model.label)
+        job.prompt_id = queued["task_id"]
+        job.message = "generating"
+        data = base64.b64decode(await comfy._await_comfyui_task(job.prompt_id))
+        os.makedirs(config.GENERATED_AUDIO_DIR, exist_ok=True)
+        path = os.path.join(config.GENERATED_AUDIO_DIR, f"{job.id}.mp3")
+        with open(path, "wb") as f:
+            f.write(data)
+        job.file, job.status, job.message = path, "done", ""
+    except asyncio.CancelledError:
+        job.status, job.message = "cancelled", ""
+    except HTTPException as e:
+        cancelled = e.status_code == 409 or job.status == "cancelled"
+        job.status = "cancelled" if cancelled else "failed"
+        job.error = None if cancelled else str(e.detail)[:500]
+        job.message = ""
+    except Exception as e:   # never leave a job "running" forever
+        logger.exception("audio job failed")
+        job.status, job.error, job.message = "failed", f"{type(e).__name__}: {str(e)[:300]}", ""
+
+
+@app.post(AUDIO_JOBS_PATH, status_code=202)
+async def audio_job(body: Dict[str, Any] = Body(...)):
+    try:
+        req = audio.parse_request(body)
+    except audio.AudioError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not audio.available(req.model, config.COMFYUI_MODELS_ROOT):
+        raise HTTPException(status_code=400, detail=f"{req.model.label} is not installed on this machine "
+                                                    f"(bundle '{req.model.bundle}')")
+    job = audio.JOBS.new(req.model.id)
+    job.task = asyncio.create_task(_run_audio_job(job, req))
+    return {"id": job.id, "status": job.status}
+
+
+def _audio_job(job_id: str) -> audio.Job:
+    job = audio.JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such audio job (finished jobs are kept for 6 hours)")
+    return job
+
+
+@app.get(AUDIO_JOBS_PATH + "/{job_id}")
+async def audio_job_status(job_id: str):
+    job = _audio_job(job_id)
+    progress = None
+    task = state.comfyui_tasks.get(job.prompt_id) if job.prompt_id else None
+    if job.status == "running" and task:
+        progress = round(min(max(float((task.get("progress") or {}).get("value") or 0) / 100, 0.0), 1.0), 3)
+    elif job.status == "done":
+        progress = 1.0
+    return audio.view(job, progress, AUDIO_JOBS_PATH)
+
+
+@app.post(AUDIO_JOBS_PATH + "/{job_id}/cancel")
+async def audio_job_cancel(job_id: str):
+    job = _audio_job(job_id)
+    if job.status in ("queued", "running"):
+        job.status = "cancelled"
+        if job.prompt_id:
+            task = state.comfyui_tasks.get(job.prompt_id)
+            if task is not None and task.get("status") not in ("completed", "failed"):
+                task.update(status="failed", error="cancelled")
+            try:
+                await jobs.interrupt_comfy(f"http://127.0.0.1:{state.comfyui_port}", job.prompt_id)
+            except httpx.HTTPError:
+                pass
+        if job.task and not job.task.done():
+            job.task.cancel()
+    return audio.view(job, None, AUDIO_JOBS_PATH)
+
+
+@app.get(AUDIO_JOBS_PATH + "/{job_id}/files/{name}")
+async def audio_job_file(job_id: str, name: str):
+    job = _audio_job(job_id)
+    if job.status != "done" or not job.file or name != os.path.basename(job.file):
+        raise HTTPException(status_code=404, detail="no such file")
+    return FileResponse(job.file, media_type="audio/mpeg", filename=name)
 
 
 @app.get("/plugin/status")

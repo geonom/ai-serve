@@ -707,6 +707,9 @@ def child_environment(base: Mapping[str, str], manifest_env: Mapping[str, str]) 
                                       if p and not is_inside(p, venv))
     # where the gateway is (it may run on another port than 8030); a manifest may point elsewhere
     env["AI_SERVE_URL"] = f"http://127.0.0.1:{base.get('AI_SERVE_PORT') or 8030}"
+    # GPU numbers mean nvidia-smi's (the GPU manager's) in every app: CUDA's own default order is fastest card first,
+    # which matched with two cards here but need not with a third (2026-10-30, backend/gpu_ids.py)
+    env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     env.update(manifest_env)
     # docs/identity.md 2.2: the owner's stable id, for requests without identity from loopback.
     # Set last: a manifest can't make an app treat someone else as the owner.

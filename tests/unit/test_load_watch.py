@@ -25,8 +25,25 @@ def test_unknown_progress_counts_as_none():
 def test_there_is_an_upper_limit():
     w = LoadWatch(0)
     for t in range(1, LoadWatch.MAX_S, 30):
-        assert w.verdict(t, t) is None
-    assert "within" in w.verdict(LoadWatch.MAX_S, LoadWatch.MAX_S + 1)
+        assert w.verdict(t, (t * 10**9, 0)) is None
+    assert "within" in w.verdict(LoadWatch.MAX_S, (LoadWatch.MAX_S * 10**9, 0))
+
+
+def test_a_trickle_of_reads_is_no_progress():
+    # 2026-10-26, V-Noveller: the external SSD reset over USB every ~40 s; after each reset a few MB came through,
+    # which kept resetting the stall clock -- llama-server sat in D state for 3 min until it was unloaded by hand
+    w = LoadWatch(0)
+    for t in range(1, 70):
+        why = w.verdict(t, (47_000_000 + (t // 40) * 2_000_000, 1442))
+        if why:
+            break
+    assert t == 61 and "disk reads stalled" in why and "2 MB" in why
+
+
+def test_log_output_counts_as_progress():
+    w = LoadWatch(0)
+    for t in range(1, 200):
+        assert w.verdict(t, (5_000_000, 1000 + t)) is None    # e.g. warmup lines while nothing is read
 
 
 def test_progress_of_this_process(tmp_path):

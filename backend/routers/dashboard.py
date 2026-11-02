@@ -17,6 +17,8 @@ import psutil
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.gpu_ids import GpuRef, visible_devices
+
 from backend.config import DEFAULT_PARALLEL, LLAMA_SERVER_BIN, LLAMA_TOKENIZE_BIN, LOGS_DIR, MODEL_DIRS
 from backend.model_manager import (
     get_model_size_mb,
@@ -42,7 +44,8 @@ from backend.model_manager import (
 from backend.response_processing import (
     gguf_has_bundled_mtp,
     is_loadable_gguf,
-    is_mtp_draft,
+    draft_flags,
+    is_draft_head,
     read_gguf_header,
 )
 from backend.plugins import llm as llm_plugins
@@ -82,9 +85,9 @@ class StartRequest(BaseModel):
     ctx_size: int = Field(32000, description="Context size in tokens (-c).")
     threads: int = Field(8, description="CPU thread count (-t).")
     n_gpu_layers: int = Field(-1, description="Layers to offload to GPU (-ngl). -1 offloads all layers.")
-    gpu_id: Optional[int] = Field(
+    gpu_id: GpuRef = Field(
         None,
-        description="GPU index to pin this instance to via CUDA_VISIBLE_DEVICES. "
+        description="GPU to pin this instance to (its number, or optionally its UUID). "
                      "If omitted, the GPU with the most free VRAM is picked automatically.",
     )
     mmproj_path: Optional[str] = Field(
@@ -177,6 +180,7 @@ class GPUInfo(BaseModel):
     # Apple Silicon only: where `used` comes from (ioreg_gpu | psutil_system_ram) and Metal's GPU limit
     memory_source: Optional[str] = None
     gpu_limit_mb: Optional[int] = None
+    uuid: Optional[str] = None   # NVIDIA: names this card for good; usable wherever a GPU number is (gpu_ids.py)
 
 
 class GPUStatusResponse(BaseModel):
@@ -308,7 +312,7 @@ async def list_models():
             all_paths.append(abs_path)
             if "mmproj" in name.lower():
                 vision_modules.append({"name": name, "path": abs_path})
-            elif is_mtp_draft(name):
+            elif is_draft_head(name):
                 draft_modules.append({"name": name, "path": abs_path})
             elif is_loadable_gguf(name):
                 models.append({"name": name, "path": abs_path})
@@ -497,8 +501,8 @@ async def start_server(req: StartRequest):
         # Always pin to a single GPU: leaving CUDA_VISIBLE_DEVICES unset lets llama.cpp
         # see every GPU and auto tensor-split -ngl -1 across all of them, which is a
         # known slow/hanging failure mode for some models rather than a hard OOM.
-        env["CUDA_VISIBLE_DEVICES"] = str(target_gpu_id)
-        logger.info(f"CUDA_VISIBLE_DEVICES={target_gpu_id} for port {port}")
+        env["CUDA_VISIBLE_DEVICES"] = visible_devices(target_gpu_id)   # the UUID: the same card in CUDA's order
+        logger.info(f"CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']} (GPU {target_gpu_id}) for port {port}")
 
     cmd = [
         LLAMA_SERVER_BIN,
@@ -529,7 +533,7 @@ async def start_server(req: StartRequest):
     if req.batch_size:
         cmd.extend(["-b", str(req.batch_size)])
     if draft_model_path:
-        cmd.extend(["-md", draft_model_path, "--spec-type", "draft-mtp"])
+        cmd.extend(draft_flags(draft_model_path))
         logger.info(f"Enabling MTP speculative decoding with draft head: {draft_model_path}")
     elif bundled_mtp:
         cmd.extend(["--spec-type", "draft-mtp"])
@@ -544,6 +548,8 @@ async def start_server(req: StartRequest):
         if reservation is not None:
             from backend.cluster.local import MANAGER
             MANAGER.confirm(reservation.id, proc.pid)  # counts until it has allocated, or exits
+        from backend.model_manager import remember_origin
+        remember_origin(proc.pid, "api_start")   # adoption after a restart keeps it an api_start instance
         state.managed_processes[port] = {
             "process": proc,
             "log_file": log_file,
@@ -564,6 +570,7 @@ async def start_server(req: StartRequest):
             "batch_size": req.batch_size,
             "last_used": time.time(),
             "active_requests": 0,
+            "origin": "api_start",   # someone's own instance: the gateway never restarts it (model_manager reuse)
             "keep_alive": 300,
             "keep_alive_task": None,
         }

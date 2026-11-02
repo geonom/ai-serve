@@ -190,14 +190,14 @@ async def public_models():
 
 
 @router.post("/chat/completions", summary="Public chat completions")
-async def public_chat_completions(body: Dict[str, Any] = Body(...)):
+async def public_chat_completions(request: Request, body: Dict[str, Any] = Body(...)):
     alias = load_catalog().resolve(body.get("model"), ModelKind.CHAT)
     payload = CHAT.sanitize(body, alias)
     try:
         req = ChatCompletionRequest(**payload)
     except ValidationError:
         raise PolicyViolation("Invalid chat request.")
-    result = await openai_chat_completion(req)
+    result = await openai_chat_completion(req, request)   # a caller that hangs up stops the generation
     # Report the alias, never the GGUF filename/path behind it.
     if isinstance(result, BaseModel) and hasattr(result, "model"):
         return result.model_copy(update={"model": alias.id})

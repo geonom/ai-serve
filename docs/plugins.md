@@ -141,8 +141,12 @@ result files are videos (`video/mp4`).
 
 ### audio -- music and sound effects
 
-`catalog` entries add `tasks` (`music`, `sound`) and `max_seconds`. `jobs` body: `{"model", "prompt", "lyrics"?,
-"seconds"?, "seed"?}`; result files are audio.
+`catalog` entries add `tasks` (`music`, `sound`), `max_seconds`, optionally `min_seconds`, `default_seconds` and
+`lyrics` (true: the model sings given lyrics). `jobs` body: `{"model", "prompt", "lyrics"?, "seconds"?, "seed"?}` plus
+the model's own extras (image-serve: `enhance`, `bpm`, `language`, `keyscale`, `timesignature`); result files are
+audio. The gateway: `GET /v1/audio/models?task=music|sound|all`, `POST /v1/audio/jobs` (`model` or `task`; 202 with a
+gateway job id `<plugin>.<plugin's id>`), `GET /v1/audio/jobs/{id}`, `POST /v1/audio/jobs/{id}/cancel`,
+`GET /v1/audio/jobs/{id}/files/{name}` (fetched from the plugin, only below its `jobs` path).
 
 ### tts -- speech
 

@@ -296,7 +296,7 @@ async def set_exposure(service_id: str, req: ExposureRequest, request: Request):
 @router.get("/api/services", summary="Registered services and their running instances")
 async def list_services():
     registry = _registry()
-    procs = await asyncio.to_thread(runtime.snapshot)
+    procs = await asyncio.to_thread(runtime.recent_snapshot)
     settings = _load_exposure()
     autostart = _load_autostart()
     info = await asyncio.to_thread(tailscale.info)
@@ -488,7 +488,7 @@ async def service_status(service_id: str):
     """Fetched from the app's own loopback port (`status_path` in its manifest) and
     reduced to at most six plain {label, value} strings -- nothing else is passed on."""
     m = _get(_registry(), service_id)
-    procs = await asyncio.to_thread(runtime.snapshot)
+    procs = await asyncio.to_thread(runtime.recent_snapshot)
     instances = discover_instances(m, procs)
     if not instances:
         return {"id": m.id, "running": False, "facts": []}

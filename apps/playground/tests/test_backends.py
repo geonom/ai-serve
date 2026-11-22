@@ -37,3 +37,26 @@ class TestCatalogFromStandardServer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWhatTheUpstreamIs(unittest.TestCase):
+    """A slow answer is not a different server (2026-11-22: ai-serve's catalog took > 5 s right after a restart and
+    while the backend stalled; the Playground then said "gateway not running" or switched images and speech off)."""
+
+    def test_ai_serve_answers_its_catalog(self):
+        self.assertEqual(backends.upstream_kind(None, 200, None), "ai-serve")
+
+    def test_no_answer_from_a_known_ai_serve_keeps_it(self):
+        self.assertEqual(backends.upstream_kind("ai-serve", 0, None), "ai-serve")
+
+    def test_a_standard_server_has_only_the_model_list(self):
+        self.assertEqual(backends.upstream_kind(None, 404, 200), "openai")
+        self.assertEqual(backends.upstream_kind("ai-serve", 404, 200), "openai")   # it really answered: not ai-serve
+
+    def test_nothing_answers(self):
+        self.assertEqual(backends.upstream_kind(None, 0, 0), "down")
+        self.assertEqual(backends.upstream_kind("openai", 0, 0), "down")
+
+    def test_only_a_sure_answer_is_kept_long(self):
+        self.assertEqual(backends.cache_seconds(200), 30)
+        self.assertEqual(backends.cache_seconds(0), 5)

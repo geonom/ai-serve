@@ -24,7 +24,10 @@ class TestClassify(unittest.TestCase):
                            ("POST", "/api/comfyui/batch/pause", "owner_only"),
                            ("GET", "/api/models", None), ("GET", "/v1/images/models", None),
                            ("POST", "/api/tokenize", None), ("GET", "/api/comfyui/task/abc", None),
-                           ("POST", "/v1/chat/completions?x=1", "chat")]:
+                           ("POST", "/v1/chat/completions?x=1", "chat"),
+                           ("POST", "/v1/video/jobs", "video"), ("GET", "/v1/video/jobs/comfyui.vid-1", None),
+                           ("POST", "/v1/video/jobs/comfyui.vid-1/cancel", None), ("GET", "/v1/video/models", None),
+                           ("POST", "/v1/video/prompt", "chat"), ("GET", "/v1/video/prompt/options", None)]:
             self.assertEqual(classify(m, p), kind, (m, p))
 
 

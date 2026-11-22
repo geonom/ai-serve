@@ -3,6 +3,7 @@
 logs/
 generated_images/
 generated_audio/
+generated_video/
 __pycache__/
 .pytest_cache/
 comfyui-venv

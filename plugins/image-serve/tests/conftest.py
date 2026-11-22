@@ -30,3 +30,13 @@ def _no_gateway(monkeypatch):
     async def down(method, path, **kw):
         raise httpx.ConnectError("no ai-serve in unit tests")
     monkeypatch.setattr(gpu, "_call", down)
+
+
+@pytest.fixture(autouse=True)
+def _room_for_jobs(monkeypatch):
+    """Video / audio jobs ask for GPU room before they are accepted (comfy.check_room); tests that care fake a no."""
+    from image_serve import comfy
+
+    async def yes(workflow, label):
+        return None
+    monkeypatch.setattr(comfy, "check_room", yes)

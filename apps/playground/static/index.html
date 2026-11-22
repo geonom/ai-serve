@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=1">
     <link rel="stylesheet" href="redesign.css?v=1">
-    <link rel="stylesheet" href="playground.css?v=118">
+    <link rel="stylesheet" href="playground.css?v=120">
 </head>
 <body>
     <header class="sw-bar">
@@ -31,6 +31,9 @@
                 <button class="tab-link" role="tab" aria-selected="false" data-tab="layout">With positions</button>
                 <button class="tab-link" role="tab" aria-selected="false" data-tab="compare">Compare models</button>
                 <button class="tab-link" role="tab" aria-selected="false" data-tab="mine">My images</button>
+            </div>
+            <div class="sw-tab-group" role="group" aria-label="Video"><span class="sw-tab-group-label">Video</span>
+                <button class="tab-link" role="tab" aria-selected="false" data-tab="video">Create videos</button>
             </div>
             <div class="sw-tab-group" role="group" aria-label="Sound"><span class="sw-tab-group-label">Sound</span>
                 <button class="tab-link" role="tab" aria-selected="false" data-tab="speech">Speech</button>
@@ -473,6 +476,7 @@
             <div class="sub-tabs" style="margin-bottom: 1rem;">
                 <button class="sub-tab-link active" id="speech-tts-btn">Speak</button>
                 <button class="sub-tab-link" id="speech-stt-btn">Transcribe</button>
+                <button class="sub-tab-link" id="speech-talk-btn">Talk</button>
             </div>
             <div id="speech-tts" class="dashboard multi">
                 <div class="sidebar">
@@ -517,6 +521,25 @@
                         <div id="stt-status" class="muted small"></div>
                         <pre id="stt-result" class="sw-result">Noch nichts abgeschrieben.</pre>
                     </div>
+                </div>
+            </div>
+            <!-- Talk: a voice conversation over /v1/realtime (talk.js); the choices sit in the sentences -->
+            <div id="speech-talk" class="talk-wrap" hidden>
+                <div class="card talk-card">
+                    <p class="talk-sentence" id="talk-sentence"><select id="talk-model" class="say-pick" aria-label="Model"></select><select id="talk-lang" class="say-pick" aria-label="Language"></select><span id="talk-voice-part"><select id="talk-voice" class="say-pick" aria-label="Voice"></select></span></p>
+                    <p class="muted small" id="talk-how"></p>
+                    <div class="talk-actions">
+                        <button id="talk-btn" class="btn btn-primary">Start conversation</button>
+                    </div>
+                    <div id="talk-status" class="muted small" role="status" aria-live="polite"></div>
+                    <div id="talk-log" class="talk-log" aria-live="polite"></div>
+                </div>
+                <div class="card talk-card talk-page">
+                    <input id="talk-title" class="talk-title" placeholder="Title" aria-label="Title">
+                    <textarea id="talk-text" class="talk-text" rows="16" placeholder="Ask Omni to write something – a story, a letter, a poem. Then ask it to continue or change it." aria-label="Text"></textarea>
+                    <p class="muted small talk-page-line"><span id="talk-writer-line"><select id="talk-writer" class="say-pick" aria-label="Writer"></select></span> <span id="talk-writing"></span>
+                        <button id="talk-undo" class="link-btn" hidden>Undo</button>
+                        <button id="talk-download" class="link-btn" hidden>Download</button></p>
                 </div>
             </div>
         </section>
@@ -753,6 +776,90 @@ France is known for its cheese.</textarea></div>
             </div>
         </section>
 
+        <section id="video-tab" class="tab-content">
+            <div class="dashboard multi">
+                <div class="sidebar">
+                    <div class="card">
+                        <div class="card-header"><h2>Video</h2><p class="subtitle">A short clip from a description, or a start picture brought to life.</p></div>
+                        <div class="controls">
+                            <div class="input-group">
+                                <label for="video-model">Model</label>
+                                <select id="video-model"></select>
+                                <p id="video-model-info" class="muted small"></p>
+                            </div>
+                            <div class="input-group">
+                                <label for="video-prompt">What happens</label>
+                                <textarea id="video-prompt" rows="5" placeholder="e.g. A fox trots through fresh snow at dawn, its breath steaming; the camera follows slowly."></textarea>
+                            </div>
+                            <div class="input-group" id="video-image-group" hidden>
+                                <label id="video-image-label">Start picture</label>
+                                <div class="video-source">
+                                    <label class="btn btn-secondary btn-sm" for="video-image-file">Upload a picture</label>
+                                    <input type="file" id="video-image-file" accept="image/png,image/jpeg,image/webp" hidden>
+                                    <button type="button" id="video-image-generate" class="btn btn-secondary btn-sm">Create one from the description</button>
+                                    <button type="button" id="video-image-clear" class="btn btn-secondary btn-sm" hidden>Remove</button>
+                                </div>
+                                <img id="video-image-preview" class="video-image-preview" alt="" hidden>
+                                <p id="video-image-note" class="muted small">Any picture works – a photo or one made with AI.</p>
+                            </div>
+                            <div class="input-group" id="video-direction-group" hidden>
+                                <details id="video-direction" open>
+                                    <summary>Camera and look</summary>
+                                    <p class="muted small">Leave a setting on “model decides” and the prompt writer picks what suits the scene.</p>
+                                    <div id="video-direction-fields" class="video-direction"></div>
+                                    <div id="video-sound-group">
+                                        <label for="video-dialogue">Spoken words (optional)</label>
+                                        <input type="text" id="video-dialogue" maxlength="500" placeholder="e.g. she says: “We made it!”">
+                                        <label for="video-sound">Sound and music (optional)</label>
+                                        <input type="text" id="video-sound" maxlength="500" placeholder="e.g. waves, distant gulls, soft piano">
+                                    </div>
+                                </details>
+                                <button type="button" id="video-write-btn" class="btn btn-secondary">Write prompt</button>
+                                <p id="video-write-note" class="muted small">A language model turns your description and these settings into a detailed prompt following the video model’s own rules. You see it before anything is made.</p>
+                            </div>
+                            <div class="input-group" id="video-final-group" hidden>
+                                <label for="video-final-prompt">Prompt for the video model (edit freely)</label>
+                                <textarea id="video-final-prompt" rows="9"></textarea>
+                                <p id="video-final-note" class="muted small"></p>
+                                <button type="button" id="video-final-clear" class="btn btn-secondary btn-sm">Discard – use my description</button>
+                            </div>
+                            <div class="input-group video-row">
+                                <div><label for="video-seconds">Length (s)</label><input type="number" id="video-seconds" min="1" max="10" step="1"></div>
+                                <div><label for="video-resolution">Size</label><select id="video-resolution"></select></div>
+                                <div id="video-steps-group"><label for="video-steps">Steps</label><input type="number" id="video-steps" min="1" max="20" step="1"></div>
+                                <div><label for="video-seed">Seed</label><input type="number" id="video-seed" min="0" placeholder="random"></div>
+                            </div>
+                            <div class="input-group" id="video-lora-group" hidden>
+                                <label for="video-lora">LoRA (optional)</label>
+                                <select id="video-lora"><option value="">none</option></select>
+                                <label for="video-lora-strength">Strength <span id="video-lora-strength-value">1.0</span></label>
+                                <input type="range" id="video-lora-strength" min="0" max="2" step="0.05" value="1">
+                            </div>
+                            <label class="input-group video-check" id="video-sage-group" hidden>
+                                <input type="checkbox" id="video-sage"> SageAttention (faster attention; on by default for Wan)
+                            </label>
+                            <details class="input-group">
+                                <summary>Avoid (negative prompt)</summary>
+                                <textarea id="video-negative" rows="2" placeholder="default: cartoon, blurry, distorted faces, extra limbs …"></textarea>
+                            </details>
+                            <button id="video-run-btn" class="btn btn-primary">Create video</button>
+                            <button id="video-cancel-btn" class="btn btn-secondary" hidden>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="main-content">
+                    <div class="card">
+                        <div class="card-header"><h2>Result</h2></div>
+                        <div id="video-status" class="muted small"></div>
+                        <progress id="video-progress" max="1" value="0" hidden></progress>
+                        <video id="video-player" controls playsinline hidden></video>
+                        <p id="video-meta" class="muted small"></p>
+                        <a id="video-download" class="btn btn-secondary btn-sm" hidden download>Download</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section id="quota-tab" class="tab-content">
             <div class="card">
                 <div class="card-header"><h2>Quotas</h2>
@@ -878,20 +985,23 @@ France is known for its cheese.</textarea></div>
     </div>
 
 
+    <script src="errors.js?v=1"></script>
     <script src="i18n.js?v=1"></script>
     <script src="i18n.de.js?v=10"></script>
     <script src="door-session.js?v=1"></script>
     <script src="models.js?v=3"></script>
     <script src="imagesteps.js?v=1"></script>
     <script src="editimages.js?v=1"></script>
-    <script src="app.js?v=118"></script>
+    <script src="app.js?v=119"></script>
     <script src="downloads.js?v=6"></script>
     <script src="docs.js?v=2"></script>
     <script src="layout.js?v=21"></script>
     <script src="compare.js?v=15"></script>
     <script src="quota.js?v=2"></script>
-    <script src="speech.js?v=4"></script>
+    <script src="speech.js?v=5"></script>
+    <script src="talk.js?v=14"></script>
     <script src="texts.js?v=2"></script>
+    <script src="video.js?v=6"></script>
     <script src="overview.js?v=4"></script>
     <script src="help.js?v=5"></script>
     <script>document.getElementById('lang-slot').replaceWith(I18N.switcher());</script>

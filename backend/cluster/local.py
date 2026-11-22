@@ -344,12 +344,14 @@ class LocalGpuManager:
             out[i] = 0 if self._exclusive_holder(i, consumers) else max(0, int(g.get("free") or 0) - self._outstanding(i))
         return out
 
-    async def reserve(self, gpu: int, need_mb: int, purpose: str
+    async def reserve(self, gpu: int, need_mb: int, purpose: str, requester: Optional[str] = None
                       ) -> Tuple[Optional[Reservation], List[str], str]:
         """Answer fast, yes or no (user decision: no waiting list -- callers retry).
         Yes = idle, unpinned consumers unloaded as needed (LRU, any kind) and
         `need_mb` reserved: held 5 s until confirm(pid), then bound to that process.
         Promised-but-unallocated memory of other reservations counts as used.
+        `requester`: the plugin asking -- its own idle models may be unloaded, its process is never stopped (it is
+        the one waiting for this answer; 2026-11-13 a video job stopped image-serve this way).
         Returns (reservation or None, unloaded ids, reason)."""
         declared = int(need_mb)
         need_mb = self.need(purpose, need_mb)   # at least what this purpose grew by before (NeedBook)
@@ -390,12 +392,38 @@ class LocalGpuManager:
                     plan = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved,
                                      spent=spent)
                     if not plan.ok:
+                        # the first plan counted memory that turned out to stay (CUDA contexts): before stopping
+                        # processes, the smaller needs a smaller card may use get their turn here too (2026-11-14:
+                        # Wan on the 4060 Ti refused by 3 MB with a peak learned on the 3090)
+                        for low in (self.needs.minimum(purpose, declared),
+                                    self.needs.on_gpu(purpose, declared, gpu_ids.key(gpu))):
+                            if low < need_mb:
+                                low_plan = plan_room(gpu, low, gpus, consumers, att, self.pins(),
+                                                     reserved_mb=reserved, spent=spent)
+                                if low_plan.ok:
+                                    need_mb, plan = low, low_plan
+                                    break
+                    if not plan.ok:
                         full = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved,
                                          spent=frozenset(exited))
                         stop = [cid for cid in full.evict if cid in spent]
-                        if not (full.ok and stop and _may_exit(stop, consumers)):
+                        own = [c.id for c in consumers if requester and c.plugin == requester and c.id in stop]
+                        declared_plan = None
+                        if own and declared < need_mb:
+                            # only the asker's own context is left, so the learned figures are out of reach for
+                            # good (2026-11-14: ComfyUI's cache filled the 3090, its LTX peak became 23650 MB):
+                            # the need it declared gets its turn -- no process is stopped for it
+                            declared_plan = plan_room(gpu, declared, gpus, consumers, att, self.pins(),
+                                                      reserved_mb=reserved, spent=spent)
+                        if declared_plan is not None and declared_plan.ok:
+                            need_mb, plan, stop = declared, declared_plan, []
+                        elif own:
+                            return None, done, (f"GPU {gpu}: unloaded {done} but still short -- what is left is "
+                                                f"{requester}'s own CUDA context ({plan.reason})")
+                        elif not (full.ok and stop and _may_exit(stop, consumers)):
                             return None, done, f"GPU {gpu}: unloaded {done} but still short -- {plan.reason}"
-                        plan = full
+                        else:
+                            plan = full
                 if not plan.evict:
                     break
                 for cid in plan.evict:

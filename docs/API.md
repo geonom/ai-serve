@@ -176,6 +176,11 @@ Lists available benchmark suite JSON files.
 **POST** `/api/chat/completions`
 A unified chat completion endpoint that acts as a gateway proxy. Auto-loads the requested model, implements automatic retries on JSON validation error (`retries`, default 3; not after a reply cut off by `max_tokens`, which usually repeats; the response reports `attempts`, `total_seconds` for all tries and `runtime_seconds` for the last one -- `/v1/chat/completions` too), and handles GPU VRAM limit routing (failover & HTTP 507).
 
+**GET** `/v1/models` (OpenAI's model list) holds the local language models only. Its extra field `ai_serve.catalogs`
+names the other catalogs -- `llm` (`/v1/llm/models`), `images` (`/v1/images/models?task=all`), `speech`
+(`/v1/audio/models`), `music_and_sound` (`/v1/audio/models?task=all`), `video` (`/v1/video/models`), `vision`
+(`/v1/vision/models`) -- and `ai_serve.docs` the interactive API docs. OpenAI clients read only `data`.
+
 ---
 
 ### 8.1. Model servers from plugins (e.g. Strata)
@@ -374,6 +379,72 @@ Scores, speed and GPU memory are measurements from the benchmark, not estimates.
 * **POST** `/v1/llm/advice/recommend` body e.g. `{"domain": "creative_writing", "language": "de", "gpus": ["4060 Ti"], "max_vram_mb": 15000, "min_gen_tps": 40}` → `{"models": [{id, rank, tier, score, reliable, dimensions, speed: [{gpu, ctx, gen_tps, prefill_tps}], memory: {vram_mb, gpu, ctx}, file_mb, warnings, where, loaded}], "excluded": [{id, reason}], ...}`. `installed_only` (default true) limits it to models this machine serves.
 * **POST** `/v1/llm/advice/ask` body `{"question": "Welches Modell für deutsche Kurzgeschichten auf der 4060 Ti?", "model"?: "<chat model>"}` → `{"answer", "request", "recommendation"}`.
 * **POST** `/v1/llm/advice/mcp` → MCP server for agents (tools `list_model_domains`, `recommend_models`).
+
+### 16. Video, music and sound effects (jobs)
+
+A video takes from seconds to minutes, so it runs as a **job**: start it, poll its status, fetch the file. Music
+and sound effects work the same way. The work happens in a `video` / `audio` plugin (image-serve; contract in
+[`docs/plugins.md`](plugins.md#video----text-to-video-picture-to-video)); the gateway picks the plugin that lists
+the model and starts it on demand. Not on `/public/v1` yet.
+
+**Video**
+
+* **GET** `/v1/video/models?task=text_to_video|image_to_video|all` → `{"object": "list", "data": [row], "errors"?}`.
+  A row: `id`, `label`, `description`, `provider`, `tasks`, `min_seconds` / `max_seconds` / `default_seconds`,
+  `resolutions` (first = default), `fps`, `audio` (comes with sound), `sage_attention` (true/false = switchable, the
+  value is the default; null = not offered), `loras`, `steps` `{default, min, max, adjustable}` or null,
+  `prompt_guide` (null = the prompt writer can't help with this model), `license`, `default`, `available`,
+  `aliases`.
+* **POST** `/v1/video/jobs` → **202** `{"id": "<plugin>.<job>", "status": "queued", "model"}`. Body:
+  * `model` (an id or alias from the list) **or** `task` (`text_to_video` | `image_to_video`); with neither, a start
+    picture means `image_to_video`, else `text_to_video`, and the plugin's default for it is used.
+  * `prompt` (required), `image_base64` (start picture, required for picture → video models), and as the row
+    allows: `seconds`, `resolution`, `seed`, `negative_prompt`, `lora` (one of `loras`) + `lora_strength`,
+    `sage_attention` (bool), `steps` (within min..max; time grows linearly).
+  * Errors: **400** unknown model / task the model can't do / a value outside the row / model not installed (the
+    plugin's reason in `detail`), **503** video plugin not reachable, **507** no GPU room right now -- the plugin
+    asks before it accepts the job, so a no comes at once and nothing is queued; try again later. The start can take
+    up to a minute or two when ComfyUI has to start first. Problems during the run end the job as `failed` with the
+    reason in `error`.
+* **GET** `/v1/video/jobs/{id}` → `{id, status: queued|running|done|failed|cancelled, progress: 0..1|null,
+  message, error, result}`; when done `result.files[] = {name, type: "video/mp4", url}` with `url` =
+  `/v1/video/jobs/{id}/files/{name}` on this gateway.
+* **POST** `/v1/video/jobs/{id}/cancel` → the status (`cancelled`, or `done` if it was too late).
+* **GET** `/v1/video/jobs/{id}/files/{name}` → the video.
+
+```bash
+# picture -> video
+curl -s localhost:8030/v1/video/jobs -H 'Content-Type: application/json' -d "{
+  \"model\": \"ltx-2.5\", \"prompt\": \"The woman turns to the window and smiles\", \"seconds\": 4,
+  \"image_base64\": \"$(base64 -w0 start.png)\"}"
+# -> {"id": "image-serve.ab12…", "status": "queued", "model": "ltx-2.5"}
+curl -s localhost:8030/v1/video/jobs/image-serve.ab12…            # until "status": "done"
+curl -so out.mp4 localhost:8030/v1/video/jobs/image-serve.ab12…/files/<name>
+```
+
+**Prompt writer** -- video models need long, concrete prompts; a chat model writes one from a short idea:
+
+* **GET** `/v1/video/prompt/options` → `{"settings": {shot, camera_motion, viewpoint, lens, lighting, style, pace:
+  {label, choices}}, "free_text": {dialogue, sound: {label, max_length}}, "guides"}` -- for building menus.
+* **POST** `/v1/video/prompt` body `{"prompt": "<idea, any language, ≤ 2000 chars>", "model"?, "image_base64"?,
+  "settings"?: {<key>: <one of its choices>, "dialogue"?: "...", "sound"?: "..."}, "llm"?: "<chat model>", "seed"?,
+  "seconds"?}` (`seconds`: the planned length, default the model's; MiniMax H3's cut times must fall inside it)
+  → `{prompt, model, task, guide, llm, used_image, finish_reason, runtime_seconds}`. Only a **proposal**: show it,
+  let the person edit it, then send it as `prompt` to `/v1/video/jobs`. Omitted settings = the chat model chooses;
+  `dialogue` / `sound` are refused (400) for models without sound; a model without `prompt_guide` → 400. Guides:
+  `ltx-2` and `wan-2.2` answer one paragraph; `minimax-h3` (MiniMax's own writing guide) answers its three fields
+  `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music` separated by blank lines (with a
+  start picture, MiniMax's first-frame line on top) -- send it as it is. With a
+  start picture the description begins from it (if the chat model can't see, it is retried without the picture:
+  `used_image: false`). Thinking is off; `llm` defaults to the chat default.
+
+**Music and sound effects**
+
+* **GET** `/v1/audio/models?task=music|sound|all` → rows with `tasks`, `min_seconds` / `max_seconds` /
+  `default_seconds`, `lyrics` (the model sings given lyrics). Without `task` this endpoint is the speech catalog.
+* **POST** `/v1/audio/jobs` body `{"model" | "task": "music"|"sound", "prompt", "lyrics"?, "seconds"?, "seed"?, …the
+  model's own extras}` → **202** `{id, status}` (**507** when there is no GPU room, as for video); then `GET /v1/audio/jobs/{id}`, `POST /v1/audio/jobs/{id}/cancel`,
+  `GET /v1/audio/jobs/{id}/files/{name}` exactly as for video.
 
 ---
 

@@ -27,6 +27,8 @@ class PreflightRequest(BaseModel):
     need_mb: int = Field(..., ge=0)
     current_gpu: GpuRef = Field(None, description="the GPU the service runs on now (None: not running)")
     movable: bool = Field(True, description="the service may be restarted on another GPU (it picks its GPU at start)")
+    plugin: Optional[str] = Field(None, max_length=80, description="the asking plugin's id: its own process is never "
+                                  "stopped to make room for it (its idle models may still be unloaded)")
 
 
 @router.post("/api/coordination/gpu-preflight", summary="May an out-of-process backend cold-start on this GPU?")
@@ -42,7 +44,8 @@ async def gpu_preflight(req: PreflightRequest):
         # for what this purpose really needed before, not only what it announces (NeedBook)
         gpu, mode = choose_gpu(await MANAGER.room(), MANAGER.need(req.purpose, req.need_mb), req.current_gpu,
                                req.movable)
-    res, unloaded, reason = await MANAGER.reserve(gpu, req.need_mb, req.purpose)
+    res, unloaded, reason = await MANAGER.reserve(gpu, req.need_mb, req.purpose,
+                                                  **({"requester": req.plugin} if req.plugin else {}))
     if unloaded:
         logger.info(f"{req.purpose} needs ~{req.need_mb} MiB on GPU {gpu}: unloaded {', '.join(unloaded)}")
     elif res is None and reason:

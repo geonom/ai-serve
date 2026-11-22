@@ -1,5 +1,6 @@
 """OpenAI-compatible gateway: /api/chat/completions, /v1/chat/completions, /v1/models, /v1/embeddings, /v1/rerank."""
 import asyncio
+import base64
 import glob
 import json
 import logging
@@ -9,7 +10,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Union
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,12 +25,15 @@ from backend.model_manager import (
     resolve_model_path,
     find_active_model_port,
     find_draft_model_path,
+    get_bundled_flags,
+    HEADER_CACHE,
 )
-from backend.response_processing import gguf_has_bundled_mtp, is_loadable_gguf, is_draft_head, process_completion_response
+from backend.response_processing import is_loadable_gguf, is_draft_head, process_completion_response
 from backend.plugins import llm as llm_plugins
 from backend.cluster.service import SERVICE as CLUSTER, Upstream
 from backend.state import state
 from backend import chat_jobs
+from backend import realtime_speech
 
 logger = logging.getLogger("ai-serve-ui.gateway")
 router = APIRouter()
@@ -225,8 +229,18 @@ class RerankResponse(BaseModel):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _thinking_default(up: "Upstream") -> Optional[bool]:
+    """enable_thinking for a call that says nothing: off (owner, 2026-11-03: "generell der default ... denken off" --
+    a Strata scene plan took 475 s instead of ~30 s, gemma-4-31B spent a 200-token budget on reasoning for a one-line
+    translation). For every llama.cpp model here or on a device, and Strata; None (= nothing sent) for other model
+    servers behind a plugin (Ollama, LM Studio ...), which may not know the field. Tests test_thinking_default.py."""
+    if up.kind in ("local", "node"):
+        return False
+    return False if "strata" in f"{up.label} {up.model or ''}".lower() else None
+
+
 def _build_chat_template_kwargs(
-    thinking: Optional[bool], explicit: Optional[Dict[str, Any]] = None
+    thinking: Optional[bool], explicit: Optional[Dict[str, Any]] = None, default: Optional[bool] = None
 ) -> Optional[Dict[str, Any]]:
     """Translate this gateway's own `thinking` flag into llama-server's native
     chat_template_kwargs.enable_thinking -- confirmed live (backend/routers/gateway.py's
@@ -245,6 +259,8 @@ def _build_chat_template_kwargs(
     rejects a string here).
     """
     kwargs = dict(explicit) if explicit else {}
+    if thinking is None:
+        thinking = default   # _thinking_default(): only when the call says nothing at all
     if thinking is not None and "enable_thinking" not in kwargs:
         kwargs["enable_thinking"] = thinking
     return kwargs or None
@@ -469,7 +485,7 @@ async def unified_chat_completion(req: UnifiedChatRequest, request: Request):
                     "max_tokens": req.max_tokens,
                     "stream": False,
                 }
-                ctk = _build_chat_template_kwargs(req.thinking)
+                ctk = _build_chat_template_kwargs(req.thinking, default=_thinking_default(up))
                 if ctk:
                     payload["chat_template_kwargs"] = ctk
                 if req.response_format:
@@ -568,7 +584,8 @@ async def openai_chat_completion(req: ChatCompletionRequest, request: Request):
             "max_tokens": req.max_tokens,
             "stream": True,
         }
-        ctk = _build_chat_template_kwargs(req.thinking, req.chat_template_kwargs)
+        ctk = _build_chat_template_kwargs(req.thinking, req.chat_template_kwargs,
+                                                 default=_thinking_default(up))
         if ctk:
             payload["chat_template_kwargs"] = ctk
         # Forward any llama-server-native/OpenAI-standard field this schema doesn't
@@ -646,7 +663,8 @@ async def openai_chat_completion(req: ChatCompletionRequest, request: Request):
                     "max_tokens": req.max_tokens,
                     "stream": False,
                 }
-                ctk = _build_chat_template_kwargs(req.thinking, req.chat_template_kwargs)
+                ctk = _build_chat_template_kwargs(req.thinking, req.chat_template_kwargs,
+                                                 default=_thinking_default(up))
                 if ctk:
                     payload["chat_template_kwargs"] = ctk
                 # See the streaming fast-path above / ChatCompletionRequest's extra="allow"
@@ -825,6 +843,7 @@ async def list_llm_models():
                         "vision": bool(m.get("mmproj_path") or m.get("vision_bundled")),
                         "mtp": bool(m.get("mtp_draft_path") or m.get("mtp_bundled")),
                         "traits": get_model_traits(m["path"])})
+        HEADER_CACHE.save()
         return out
 
     local = await asyncio.get_running_loop().run_in_executor(None, _local)
@@ -854,8 +873,23 @@ async def list_llm_models():
     return out
 
 
-@router.get("/v1/models", summary="OpenAI-compatible model list")
-async def list_openai_models():
+# /v1/models is where an OpenAI client looks first, but it lists only local language models: the other catalogs,
+# so a client needn't guess model names (2026-11-22). OpenAI clients read only `data` and ignore this.
+CATALOG_HINT = {
+    "note": "This list holds local language models only. Other kinds of models have their own catalogs.",
+    "catalogs": {
+        "llm": "/v1/llm/models",                       # every language model with kind and abilities, devices and plugins too
+        "images": "/v1/images/models?task=all",
+        "speech": "/v1/audio/models",                  # text-to-speech engines and speech recognition
+        "music_and_sound": "/v1/audio/models?task=all",
+        "video": "/v1/video/models",
+        "vision": "/v1/vision/models",
+    },
+    "docs": "/docs",
+}
+
+
+def _openai_model_list() -> Dict[str, Any]:
     models = []
     seen_paths: set = set()
     for directory in MODEL_DIRS:
@@ -870,16 +904,28 @@ async def list_openai_models():
                 and not is_draft_head(name)
                 and is_loadable_gguf(name)
             ):
+                try:
+                    st = os.stat(f)
+                except OSError:   # a dangling symlink (drive not mounted): not loadable, not listed
+                    continue
                 draft_path = find_draft_model_path(abs_path)
                 models.append({
                     "id": name,
                     "object": "model",
-                    "created": int(os.path.getmtime(f)),
+                    "created": int(st.st_mtime),
                     "owned_by": "local",
-                    "mtp_available": draft_path is not None or gguf_has_bundled_mtp(abs_path),
+                    "mtp_available": draft_path is not None or get_bundled_flags(abs_path)[0],
                 })
                 seen_paths.add(abs_path)
-    return {"object": "list", "data": models}
+    HEADER_CACHE.save()
+    return {"object": "list", "data": models, "ai_serve": CATALOG_HINT}
+
+
+@router.get("/v1/models", summary="OpenAI-compatible model list")
+async def list_openai_models():
+    # in a thread: reading ~60 headers took ~4 s and stalled the whole backend, owner gates included -- the
+    # Playground behind its gate timed out and said "gateway not running" (2026-11-22); headers come from HEADER_CACHE
+    return await asyncio.to_thread(_openai_model_list)
 
 
 @router.post("/v1/embeddings", summary="OpenAI-compatible embeddings", response_model=EmbeddingResponse)
@@ -971,6 +1017,305 @@ async def systemone(req: SystemOneRequest):
         raise HTTPException(status_code=sc, detail=f"Upstream error: {err_detail}")
     finally:
         _end_request(up, req.keep_alive or 300)
+
+
+def _default_speech_model() -> Optional[str]:
+    """A running speech-to-speech model, else the first one on disk (by the GGUF header, backend/llm_catalog.py)."""
+    from backend.model_manager import get_model_traits, scan_all_gguf_paths
+    speaks = lambda path: bool((get_model_traits(path) or {}).get("speech"))
+    for info in list(state.managed_processes.values()):
+        if info.get("model") and speaks(info["model"]):
+            return info["model"]
+    for path in sorted(scan_all_gguf_paths()):
+        name = os.path.basename(path)
+        if "mmproj" not in name.lower() and not is_draft_head(name) and speaks(path):
+            return path
+    return None
+
+
+def speech_model_path(name: Optional[str]) -> Optional[str]:
+    """A speech-to-speech GGUF on disk named exactly by `name` (file name, case-insensitive, .gguf optional), else
+    None -- /v1/audio/speech then goes to the TTS plugin as before."""
+    from backend.model_manager import get_model_traits, scan_all_gguf_paths
+    want = os.path.basename(name or "").lower()
+    if not want:
+        return None
+    want = want if want.endswith(".gguf") else want + ".gguf"
+    for path in scan_all_gguf_paths():
+        if os.path.basename(path).lower() == want:
+            return path if (get_model_traits(path) or {}).get("speech") else None
+    return None
+
+
+SPEECH_MODEL_VOICES = ("female", "male")
+
+
+async def model_speech(path: str, text: str, language: Optional[str], voice: Optional[str], seed: Optional[int],
+                       stream: bool = False):
+    """Speech from a speech-to-speech model's own TTS template (llama-server POST /tts: `lang`, `voice` female|male,
+    WAV) -- LFM3-Omni speaks German cleanly only this way; in a realtime conversation it has an English accent."""
+    from fastapi.responses import Response
+    up = await _resolve_upstream(path, keep_alive=300, use_mtp=False, parallel=REALTIME_SLOTS)   # = /v1/realtime's
+    if up.kind != "local":
+        raise HTTPException(status_code=400, detail="Speech models only run on this machine")
+    body: Dict[str, Any] = {"input": text, "lang": (language or "en").lower(),
+                            "voice": voice.lower() if voice and voice.lower() in SPEECH_MODEL_VOICES else "female"}
+    if seed is not None:
+        body["seed"] = seed
+    body.update(response_format="wav", stream=bool(stream))
+    _begin_request(up)
+    if not stream:
+        try:
+            async with _upstream_client(up, 300.0) as client:
+                resp = await client.post(up.url("/tts"), json=body, headers=up.headers)
+                resp.raise_for_status()
+                return Response(content=resp.content, media_type="audio/wav")
+        except httpx.HTTPError as http_err:
+            sc = http_err.response.status_code if isinstance(http_err, httpx.HTTPStatusError) else 502
+            raise HTTPException(status_code=sc, detail=f"Upstream error: {get_upstream_error_detail(http_err)}")
+        finally:
+            _end_request(up, 300)
+
+    async def relay():
+        try:
+            async with _upstream_client(up, 300.0) as client:
+                async with client.stream("POST", up.url("/tts"), json=body, headers=up.headers) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+        finally:
+            _end_request(up, 300)
+    return StreamingResponse(relay(), media_type="audio/wav")
+
+
+REALTIME_INTENTS = ("transcription",)
+# Each open conversation holds a slot of the speech model's llama-server; one slot always stays free for /tts (spoken
+# languages). With 2 slots, a second open tab took the last one and every German answer waited forever (2026-11-03).
+REALTIME_SLOTS = 3
+_realtime_sessions: Dict[int, int] = {}   # llama-server port -> open conversations
+
+
+@router.websocket("/v1/realtime")
+async def realtime(ws: WebSocket, model: Optional[str] = None, intent: Optional[str] = None,
+                   keep_alive: Optional[int] = None):
+    """A voice conversation (2026-11-03, owner via V-Noveller: LFM3-Omni): the WebSocket goes through to the loaded
+    llama-server's own /v1/realtime (OpenAI-Realtime-like events; PCM16 mono in at session.created's input rate, audio
+    + text deltas out). The model loads on demand like a chat; the instance counts as busy for the whole session.
+    Only models on this machine -- a device's agent proxies inference paths over HTTP only."""
+    import aiohttp
+    await ws.accept()
+
+    async def fail(message: str, code: int = 1008):
+        await ws.send_json({"type": "error", "error": {"type": "invalid_request_error", "message": message}})
+        await ws.close(code)
+
+    if intent is not None and intent not in REALTIME_INTENTS:
+        return await fail(f"intent: only {' | '.join(REALTIME_INTENTS)}")
+    name = model if model and model.lower() not in ("default", "auto") else _default_speech_model()
+    if not name:
+        return await fail("No speech-to-speech model on this machine -- download one, e.g. "
+                          "https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF (Q8_0 + its mmproj)")
+    keep = keep_alive or 300
+    try:
+        up = await _resolve_upstream(name, keep_alive=keep, use_mtp=False, parallel=REALTIME_SLOTS)
+    except HTTPException as e:
+        return await fail(str(e.detail), 1011 if e.status_code >= 500 else 1008)
+    if up.kind != "local":
+        return await fail("Realtime conversations only run on models on this machine")
+    room = max(1, await _slot_count(up) - 1)
+    if _realtime_sessions.get(up.port, 0) >= room:
+        return await fail(f"{os.path.basename(name)} is already in {room} conversation{'s' if room != 1 else ''} -- "
+                          "end one (or try again in a moment)", 1013)
+    _realtime_sessions[up.port] = _realtime_sessions.get(up.port, 0) + 1
+    try:
+        await _realtime_relay(ws, up, name, intent, keep, fail)
+    finally:
+        _realtime_sessions[up.port] = max(0, _realtime_sessions.get(up.port, 1) - 1)
+
+
+async def _slot_count(up: Upstream) -> int:
+    """How many slots the instance really has: llama-server's /slots (an instance adopted after a restart has no
+    recorded count -- the adopted 2-slot Omni then took two conversations and a German answer stalled, 2026-11-03),
+    else the recorded count, else REALTIME_SLOTS."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(up.url("/slots"), headers=up.headers)
+        if r.status_code == 200 and isinstance(r.json(), list) and r.json():
+            return len(r.json())
+    except (httpx.HTTPError, ValueError):
+        pass
+    return (state.managed_processes.get(up.port) or {}).get("parallel") or REALTIME_SLOTS
+
+
+async def _realtime_relay(ws: WebSocket, up: Upstream, name: str, intent: Optional[str], keep: int, fail):
+    import aiohttp
+    label = up.label or os.path.basename(name)
+    url = up.url("/v1/realtime").replace("http", "ws", 1) + (f"?intent={intent}" if intent else "")
+    speak = realtime_speech.SpeakState()
+    send_lock = asyncio.Lock()
+
+    async def send(text: str):
+        async with send_lock:
+            await ws.send_text(text)
+
+    _begin_request(up)
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None)) as session:
+            try:
+                upstream = await session.ws_connect(url, max_msg_size=0)
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                return await fail(f"Upstream error: {e}", 1011)
+            speaker = _RealtimeSpeaker(up, speak, send)
+
+            async def to_upstream():
+                while True:
+                    msg = await ws.receive()
+                    if msg["type"] == "websocket.disconnect":
+                        break
+                    text = msg.get("text")
+                    if text is not None:
+                        head = text[:300]
+                        if '"session.update"' in head or '"response.create"' in head or '"response.cancel"' in head:
+                            try:
+                                ev = json.loads(text)
+                            except ValueError:
+                                ev = None        # llama-server answers that with an error event
+                            if isinstance(ev, dict):
+                                if ev.get("type") == "response.cancel":
+                                    speaker.cancel()
+                                text = json.dumps(speak.client_event(ev))
+                        await upstream.send_str(text)
+                    elif msg.get("bytes") is not None:
+                        await upstream.send_bytes(msg["bytes"])
+
+            async def to_client():
+                async for msg in upstream:
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        data = msg.data
+                        head = data[:300]
+                        if '"session.created"' in head or '"session.updated"' in head:
+                            ev = json.loads(data)   # llama-server names the absolute path
+                            if isinstance(ev.get("session"), dict) and "model" in ev["session"]:
+                                ev["session"]["model"] = label
+                            data = json.dumps(ev)
+                        elif speaker.speaking or '"response.created"' in head:
+                            await speaker.upstream_event(data)
+                            continue
+                        await send(data)
+                    elif msg.type == aiohttp.WSMsgType.BINARY:
+                        await ws.send_bytes(msg.data)
+                    else:
+                        break
+
+            tasks = [asyncio.create_task(to_upstream()), asyncio.create_task(to_client())]
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            speaker.cancel()
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await upstream.close()
+            try:
+                await ws.close()
+            except RuntimeError:
+                pass        # the client is gone already
+    finally:
+        _end_request(up, keep)
+
+
+class _RealtimeSpeaker:
+    """One session's spoken answers (backend/realtime_speech.py): text deltas pass through, each finished sentence
+    goes to the model's /tts in the session's language, its samples come back as response.output_audio.delta; the
+    response's closing events wait until the last sentence is spoken."""
+
+    def __init__(self, up: Upstream, speak, send):
+        self.up, self.speak, self.send = up, speak, send
+        self.speaking = False
+        self.buffer = realtime_speech.SentenceBuffer()
+        self.queue: "asyncio.Queue[Optional[str]]" = asyncio.Queue()
+        self.ids: Dict[str, Any] = {}
+        self.worker: Optional[asyncio.Task] = None
+        self.held: List[str] = []
+
+    def cancel(self):
+        if self.worker:
+            self.worker.cancel()
+        self.worker, self.speaking, self.held = None, False, []
+        self.queue = asyncio.Queue()
+
+    async def upstream_event(self, data: str):
+        ev = json.loads(data)
+        t = ev.get("type")
+        if t == "response.created":
+            self.cancel()
+            self.speaking = self.speak.speaks_next
+            self.buffer = realtime_speech.SentenceBuffer()
+            if self.speaking:
+                self.worker = asyncio.create_task(self._speak_all())
+        if not self.speaking:
+            return await self.send(data)
+        if t == "response.output_text.delta":
+            await self.send(data)
+            self.ids = {k: ev.get(k) for k in ("response_id", "item_id", "output_index")}
+            self.ids["content_index"] = (ev.get("content_index") or 0) + 1
+            for sentence in self.buffer.add(ev.get("delta") or ""):
+                self.queue.put_nowait(sentence)
+        elif t == "response.output_text.done":
+            await self.send(data)
+            for sentence in self.buffer.flush():
+                self.queue.put_nowait(sentence)
+        elif t in ("response.output_item.done", "response.done"):
+            self.held.append(data)
+            if t == "response.done":
+                self.queue.put_nowait(None)
+                worker = self.worker
+                if worker:
+                    try:
+                        await worker
+                    except asyncio.CancelledError:
+                        pass
+                if self.ids:
+                    await self.send(json.dumps({"type": "response.output_audio.done", **self.ids}))
+                for held in self.held:
+                    await self.send(held)
+                self.worker, self.speaking, self.held, self.ids = None, False, [], {}
+        else:
+            await self.send(data)
+
+    async def _speak_all(self):
+        body = {"lang": self.speak.language, "voice": self.speak.voice, "response_format": "pcm", "stream": True}
+        # a sentence is a few seconds of speech: 30 s without bytes means something is stuck (no free slot ...)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+            while True:
+                sentence = await self.queue.get()
+                if sentence is None:
+                    return
+                problem = None
+                for attempt in (1, 2):       # a failed sentence is tried once more, unless it already spoke
+                    carry, spoke = b"", False
+                    try:
+                        async with client.stream("POST", self.up.url("/tts"), json={**body, "input": sentence},
+                                                 headers=self.up.headers) as resp:
+                            if resp.status_code != 200:
+                                detail = (await resp.aread()).decode("utf-8", "replace")[:200]
+                                raise httpx.HTTPStatusError(f"HTTP {resp.status_code}: {detail}",
+                                                            request=resp.request, response=resp)
+                            async for chunk in resp.aiter_bytes():
+                                pcm, carry = realtime_speech.f32le_to_pcm16(chunk, carry)
+                                if pcm:
+                                    spoke = True
+                                    await self.send(json.dumps({"type": "response.output_audio.delta", **self.ids,
+                                                                "delta": base64.b64encode(pcm).decode()}))
+                        problem = None
+                        break
+                    except httpx.HTTPError as e:
+                        # some httpx errors (timeouts) have no message: name the kind at least
+                        problem = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+                        logger.warning(f"realtime: speaking a sentence failed (attempt {attempt}): {problem}")
+                        if spoke:
+                            break
+                if problem:
+                    await self.send(json.dumps({"type": "error", "error": {
+                        "type": "server_error", "message": f"Speech for a sentence failed: {problem}"}}))
 
 
 @router.post("/v1/rerank", summary="OpenAI/Jina-style reranking", response_model=RerankResponse)

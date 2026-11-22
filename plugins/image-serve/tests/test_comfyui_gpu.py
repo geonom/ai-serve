@@ -167,3 +167,22 @@ def test_a_pinned_request_never_moves_it(fake, monkeypatch):
     monkeypatch.setattr(media, "_restart_comfyui_on", restart_on)
     asyncio.run(media._comfyui_gpu_preflight(WF, "z", pinned=True))
     assert moved == [] and fake[0][0] == 1
+
+
+def test_a_huge_text_encoder_counts_only_up_to_the_cap(fake, monkeypatch):
+    """2026-11-14: MiniMax H3's Qwen3-VL-32B encoder (int8, 27 GB) is bigger than any card here, and LTX's Gemma 4
+    (14.3 GB) next to LTX Q3 (12 GB) made the 4060 Ti refuse by ~350 MB. ComfyUI loads a text encoder only for the
+    prompt and streams what doesn't fit from RAM -- so a text encoder counts at most TEXT_ENCODER_ON_GPU_MB."""
+    wf = {"1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "h3-Q4_K.gguf"}},
+          "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_32b_int8.safetensors", "type": "minimax"}},
+          "3": {"class_type": "KSampler", "inputs": {"model": ["1", 0]}}}
+    monkeypatch.setattr(media, "_comfy_file_mb", lambda name: {"h3-Q4_K.gguf": 10900,
+                                                               "qwen3vl_32b_int8.safetensors": 25900}[name])
+    asyncio.run(media._comfyui_gpu_preflight(wf, "h3"))
+    assert fake[-1][1] == media.TEXT_ENCODER_ON_GPU_MB + media.COMFY_SAMPLING_MARGIN_MB
+    assert media.TEXT_ENCODER_ON_GPU_MB == 12000
+    media._comfyui_models_freed()
+    monkeypatch.setattr(media, "_comfy_file_mb", lambda name: {"h3-Q4_K.gguf": 13000,
+                                                               "qwen3vl_32b_int8.safetensors": 25900}[name])
+    asyncio.run(media._comfyui_gpu_preflight(wf, "h3"))
+    assert fake[-1][1] == 13000 + media.COMFY_SAMPLING_MARGIN_MB       # the diffusion model still counts in full

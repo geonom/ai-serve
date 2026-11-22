@@ -81,7 +81,8 @@ as an error for that plugin only.
 One pattern for everything that takes longer than a request should wait (video, music, documents, 3D; optional
 for images, speech and transcription). The capability declares `jobs: "/v1/<thing>/jobs"`:
 
-- `POST {jobs}` with the capability's request body → **202** `{"id": "…", "status": "queued"}`
+- `POST {jobs}` with the capability's request body → **202** `{"id": "…", "status": "queued"}` -- only after the
+  GPU question ("GPU: asking before loading"): no room is **507** right there, never an accepted job that fails later
 - `GET {jobs}/{id}` → `{"id", "status": queued | running | done | failed | cancelled, "progress": 0..1 | null,
   "message", "error", "result"}`
 - `POST {jobs}/{id}/cancel` → the status (cancelled, or done if it was too late)
@@ -133,11 +134,27 @@ never started, stopped or unloaded by ai-serve and has no GPU in the GPU manager
   = the output's shape (one of the entry's `aspect_ratios`, else the first image's).
 - `cancel`: `POST {"request_id"}`. Optional `jobs` for slow models.
 
-### video
+### video -- text to video, picture to video
 
-`catalog` entries add `tasks` (`text_to_video`, `image_to_video`, `video_to_video`), `max_seconds`, `resolutions`
-(`"1280x720"`), `fps`. `jobs` body: `{"model", "prompt", "image_base64"?, "seconds"?, "resolution"?, "seed"?}`;
-result files are videos (`video/mp4`).
+`{"video": {"catalog": "/v1/video/models", "jobs": "/v1/video/jobs"}}` (both required).
+
+- `catalog` entries add `tasks` (`text_to_video`, `image_to_video`, `video_to_video`), `min_seconds`, `max_seconds`,
+  `default_seconds`, `resolutions` (`"1024x576"`; the first is the default), `fps`, `audio` (true: the video comes
+  with sound), `sage_attention` (true/false: switchable per job, the value is its default; leave it out when not
+  offered), `loras` (file names a job may name), `steps` `{default, min, max, adjustable}` (leave it out when the
+  plugin fixes the steps) and `prompt_guide` (whose prompt rules the gateway's prompt writer follows for this model;
+  known: `ltx-2`, `wan-2.2`, `minimax-h3`). Mark one model per task `default: true`.
+- `jobs` body: `{"model", "prompt", "image_base64"? (start picture), "seconds"?, "resolution"?, "seed"?,
+  "negative_prompt"?, "lora"?, "lora_strength"?, "sage_attention"?, "steps"?}` -- check everything against the
+  model's row and answer 400 with the reason; result files are videos (`video/mp4`).
+
+The gateway: `GET /v1/video/models?task=text_to_video|image_to_video|all`, `POST /v1/video/jobs` (`model` or `task`;
+without either, a start picture means image_to_video; 202 with a gateway job id `<plugin>.<plugin's id>`),
+`GET /v1/video/jobs/{id}`, `POST /v1/video/jobs/{id}/cancel`, `GET /v1/video/jobs/{id}/files/{name}` (fetched from
+the plugin, only below its `jobs` path). Plus a **prompt writer** that needs nothing from the plugin but the
+`prompt_guide`: `POST /v1/video/prompt` turns a short idea (+ camera / look settings from
+`GET /v1/video/prompt/options`, optional start picture) into a detailed prompt with a chat model -- a proposal the
+caller shows and may edit before sending it to `/v1/video/jobs`. Details: [API.md](API.md) §16.
 
 ### audio -- music and sound effects
 
@@ -256,11 +273,13 @@ apps a signed identity (`docs/identity.md`). Without an access plugin, ai-serve 
 ## GPU: asking before loading
 
 A plugin with `gpu: shared` asks before it loads a model:
-`POST /api/coordination/gpu-preflight {"purpose", "need_mb", "gpu"?, "current_gpu"?, "movable"?}` → `{gpu, mode,
+`POST /api/coordination/gpu-preflight {"purpose", "need_mb", "gpu"?, "current_gpu"?, "movable"?, "plugin"?}` → `{gpu, mode,
 granted, free_mb, reservation_id, hold_s, reason}`. Rules (2026-10-24, after Whisper ran out of memory because it
 announced too little, always asked for GPU 0 and gave its reservation back before its first transcription):
 - **Leave out `gpu`**: the manager picks one with room (`gpu` in the answer, `mode` start / stay / move) and may unload
   idle models of any kind for it. Start the worker on that GPU (e.g. `CUDA_VISIBLE_DEVICES`).
+- **Send `plugin`** (your manifest id): the manager may unload your own idle models for the request, but never stops
+  your process to make room for you -- without it, a last-round "stop idle plugin processes" can hit the asker itself.
 - **A no is 507** with the reason as `detail` -- never load anyway. Either fall back (e.g. the CPU) or answer 507
   yourself, so the caller retries; the gateway never queues.
 - **`purpose` names what is loaded** (`stt:whisperx:medium`, `tts:cosyvoice`, `llm:<file>@<ctx>`): the manager learns
@@ -310,9 +329,10 @@ missing model should be downloadable from the Playground and the dashboard inste
 ## Which plugins exist
 
 Bundled with this release: tts-serve (`tts`), stt-serve (`stt`), sd-serve and image-serve (`image`; image-serve also
-carries MOSS-Image). In repositories of their own, added with `./ai-serve plugin add <url>`:
+carries MOSS-Image, and is the `video` plugin -- LTX-2.5, Wan 2.2, MiniMax H3 -- and the `audio` plugin for sound
+effects and music). In repositories of their own, added with `./ai-serve plugin add <url>`:
 [ai-serve-piper](https://github.com/geonom/ai-serve-piper) (`tts`, CPU, MIT -- also the template for new plugins) and
 [ai-serve-strata](https://github.com/geonom/ai-serve-strata) (`llm`, `gpu: exclusive`). Built and used on the developer's machine but **not part of this release**: an `access` plugin
 (the "door" for letting other people in, see `docs/identity.md`) and an `llm` adapter for Strata. Document reading
-(NuExtract3) still lives in the gateway; it could become a `documents` plugin. No plugin exists yet for video, audio, 3D, translation, moderation,
+(NuExtract3) still lives in the gateway; it could become a `documents` plugin. No plugin exists yet for 3D, translation, moderation,
 tools or realtime -- the contracts are there so the first ones fit.

@@ -1,0 +1,24 @@
+#!/bin/bash
+# ai-serve as an AppImage. First start: copies ai-serve into ~/.local/share/ai-serve (AI_SERVE_HOME picks another
+# place) and opens the setup page in the browser. Later starts: run ai-serve there and open its dashboard. A newer
+# AppImage replaces the code there and keeps everything else (settings, models, environments).
+set -euo pipefail
+APP="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
+DATA="${AI_SERVE_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/ai-serve}"
+new="$(cat "$APP/ai-serve/.bundle")"
+old="$(cat "$DATA/.bundle" 2>/dev/null || true)"
+if [ "$new" != "$old" ]; then
+    mkdir -p "$DATA/bin"
+    cp -a "$APP/ai-serve/." "$DATA/"   # the bundle holds code only, so nothing set up there is overwritten
+    cp "$APP/bin/uv" "$DATA/bin/uv"     # stays usable after the AppImage is closed (launcher.sh, plugin setups)
+fi
+export AI_SERVE_UV="$DATA/bin/uv"
+cd "$DATA"
+if [ ! -f .setup-done ]; then
+    exec "$APP/python/bin/python3" installer/wizard.py
+fi
+if [ "$new" != "$old" ]; then   # new code: its requirements, and a restart if it runs
+    "$AI_SERVE_UV" pip install -q --python venv/bin/python -r backend/requirements.txt
+    if ./ai-serve status >/dev/null 2>&1; then ./ai-serve restart; fi
+fi
+exec ./ai-serve start -d --open

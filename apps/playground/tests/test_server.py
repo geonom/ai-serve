@@ -136,3 +136,28 @@ def test_status_says_whether_comparisons_run(tmp_path):
         assert got["busy"] is True
     finally:
         srv.shutdown(); srv.server_close()
+
+
+class TestClientErrors(unittest.TestCase):
+    """A script error in someone's browser lands in the Playground's log (2026-11-22: sending did nothing on the
+    owner's Mac, no message, nothing reached the server -- the error was only in that browser's console)."""
+    setUpClass = classmethod(TestServer.setUpClass.__func__)
+    tearDownClass = classmethod(TestServer.tearDownClass.__func__)
+    req = TestServer.req
+
+    def test_a_browser_error_is_logged_shortened(self):
+        with self.assertLogs("playground", level="WARNING") as logs:
+            st, _ = self.req("POST", "/sw/client-error",
+                             body=json.dumps({"message": "TypeError: x is null", "where": "app.js:900",
+                                              "page": "chat", "stack": "s" * 5000}),
+                             headers={"Content-Type": "application/json", "Tailscale-User-Login": "me"})
+        self.assertEqual(st, 204)
+        line = "\n".join(logs.output)
+        self.assertIn("TypeError: x is null", line)
+        self.assertIn("app.js:900", line)
+        self.assertLess(len(line), 2500)
+
+    def test_nonsense_is_refused(self):
+        st, _ = self.req("POST", "/sw/client-error", body=b"[1,2]",
+                         headers={"Content-Type": "application/json", "Tailscale-User-Login": "me"})
+        self.assertEqual(st, 400)

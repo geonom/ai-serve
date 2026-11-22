@@ -207,7 +207,26 @@ def _image(raw):
 
 def _video(raw):
     return {"tasks": _tasks(raw, VIDEO_TASKS, ["text_to_video"]), "max_seconds": _int(raw.get("max_seconds"), 1, 600),
-            "resolutions": _strings(raw.get("resolutions"), pattern=_SIZE), "fps": _int(raw.get("fps"), 1, 120)}
+            "min_seconds": _int(raw.get("min_seconds"), 1, 600), "default_seconds": _int(raw.get("default_seconds"), 1, 600),
+            "resolutions": _strings(raw.get("resolutions"), pattern=_SIZE), "fps": _int(raw.get("fps"), 1, 120),
+            "audio": raw.get("audio") is True,      # the video comes with sound
+            # SageAttention: true/false = can be switched per job (`sage_attention`) and this is its default; null = not offered
+            "sage_attention": raw.get("sage_attention") if isinstance(raw.get("sage_attention"), bool) else None,
+            "loras": _strings(raw.get("loras"), pattern=re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,120}$"), limit=200),
+            # whose prompt rules POST /v1/video/prompt follows for this model (backend/video_prompt.py GUIDES)
+            "prompt_guide": raw["prompt_guide"] if isinstance(raw.get("prompt_guide"), str)
+            and re.match(r"^[a-z0-9][a-z0-9.-]{0,31}$", raw["prompt_guide"]) else None,
+            "steps": _video_steps(raw.get("steps"))}
+
+
+def _video_steps(raw):
+    """{default, min, max, adjustable}: `steps` can be set per job within min..max; None = fixed by the plugin."""
+    if not isinstance(raw, dict) or raw.get("adjustable") is False:
+        return None
+    d, lo, hi = (_int(raw.get(k), 1, 200) for k in ("default", "min", "max"))
+    if d is None or lo is None or hi is None or not lo <= d <= hi:
+        return None
+    return {"default": d, "min": lo, "max": hi, "adjustable": True}
 
 
 def _audio(raw):

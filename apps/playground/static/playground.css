@@ -220,3 +220,42 @@
 .edit-extra-item { position: relative; width: 96px; text-align: center; }
 .edit-extra-item img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; display: block; }
 .edit-extra-item .muted { display: block; margin-top: 0.2rem; line-height: 1.2; }
+
+/* Speech > Talk: choices are words of the sentence (owner: menus at the word, nothing that distracts) */
+.talk-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.talk-wrap[hidden] { display: none; }
+@media (max-width: 900px) { .talk-wrap { grid-template-columns: minmax(0, 1fr); } }
+.talk-card { padding: 1.5rem 1.75rem; }
+.talk-title { width: 100%; border: 0; background: none; font: inherit; font-size: 1.2rem; font-weight: 600; color: inherit; padding: 0 0 .5rem; }
+.talk-title:focus-visible, .talk-text:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.talk-text { width: 100%; border: 0; background: none; font: inherit; line-height: 1.7; color: inherit; resize: vertical; padding: 0; }
+.talk-page-line { margin: .75rem 0 0; }
+.talk-sentence { font-size: 1.15rem; line-height: 1.9; margin: 0 0 .25rem; }
+/* style.css gives every select width:100% + a box; a word in a sentence needs neither */
+select.say-pick { appearance: none; -webkit-appearance: none; display: inline; width: auto; min-width: 0; height: auto;
+            min-height: 0; background: none; border: 0; border-bottom: 1px dotted currentColor; border-radius: 0;
+            padding: 0 2px; margin: 0; font: inherit; color: inherit; cursor: pointer; box-shadow: none;
+            field-sizing: content; }
+select.say-pick:focus { box-shadow: none; }
+.say-pick:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.talk-actions { display: flex; align-items: center; gap: 1rem; margin: 1rem 0 .5rem; }
+.talk-log { margin-top: 1rem; max-height: 50vh; overflow-y: auto; }
+.talk-turn { margin: .5rem 0; line-height: 1.6; }
+.talk-who { color: var(--text-muted); }
+.talk-error { color: var(--danger, #c0392b); }
+
+/* Create videos (video.js) */
+.video-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+.video-row input, .video-row select { width: 100%; }
+.video-source { display: flex; flex-wrap: wrap; gap: 6px; }
+.video-image-preview { max-width: 100%; max-height: 180px; margin-top: 8px; border-radius: 6px; }
+#video-player { width: 100%; max-height: 70vh; margin-top: 8px; border-radius: 6px; background: #000; }
+#video-progress { width: 100%; }
+
+.video-check { display: flex; align-items: center; gap: 6px; font-size: 0.9em; }
+.video-direction { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; margin: 6px 0; }
+.video-direction select, #video-dialogue, #video-sound { width: 100%; }
+#video-direction summary { cursor: pointer; }
+#video-write-btn { margin-top: 6px; }
+#video-final-prompt { width: 100%; }
+#video-final-note.stale { color: var(--warning, #b7791f); }

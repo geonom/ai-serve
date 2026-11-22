@@ -361,11 +361,10 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         document.getElementById('speech-tts').style.display = which === 'tts' ? '' : 'none';
         document.getElementById('speech-stt').style.display = which === 'stt' ? '' : 'none';
         document.getElementById('speech-stt').hidden = false;
-        document.getElementById('speech-tts-btn').classList.toggle('active', which === 'tts');
-        document.getElementById('speech-stt-btn').classList.toggle('active', which === 'stt');
+        document.getElementById('speech-talk').hidden = which !== 'talk';
+        for (const t of ['tts', 'stt', 'talk']) document.getElementById(`speech-${t}-btn`).classList.toggle('active', which === t);
     }
-    document.getElementById('speech-tts-btn').addEventListener('click', () => show('tts'));
-    document.getElementById('speech-stt-btn').addEventListener('click', () => show('stt'));
+    for (const t of ['tts', 'stt', 'talk']) document.getElementById(`speech-${t}-btn`).addEventListener('click', () => show(t));
     show('tts');
 
     // The run button lives in the form's card (built per engine), so add it once below the form.

@@ -45,7 +45,9 @@ def traits(metadata: Mapping[str, Any], name: str) -> Dict[str, Any]:
     template = metadata.get("tokenizer.chat_template") or ""
     template = template if isinstance(template, str) else ""
     return {"kind": classify(metadata, name), "arch": metadata.get("general.architecture"),
-            "thinking": "enable_thinking" in template or "<think>" in template or "reasoning" in template}
+            "thinking": "enable_thinking" in template or "<think>" in template or "reasoning" in template,
+            # speaks: listens and answers with a voice on /v1/realtime (LFM3-Audio/Omni carry a TTS template, 2026-11-03)
+            "speech": "tokenizer.chat_template.tts" in metadata or "<|audio_out|>" in template}
 
 
 def pretty_label(name: str) -> Tuple[str, Optional[str]]:
@@ -60,7 +62,7 @@ def _row(name: str) -> Dict[str, Any]:
     label, quant = pretty_label(name)
     return {"id": name, "label": label, "quant": quant, "kind": "chat", "kind_source": "name", "arch": None,
             "size_mb": None, "context_length": None, "vision": False, "mtp": False, "thinking": False,
-            "exclusive": False, "where": [], "loaded": False}
+            "speech": False, "exclusive": False, "where": [], "loaded": False}
 
 
 def build_catalog(local: Iterable[Mapping[str, Any]], loaded_local: Mapping[str, Mapping[str, Any]],
@@ -71,7 +73,7 @@ def build_catalog(local: Iterable[Mapping[str, Any]], loaded_local: Mapping[str,
         r = rows.setdefault(m["name"], _row(m["name"]))
         t = m.get("traits") or {}
         r.update(kind=t.get("kind") or classify(None, m["name"]), kind_source="header" if t else "name",
-                 arch=t.get("arch"), thinking=bool(t.get("thinking")), size_mb=m.get("size_mb"),
+                 arch=t.get("arch"), thinking=bool(t.get("thinking")), speech=bool(t.get("speech")), size_mb=m.get("size_mb"),
                  context_length=m.get("context_length"), vision=bool(m.get("vision")), mtp=bool(m.get("mtp")))
         inst = loaded_local.get(m["name"])
         place = {"place": "local", "loaded": inst is not None}

@@ -12,6 +12,8 @@ from backend.plugins.contracts import ContractError, normalize_job
 
 logger = logging.getLogger("ai-serve-ui.audio_jobs")
 router = APIRouter()
+# The plugin answers the start only after its yes/no for GPU room, which may first start ComfyUI (up to 120 s there).
+JOB_START_TIMEOUT_S = 180.0
 
 
 def _row(entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -65,7 +67,7 @@ async def create_audio_job(body: Dict[str, Any] = Body(..., examples=[{
     if p is None or not await registry.ensure_running(p, 60.0):
         raise HTTPException(status_code=503, detail=f"the audio plugin {entry['plugin']} is not reachable")
     try:
-        r = await registry.call(p, "jobs", method="POST", json={**body, "model": entry["id"]}, timeout=60.0)
+        r = await registry.call(p, "jobs", method="POST", json={**body, "model": entry["id"]}, timeout=JOB_START_TIMEOUT_S)
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"audio plugin unreachable: {type(e).__name__}")
     if r.status_code not in (200, 202):

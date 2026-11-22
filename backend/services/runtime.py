@@ -2,6 +2,8 @@
 signalling. Decisions about *what* to launch or signal are made in domain.py."""
 import os
 import subprocess
+import threading
+import time
 from typing import Dict, FrozenSet, List
 
 import httpx
@@ -9,6 +11,21 @@ import psutil
 from backend.procs import processes
 
 from backend.services.domain import LaunchPlan, ObservedProcess, child_environment
+
+
+_recent: Dict = {"at": 0.0, "value": None}
+_recent_lock = threading.Lock()
+
+
+def recent_snapshot(max_age: float = 2.0) -> List[ObservedProcess]:
+    """snapshot(), shared by callers within `max_age` seconds and taken once for callers arriving together -- for
+    read-only views (status, lists), polled often; starting/stopping takes a fresh snapshot() (2026-11-03: each of
+    ~50 status calls a minute walked all processes, the gateway ran at 200 % CPU)."""
+    with _recent_lock:
+        if _recent["value"] is None or time.monotonic() - _recent["at"] > max_age:
+            _recent["value"] = snapshot()
+            _recent["at"] = time.monotonic()
+        return _recent["value"]
 
 
 def snapshot() -> List[ObservedProcess]:

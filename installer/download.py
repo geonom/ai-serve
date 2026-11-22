@@ -30,11 +30,12 @@ def hf_file(repo: str, path: str, revision: str = "main"):
     return lfs["oid"], int(lfs.get("size") or 0)
 
 
-def fetch(url: str, dest: Path, sha256: str, label: str) -> None:
-    """Stream to a temp file next to dest, hash while writing, move into place only if the hash matches."""
+def fetch(url: str, dest: Path, sha256: str, label: str, report=None) -> None:
+    """Stream to a temp file next to dest, hash while writing, move into place only if the hash matches. `report`
+    (installer/steps.py) gets the progress; without one it is printed."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
-    tty = sys.stdout.isatty()
+    tty = sys.stdout.isatty() and report is None
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r, \
             tempfile.NamedTemporaryFile(dir=dest.parent, delete=False, prefix=".part-") as f:
         total, done, shown = int(r.headers.get("Content-Length") or 0), 0, -1
@@ -43,7 +44,9 @@ def fetch(url: str, dest: Path, sha256: str, label: str) -> None:
             h.update(chunk)
             done += len(chunk)
             pct = done * 100 // total if total else 0
-            if total and (tty or pct // 10 > shown):
+            if report is not None:
+                report.progress(label, done, total)
+            elif total and (tty or pct // 10 > shown):
                 shown = pct // 10
                 print(f"\r  {label}: {done >> 20} / {total >> 20} MB ({pct} %)", end="" if tty else "\n", flush=True)
         tmp = Path(f.name)
@@ -56,9 +59,9 @@ def fetch(url: str, dest: Path, sha256: str, label: str) -> None:
     tmp.replace(dest)
 
 
-def hf_download(repo: str, path: str, dest: Path) -> None:
+def hf_download(repo: str, path: str, dest: Path, report=None) -> None:
     if dest.exists():
-        print(f"  {dest.name}: already there")
+        (report.log if report is not None else print)(f"  {dest.name}: already there")
         return
     sha, _ = hf_file(repo, path)
-    fetch(f"https://huggingface.co/{repo}/resolve/main/{urllib.parse.quote(path)}", dest, sha, dest.name)
+    fetch(f"https://huggingface.co/{repo}/resolve/main/{urllib.parse.quote(path)}", dest, sha, dest.name, report)

@@ -48,3 +48,8 @@ services.json
 voice_library/
 public_models.json
 instance_origins.json
+# what the packages (AppImage, .app) add to the copy they install
+/bin/
+/.bundle
+/.setup-done
+model_header_cache.json

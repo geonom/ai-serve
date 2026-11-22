@@ -52,6 +52,19 @@ const HELP = {
         ],
         tip: "If the same numbers appear in a table and in running text, say in “Instructions” where they should come from.",
     },
+    video: {
+        title: "Create videos",
+        intro: "Make a short clip with LTX-2.5 (with matching sound) or Wan 2.2: from a description alone, or bring a start picture to life – a photo or any picture made with AI.",
+        caption: "A few seconds of video; LTX adds voices and ambience.",
+        steps: [
+            "Choose a model: LTX works with a description alone or with a start picture, Wan always needs a start picture.",
+            "Describe what happens – who does what, how the camera moves, what can be heard.",
+            "For a start picture, upload one or let it be created from the description – it becomes the first frame.",
+            "Pick camera and look settings and press “Write prompt”: a language model writes a detailed prompt following the video model’s own rules (Wan: after choosing the start picture, without sound). Read it, change what you like – that text is what the video model gets.",
+            "Choose length and size, optionally a LoRA, and press “Create video” – the first one takes about a minute longer while the model loads.",
+        ],
+        tip: "A fixed seed with the same text gives the same clip again – handy for trying a LoRA strength.",
+    },
     "image-gen": {
         title: "Create images",
         intro: "Create images from a description, change an existing image by instruction, or transfer the style of one image onto another.",

@@ -4,6 +4,7 @@ driver supports, Metal on Apple Silicon, ROCm, Vulkan, else CPU) -- the same cho
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -19,8 +20,9 @@ def _release():
     raise SystemExit("no llama.cpp release with prebuilt binaries found")
 
 
-def install(runtimes_dir: Path, variant: Optional[str] = None) -> Path:
+def install(runtimes_dir: Path, variant: Optional[str] = None, report=None) -> Path:
     """Download + extract the fitting build into runtimes/<tag>-<variant>/; returns the llama-server path."""
+    say = report.log if report is not None else print
     from backend.cluster.runtimes import NodeFacts, choose_runtime, parse_release
     from node_agent.llama_serve_node import detect_facts, safe_extract
     f = detect_facts()
@@ -29,22 +31,23 @@ def install(runtimes_dir: Path, variant: Optional[str] = None) -> Path:
                       rocm=f["rocm"], vulkan=f["vulkan"])
     spec = choose_runtime(parse_release(_release()), facts, variant)
     final = runtimes_dir / f"{spec.tag}-{spec.variant}"
-    existing = list(final.rglob("llama-server")) if final.is_dir() else []
+    exe = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+    existing = list(final.rglob(exe)) if final.is_dir() else []
     if existing:
-        print(f"  llama.cpp {spec.tag} ({spec.variant}): already there")
+        say(f"  llama.cpp {spec.tag} ({spec.variant}): already there")
         return existing[0]
     work = runtimes_dir / f".{spec.tag}-{spec.variant}.part"
     work.mkdir(parents=True, exist_ok=True)
     for a in spec.files:
         archive = work / a.name
-        fetch(a.url, archive, a.sha256, a.name)
+        fetch(a.url, archive, a.sha256, a.name, report)
         safe_extract(str(archive), str(work / "files"))
         archive.unlink()
-    servers = list((work / "files").rglob("llama-server"))
+    servers = list((work / "files").rglob(exe))
     if not servers:
         raise SystemExit("no llama-server in the downloaded archive")
     work.rename(final)
     binary = final / servers[0].relative_to(work)
     os.chmod(binary, 0o755)
-    print(f"  llama.cpp {spec.tag} ({spec.variant}) in {final}")
+    say(f"  llama.cpp {spec.tag} ({spec.variant}) in {final}")
     return binary

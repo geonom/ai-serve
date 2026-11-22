@@ -57,7 +57,19 @@ _RULES = [
     ("GET", r"/api/plugins/installs"),     # what can be downloaded (missing models / engines) -- shown to everyone
     ("POST", rf"/api/plugins/{_SEG}/install"),   # start a download: the owner only (quota.classify -> owner_only)
     ("POST", rf"/api/plugins/{_SEG}/start"),     # start a plugin a page needs (only plugins, not apps): owner only
+    ("GET", r"/v1/realtime"),              # voice conversation (Omni): a WebSocket, see wants_websocket()
+    ("POST", r"/v1/audio/speech"),         # Talk's short spoken confirmations in the speech model's voice
+    ("GET", r"/v1/video/models"),          # video models (Video tab, 2026-11-13)
+    ("POST", r"/v1/video/jobs"),           # start a video (quota: charged VIDEO_JOB_ESTIMATE_S per job)
+    ("GET", rf"/v1/video/jobs/{_SEG}"),    # its status (job ids are <plugin>.<job>)
+    ("POST", rf"/v1/video/jobs/{_SEG}/cancel"),
+    ("GET", rf"/v1/video/jobs/{_SEG}/files/{_SEG}"),   # the finished MP4
+    ("GET", r"/v1/video/prompt/options"),  # camera/look settings of the prompt writer
+    ("POST", r"/v1/video/prompt"),         # write a detailed prompt from an idea (a chat call: quota "chat")
 ]
+# the only paths a WebSocket upgrade may go to -- after it the connection is a byte tunnel to the gateway
+_WEBSOCKET_PATHS = frozenset({"/v1/realtime"})
+_WEBSOCKET_KEEP = ("sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions", "sec-websocket-protocol")
 _COMPILED = [(m, re.compile(p + r"\Z")) for m, p in _RULES]
 _QUERY = re.compile(r"\A[A-Za-z0-9._~=&%+-]*\Z")
 
@@ -98,4 +110,27 @@ def forward_headers(headers: Mapping[str, str], peer: str) -> Dict[str, str]:
             continue
         out[k] = v
     out["X-Forwarded-For"] = peer
+    return out
+
+
+def wants_websocket(path: str, headers: Mapping[str, str]) -> bool:
+    """True for a WebSocket upgrade to an allowed path; an upgrade anywhere else is Refused (it would become a raw
+    tunnel past the per-request rules)."""
+    low = {k.lower(): v for k, v in headers.items()}
+    if "websocket" not in low.get("upgrade", "").lower():
+        return False
+    if path.partition("?")[0] not in _WEBSOCKET_PATHS:
+        raise Refused("WebSocket not allowed here")
+    return True
+
+
+def websocket_headers(headers: Mapping[str, str], peer: str) -> Dict[str, str]:
+    """forward_headers() plus the handshake fields the gateway needs for the upgrade."""
+    out = forward_headers(headers, peer)
+    out = {k: v for k, v in out.items() if k.lower() not in _WEBSOCKET_KEEP}
+    for k, v in headers.items():
+        if k.lower() in _WEBSOCKET_KEEP:
+            out[k] = v
+    out["Upgrade"] = "websocket"
+    out["Connection"] = "Upgrade"
     return out

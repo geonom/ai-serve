@@ -341,6 +341,8 @@ class OpenAISpeechRequest(BaseModel):
     # extension: fixes the random draw of engines that take a `seed` param (Qwen3: a designed voice --
     # same description + seed = the same voice, other seeds = other voices)
     seed: Optional[int] = Field(None, ge=0, le=2147483647)
+    # extension: a speech-to-speech model (`model` = its GGUF, e.g. LFM3-Omni) streams its WAV as it is made
+    stream: Optional[bool] = None
 
 
 class ImageGenerationRequest(BaseModel):
@@ -733,6 +735,11 @@ async def generate_qwen3_tts(req: Qwen3TTSGenerateRequest):
 async def openai_audio_speech(req: OpenAISpeechRequest, request: Request):
     from backend import synthetic_voices as sv
     from backend import voice_library as vl
+    from backend.routers import gateway
+    speech_model = gateway.speech_model_path(req.model)
+    if speech_model:   # a speech-to-speech GGUF (LFM3-Omni): its own TTS, voice female|male (2026-11-03)
+        return await gateway.model_speech(speech_model, req.input, req.language, req.voice, req.seed,
+                                          stream=bool(req.stream))
     if sv.is_synthetic(req.voice) or vl.is_own(req.voice):   # a synthetic or own voice: cloned, nothing else matched
         engine = await _speech_engine(req.model)
         eng = (engine or DEFAULT_TTS_ENGINE or "").strip().lower()

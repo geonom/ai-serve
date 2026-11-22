@@ -122,7 +122,38 @@ image-serve (`plugins/image-serve`, ComfyUI) offers Z-Image Turbo, ERNIE Turbo, 
 - **A different image engine** (Diffusers, stable-diffusion.cpp with other models, a remote service): an `image`
   plugin of your own – [plugins.md](plugins.md); sd-serve is a small example.
 
+## Video
+
+image-serve also makes videos (ComfyUI workflows, started as jobs: `POST /v1/video/jobs`, see [API.md](API.md) §16):
+
+| id | What | Notes |
+|---|---|---|
+| `ltx-2.5` | LTX-2.5 distilled (int8): text or picture → video **with sound**, 24 fps, 2–8 s | Default for both tasks. Needs a 24 GB card; ~20 s for 4 s at 1024x576 on a 3090 |
+| `ltx-2.5-q3` | the same as GGUF Q3 | For 16 GB cards |
+| `wan-2.2`, `wan-2.2-q3` | Wan 2.2 I2V A14B, 4 steps (Q4 / Q3): picture → video, 16 fps, no sound | SageAttention on by default |
+| `wan-2.2-5b` | Wan 2.2 5B Turbo (Q8): picture → video, 24 fps, no sound | Faster, less detail |
+| `minimax-h3`, `minimax-h3-4step` | MiniMax H3 33B (Q4 + turbo LoRA): text or first frame → video with stereo sound | MiniMax Community License |
+
+`GET /v1/video/models` is the authority (lengths, resolutions, steps, LoRAs, licence per row). Each row's licence
+applies to what you make with it -- LTX-2's community licence, for one, is free only below a revenue limit.
+
+- **Writing prompts:** video models want long, concrete prompts (what moves, camera, light, sound). `POST
+  /v1/video/prompt` lets a chat model write one from a short idea in any language, following the model's own
+  prompt guide (LTX, Wan and MiniMax H3 -- for H3 MiniMax's own writing guide, with its three fields); you see it and
+  can edit it before the video starts.
+- **LoRAs:** `.safetensors` into image-serve's LoRA folder for that family (`loras/<family>/`); the catalog row lists
+  them, a job names one with `lora` (+ `lora_strength`).
+- **Another video model:** like a new image model (above): build the workflow in ComfyUI, then add it to
+  `image_serve/video.py` -- or write a `video` plugin of your own ([plugins.md](plugins.md#video----text-to-video-picture-to-video)).
+
+## Music and sound effects
+
+image-serve's `audio` capability: sound effects (`sa3-sfx`, Stable Audio 3 Small) and music with ACE-Step 1.5 Turbo
+(`ace-step`, MIT; style tags as `prompt`, optional `lyrics` with [Verse]/[Chorus], 10-300 s; a 20 s piece took ~25 s with a cold ComfyUI on a
+4060 Ti). Jobs like video:
+`GET /v1/audio/models?task=music|sound|all`, `POST /v1/audio/jobs` ([API.md](API.md) §16).
+
 ## Not covered yet
 
-Video, music, 3D, translation and realtime voice conversation have no plugin yet; the plugin contracts are there so
-the first ones fit ([plugins.md](plugins.md)).
+3D, translation and moderation have no plugin yet; the plugin contracts are there so the first ones fit
+([plugins.md](plugins.md)). Realtime voice conversation runs through llama.cpp itself (`/v1/realtime` with a speech model).

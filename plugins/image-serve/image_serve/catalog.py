@@ -75,6 +75,12 @@ CATALOG: Tuple[ImageModel, ...] = (
                "Edits from up to four reference images in 4 steps; small and fast, Apache-2.0. Trained on filtered data: "
                "not for explicit pictures.", tasks=("edit",), steps_default=4, steps_max=50, max_images=4),
     # ComfyUI's own BiRefNet node (comfy_extras/nodes_bg_removal.py, since 2026-05); Comfy-Org's repackaged file
+    # MiniMax-H3-Image 33B (2026-11-14, owner): Abiray's GGUF Q4_K_M + the int8 Qwen3-VL-32B encoder of the H3 video
+    # model; distilled to exactly 6 steps, ~4 MP output; edits with pictures (comfy.build_h3_image_workflow)
+    ImageModel("minimax-h3-image", "MiniMax H3 Image (Q4_K_M)", "comfyui", "MiniMax-H3-Image-Pruned-Q4_K_M.gguf",
+               "Large 33B model: ~4 MP images with rich detail and lettering, also edits from up to four pictures "
+               "(<Picture 1>.. in the prompt); fixed 6 steps.", text_in_image=True, tasks=("generate", "edit"),
+               steps_default=6, steps_adjustable=False, steps_max=6, max_images=4),
     ImageModel("birefnet", "BiRefNet (remove background)", "comfyui", "birefnet.safetensors",
                "Cuts out the foreground: the same image back as a PNG with transparency (~1 GB VRAM, seconds).",
                aspects=(), tasks=("remove_background",), steps_default=1, steps_adjustable=False, steps_max=1,

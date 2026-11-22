@@ -91,6 +91,8 @@ async def lifespan(app: FastAPI):
             from backend.routers.dashboard import list_models
             paths = [m["path"] for m in (await list_models())["models"]]
             await asyncio.get_running_loop().run_in_executor(None, lambda: [get_model_traits(p) for p in paths])
+            from backend.model_manager import HEADER_CACHE
+            await asyncio.to_thread(HEADER_CACHE.save)   # the next start begins with these answers
         except Exception as e:
             logger.warning(f"Warming model traits failed: {e}")
     warm_task = asyncio.create_task(_warm_model_traits())
@@ -167,13 +169,14 @@ app.add_middleware(AccessMiddleware, policy=AccessPolicy(ApiKey(API_KEY), is_pri
 app.add_middleware(PublicExposureMiddleware)
 
 # Routers — order matters only for duplicate paths (first registered wins)
-from backend.routers import advice, audio_jobs, cluster, comfyui_compat, dashboard, door, gpu, gateway, hf_download, media, coordination, ocr, overview, plugins, public_gateway, services, smoketest, training, vision  # noqa: E402
+from backend.routers import advice, audio_jobs, cluster, comfyui_compat, dashboard, door, gpu, gateway, hf_download, media, coordination, ocr, overview, plugins, public_gateway, services, smoketest, training, video_jobs, vision  # noqa: E402
 
 app.include_router(dashboard.router)
 app.include_router(cluster.router)
 app.include_router(gpu.router)
 app.include_router(gateway.router)
 app.include_router(audio_jobs.router)
+app.include_router(video_jobs.router)
 app.include_router(media.router)
 app.include_router(ocr.router)
 app.include_router(public_gateway.router)

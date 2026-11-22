@@ -17,7 +17,6 @@ comfy-angle==0.1.1
 comfy-kitchen==0.2.39
 comfyui-embedded-docs==0.5.14
 comfyui-frontend-package==1.55.18
-comfyui-workflow-templates==0.11.94
 comfyui-workflow-templates-core==0.3.385
 comfyui-workflow-templates-json==0.1.120
 comfyui-workflow-templates-media-api==0.3.84
@@ -26,6 +25,7 @@ comfyui-workflow-templates-media-assets-02==0.1.21
 comfyui-workflow-templates-media-image==0.3.160
 comfyui-workflow-templates-media-other==0.3.229
 comfyui-workflow-templates-media-video==0.3.101
+comfyui-workflow-templates==0.11.94
 contourpy==1.4.0
 cuda-bindings==13.3.1
 cuda-pathfinder==1.6.0
@@ -48,8 +48,8 @@ idna==3.20
 imageio==2.38.1
 jinja2==3.1.6
 kiwisolver==1.5.1
-kornia==0.9.0
 kornia-rs==0.2.0
+kornia==0.9.0
 mako==1.4.3
 markdown-it-py==4.2.0
 markupsafe==3.0.3
@@ -81,9 +81,9 @@ pillow==12.3.0
 propcache==0.5.4
 protobuf==7.36.2
 psutil==7.2.2
-pydantic==2.14.1
 pydantic-core==2.50.1
 pydantic-settings==2.16.1
+pydantic==2.14.1
 pygments==2.21.0
 pyopengl==3.1.10
 pyparsing==3.3.3
@@ -94,6 +94,7 @@ regex==2026.9.29
 requests==2.34.2
 rich==15.0.0
 safetensors==0.8.0
+sageattention==1.0.6
 scipy==1.18.1
 sentencepiece==0.2.2
 setuptools==78.1.0

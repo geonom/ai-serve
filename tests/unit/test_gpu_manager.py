@@ -445,3 +445,60 @@ def test_a_process_that_became_busy_is_not_stopped_and_the_reason_says_what_is_l
     assert "pinned" not in why
     assert "stt-serve (already unloaded; only its CUDA context is left (process still running), 158 MB)" in why
     assert "ComfyUI (busy, 244 MB)" in why
+
+
+def test_the_asking_plugin_is_never_stopped_to_make_room_for_itself(tmp_path, monkeypatch):
+    """2026-11-13: a Wan video job (image-serve) asked for room on the 4060 Ti; the manager unloaded ComfyUI's models,
+    then stopped the comfyui plugin -- image-serve itself, which was waiting for the answer -- and the job died.
+    Unloading its own idle models is fine; stopping its process is not: a no instead (the caller retries)."""
+    m, released, exited = _residue_case(tmp_path, monkeypatch)
+    res, done, why = asyncio.run(m.reserve(1, 15208, "image:Wan 2.2", requester="comfyui"))
+    assert res is None and "comfyui" not in exited
+    assert "comfyui:comfyui" in released                    # its own idle models may go
+
+
+def test_a_peak_from_a_roomier_card_gives_way_when_only_the_asker_is_left(tmp_path, monkeypatch):
+    """2026-11-14: Wan on the 4060 Ti was refused by 3 MB -- the peak learned on the 3090 + 10 % (15057 MB) looked
+    reachable by unloading ComfyUI's own models, but only its CUDA context was left; the smaller needs a smaller card
+    may use (NeedBook.minimum / on_gpu) were only tried when the first plan failed."""
+    m, released, exited = _residue_case(tmp_path, monkeypatch)
+    m.needs.observe("image:Wan 2.2", 13830, gpu="GPU-the-3090")
+    assert m.need("image:Wan 2.2", 10593) == 15213        # > free + stt-serve, < + ComfyUI's own
+    res, done, why = asyncio.run(m.reserve(1, 10593, "image:Wan 2.2", requester="comfyui"))
+    assert res is not None, why
+    assert res.mb == 13830 and "comfyui" not in exited
+
+
+def test_an_unreachable_peak_gives_way_to_the_declared_need_when_only_the_asker_is_left(tmp_path, monkeypatch):
+    """2026-11-14: LTX int8 was refused on the 3090 for good -- ComfyUI fills the card as a cache, so the peaks learned
+    for it crept up to nearly the whole card (23650 MB), more than the card can ever give while ComfyUI's own CUDA
+    context (444 MB) stays. When nothing but the asker's own context is left, the learned figures are out of reach
+    anyway: the need the plugin declared gets its turn (its process then manages within what it has)."""
+    from backend import gpu_ids
+    m, released, exited = _residue_case(tmp_path, monkeypatch)
+    m.needs.observe("image:LTX", 15300, gpu=gpu_ids.key(1))   # > free + stt-serve's 158, < + ComfyUI's own 244
+    res, done, why = asyncio.run(m.reserve(1, 12000, "image:LTX", requester="comfyui"))
+    assert res is not None, why
+    assert res.mb == 12000 and "comfyui" not in exited
+    # a declared need that doesn't fit either is still a no
+    m2, _, exited2 = _residue_case(tmp_path, monkeypatch)
+    m2.needs.observe("image:LTX", 15300, gpu=gpu_ids.key(1))
+    res, done, why = asyncio.run(m2.reserve(1, 15200, "image:LTX", requester="comfyui"))
+    assert res is None and "own CUDA context" in why and "comfyui" not in exited2
+
+
+def test_preflight_passes_the_asking_plugin_on(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    from backend.routers import coordination
+    seen = {}
+
+    async def reserve(gpu, need_mb, purpose, requester=None):
+        seen.update(gpu=gpu, requester=requester)
+        return None, [], "short"
+    monkeypatch.setattr(coordination.MANAGER, "reserve", reserve)
+    c = TestClient(app, client=("127.0.0.1", 50000))
+    c.post("/api/coordination/gpu-preflight", json={"purpose": "image:x", "gpu": 0, "need_mb": 10, "plugin": "comfyui"})
+    assert seen == {"gpu": 0, "requester": "comfyui"}
+    c.post("/api/coordination/gpu-preflight", json={"purpose": "image:x", "gpu": 0, "need_mb": 10})
+    assert seen["requester"] is None

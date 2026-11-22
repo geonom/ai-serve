@@ -129,3 +129,17 @@ def test_catalog_rows():
     assert rows["sa3-sfx"]["tasks"] == ["sound"] and rows["ace-step"]["tasks"] == ["music"]
     assert rows["sa3-sfx"]["max_seconds"] == 120 and rows["ace-step"]["lyrics"] is True
     assert rows["sa3-sfx"]["default"] and rows["ace-step"]["default"]
+
+
+def test_no_gpu_room_is_a_507_before_any_job_exists(fake_comfy, monkeypatch):
+    from fastapi import HTTPException
+    asked = {}
+
+    async def no(workflow, label):
+        asked["files"] = comfy.comfy_model_files(workflow)
+        raise HTTPException(status_code=507, detail="No room for the image model on GPU 0: busy")
+    monkeypatch.setattr(comfy, "check_room", no)
+    with TestClient(plugin.app, client=("127.0.0.1", 50000)) as c:
+        r = c.post("/v1/audio/jobs", json={"task": "music", "prompt": "lo-fi piano", "seconds": 20})
+        assert r.status_code == 507 and "No room" in r.json()["detail"]
+    assert "acestep_v1.5_turbo.safetensors" in asked["files"] and "workflow" not in fake_comfy

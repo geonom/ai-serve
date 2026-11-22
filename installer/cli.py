@@ -7,7 +7,7 @@
     ./ai-serve offers                     what setup can install, with sizes and what is suggested here
     ./ai-serve plugin add <git-url> [--name N]   another app or plugin from a git repository
     ./ai-serve plugin list
-    ./ai-serve start [-d]                 the gateway (http://localhost:8030); -d: in the background
+    ./ai-serve start [-d [--open]]        the gateway (http://localhost:8030); -d: in the background, --open: then the dashboard
     ./ai-serve stop [--all]               stop it (--all: also the apps it started and every loaded model)
     ./ai-serve restart | status
 """
@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import webbrowser
 from pathlib import Path
 from typing import List, Optional
 
@@ -31,6 +32,7 @@ sys.path.insert(0, str(HERE))
 
 from installer import offers as O  # noqa: E402
 from installer import plugins as P  # noqa: E402
+from installer import steps as S  # noqa: E402
 
 ENV_FILE = HERE / "ai-serve.local.env"
 
@@ -69,10 +71,12 @@ def wait_for(up: bool, seconds: float) -> bool:
     return running() == up
 
 
-def start(background: bool) -> int:
+def start(background: bool, open_page: bool = False) -> int:
     url = f"http://localhost:{gateway_port()}"
     if running():
         print(f"ai-serve is already running -> {url}  (./ai-serve stop | restart)")
+        if open_page:
+            webbrowser.open(url)
         return 0
     if not background:
         os.execv("/bin/bash", ["bash", str(HERE / "launcher.sh")])
@@ -85,6 +89,8 @@ def start(background: bool) -> int:
     if wait_for(True, 180):
         print(f"ai-serve runs -> {url}")
         refresh_outdated()
+        if open_page:
+            webbrowser.open(url)
         return 0
     print("ai-serve didn't come up within 3 minutes -- see logs/launcher.log", file=sys.stderr)
     return 1
@@ -159,6 +165,28 @@ def status() -> int:
     return 0
 
 
+def ram_total_mb() -> int:
+    """Installed RAM in MB, 0 when it can't be read (os.sysconf; on Windows GlobalMemoryStatusEx)."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") >> 20
+    except (ValueError, OSError, AttributeError):
+        pass
+    if sys.platform == "win32":
+        import ctypes
+
+        class Status(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        st = Status()
+        st.dwLength = ctypes.sizeof(Status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+            return st.ullTotalPhys >> 20
+    return 0
+
+
 def machine() -> O.Machine:
     """What this machine has -- each figure 0/empty when it can't be read (the suggestions then fall back)."""
     gpus: List[int] = []
@@ -171,10 +199,7 @@ def machine() -> O.Machine:
             gpus = [int(float(x)) for x in r.stdout.split() if x.strip()] if nvidia else []
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
-    try:
-        ram_mb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") >> 20
-    except (ValueError, OSError, AttributeError):
-        ram_mb = 0
+    ram_mb = ram_total_mb()
     try:
         free_gb = shutil.disk_usage(HERE).free / 1e9
     except OSError:
@@ -219,18 +244,6 @@ def choose(m: O.Machine) -> List[str]:
     return picked
 
 
-def run_setup(offer: O.Offer) -> None:
-    d = HERE / "plugins" / offer.plugin
-    if not d.is_dir() and offer.git:   # an external plugin: cloned and its manifest checked like `plugin add`
-        print(f"\n== {offer.label}: {offer.git} -> plugins/{offer.plugin}")
-        P.add(offer.git, HERE / "plugins", offer.plugin)
-    if not d.is_dir():
-        raise SystemExit(f"plugins/{offer.plugin} is missing -- is this a complete ai-serve checkout?")
-    script, *args = offer.setup
-    print(f"\n== {offer.label}: plugins/{offer.plugin}/{script} {' '.join(args)}")
-    subprocess.run(["bash", str(d / script), *args], cwd=d, check=True)
-
-
 def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool, recommended: bool = False) -> None:
     m = machine()
     print(f"ai-serve setup -- {O.describe(m)}")
@@ -238,7 +251,7 @@ def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool, recommend
         if chosen is not None:
             raise ValueError("give either --offers or --recommended")
         chosen = [oid for oid, ok, _ in O.recommend(m) if ok]
-    if not shutil.which("uv"):
+    if not S.find_uv():
         raise SystemExit("uv is needed for the services' Python environments: https://docs.astral.sh/uv/ "
                          "(curl -LsSf https://astral.sh/uv/install.sh | sh), then run this again.")
     ids = O.validate_choice(chosen, m) if chosen is not None else choose(m)
@@ -249,22 +262,7 @@ def setup(chosen: Optional[List[str]], yes: bool, skip_llamacpp: bool, recommend
         print(f"Note: only {m.disk_free_gb:.0f} GB free on the disk -- that is tight or too little.")
     if not yes and not ask("Go?", default=True):
         raise SystemExit("cancelled")
-    llama_server = None
-    if not skip_llamacpp:
-        print("\n== llama.cpp for this machine")
-        from installer import llamacpp
-        binary = llamacpp.install(HERE / "runtimes")
-        llama_server = "./" + str(binary.relative_to(HERE))
-    for o in picked:
-        if o.files:
-            print(f"\n== {o.label}")
-            from installer.download import hf_download
-            for f in o.files:
-                hf_download(f.repo, f.path, HERE / "models" / f.save_as)
-        if o.plugin:
-            run_setup(o)
-    text = ENV_FILE.read_text(encoding="utf-8") if ENV_FILE.exists() else "# this machine's settings (ai-serve.example.env lists them all)\n"
-    ENV_FILE.write_text(O.merge_env(text, O.env_updates(picked, llama_server)), encoding="utf-8")
+    S.install(picked, S.Report(), skip_llamacpp)
     port = os.environ.get("AI_SERVE_PORT") or "8030"
     print(f"\nDone. Settings: {ENV_FILE.name}. Start: ./ai-serve start  -> http://localhost:{port}"
           + ("  (Playground: Apps & Services)" if (HERE / "apps" / "playground").is_dir() else ""))
@@ -359,6 +357,7 @@ def main(argv=None) -> int:
     ma.add_argument("--yes", action="store_true")
     st = sub.add_parser("start")
     st.add_argument("-d", "--background", action="store_true", help="run in the background (log: logs/launcher.log)")
+    st.add_argument("--open", action="store_true", help="open the dashboard in the browser once it answers (with -d)")
     sp = sub.add_parser("stop")
     sp.add_argument("--all", action="store_true", help="also stop the apps it started and unload every model")
     sub.add_parser("restart")
@@ -384,7 +383,7 @@ def main(argv=None) -> int:
         elif a.cmd == "model":
             model_add(a.url, a.file, a.mmproj, a.yes)
         elif a.cmd == "start":
-            return start(a.background)
+            return start(a.background, a.open)
         elif a.cmd == "stop":
             return stop(a.all)
         elif a.cmd == "restart":

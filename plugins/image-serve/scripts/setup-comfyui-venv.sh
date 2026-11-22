@@ -26,6 +26,10 @@ uv pip install -q --python "$PY" -r "$COMFYUI_DIR/requirements.txt"
 for r in "$COMFYUI_DIR"/custom_nodes/*/requirements.txt; do
   [ -f "$r" ] && uv pip install -q --python "$PY" -r "$r"
 done
+# SageAttention (Triton kernels, NVIDIA only): the Wan video models use it per model (image_serve/video.py)
+if "$PY" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+  uv pip install -q --python "$PY" sageattention==1.0.6 || echo "sageattention not installed -- Wan video runs without it"
+fi
 "$PY" -c "import torch; print('torch', torch.__version__, 'cuda' if torch.cuda.is_available() else 'no cuda')"
 T="$(cd "$(dirname "$TARGET")" && pwd -P)/$(basename "$TARGET")"
 [ "$T" = "$(cd "$COMFYUI_DIR" && pwd -P)/venv" ] || echo "ok -- set COMFYUI_PYTHON=$T/bin/python in .env"

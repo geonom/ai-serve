@@ -22,8 +22,11 @@ source "$VENV_DIR/bin/activate"
 # Install backend requirements if present (uv if available -- its venvs have no pip -- else pip)
 if [ -f "$INSTALL_DIR/backend/requirements.txt" ]; then
     echo "Installing backend requirements..."
-    if command -v uv >/dev/null; then
-        uv pip install -q --python "$VENV_DIR/bin/python" -r "$INSTALL_DIR/backend/requirements.txt"
+    UV="${AI_SERVE_UV:-}"
+    [ -x "$UV" ] || UV="$INSTALL_DIR/bin/uv"          # the packages (AppImage, .app) put their uv here
+    [ -x "$UV" ] || UV="$(command -v uv || true)"
+    if [ -n "$UV" ]; then
+        "$UV" pip install -q --python "$VENV_DIR/bin/python" -r "$INSTALL_DIR/backend/requirements.txt"
     else
         python -m pip install -q -r "$INSTALL_DIR/backend/requirements.txt"
     fi

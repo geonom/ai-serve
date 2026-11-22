@@ -32,6 +32,7 @@ GATEWAY = os.environ.get("AI_SERVE_URL", "http://127.0.0.1:8030").rstrip("/")
 LOGS_DIR = os.environ.get("LOGS_DIR", str(HERE / "logs"))
 GENERATED_IMAGES_DIR = os.environ.get("GENERATED_IMAGES_DIR", str(HERE / "generated_images"))
 GENERATED_AUDIO_DIR = os.environ.get("GENERATED_AUDIO_DIR", str(HERE / "generated_audio"))   # results of audio jobs, never pruned
+GENERATED_VIDEO_DIR = os.environ.get("GENERATED_VIDEO_DIR", str(HERE / "generated_video"))   # results of video jobs, never pruned
 WORKFLOWS_DIR = str(HERE / "workflows")
 os.makedirs(LOGS_DIR, exist_ok=True)
 os.makedirs(GENERATED_IMAGES_DIR, exist_ok=True)

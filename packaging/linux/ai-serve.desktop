@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ai-serve
+Comment=Local AI models and apps on your own computer
+Exec=AppRun
+Icon=ai-serve
+Categories=Utility;Development;
+Terminal=false

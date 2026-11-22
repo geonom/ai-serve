@@ -84,7 +84,15 @@ class StartRequest(BaseModel):
     )
     ctx_size: int = Field(32000, description="Context size in tokens (-c).")
     threads: int = Field(8, description="CPU thread count (-t).")
-    n_gpu_layers: int = Field(-1, description="Layers to offload to GPU (-ngl). -1 offloads all layers.")
+    n_gpu_layers: int = Field(-1, description="Layers to offload to GPU (-ngl). -1 offloads all layers; N >= 0 "
+                                              "keeps the first layers in RAM (the reservation counts only the rest).")
+    n_cpu_moe: Optional[int] = Field(
+        None, ge=0,
+        description="MoE models: keep the routed experts of the first N layers in RAM (llama.cpp --n-cpu-moe); "
+                     "a number >= the layer count keeps all of them there. Attention and shared experts stay on "
+                     "the GPU -- the usual fast way to run an A3B-style model on a card smaller than the file. The "
+                     "GPU manager reserves only what lands in VRAM (counted from the GGUF's tensor table).",
+    )
     gpu_id: GpuRef = Field(
         None,
         description="GPU to pin this instance to (its number, or optionally its UUID). "
@@ -389,6 +397,11 @@ async def get_raw_api_docs():
         raise HTTPException(status_code=500, detail=f"Could not load API documentation: {e}")
 
 
+def llama_offload_flags(n_cpu_moe: Optional[int]) -> List[str]:
+    """llama-server flags for MoE experts kept in RAM (StartRequest.n_cpu_moe)."""
+    return ["--n-cpu-moe", str(n_cpu_moe)] if n_cpu_moe else []
+
+
 async def _start_plugin_via_api(req: "StartRequest", found) -> Dict[str, Any]:
     """/api/start with a model an llm plugin serves (e.g. Strata through its adapter): the plugin loads it and this
     answers once it serves -- a server's /health may answer long before the model is loaded, and a caller that polls
@@ -481,11 +494,10 @@ async def start_server(req: StartRequest):
     reservation = None
     if not req.ignore_strata and sys.platform != "darwin" and target_gpu_id is not None:
         from backend.cluster.local import MANAGER
-        from backend.response_processing import estimate_kv_overhead_mb
-        need = int(get_model_size_mb(req.model_path) + estimate_kv_overhead_mb(req.ctx_size))
+        from backend.gpu_share import start_need
+        need, purpose = start_need(req.model_path, req.ctx_size, req.n_gpu_layers, req.n_cpu_moe)
         try:
-            reservation, _, why = await MANAGER.reserve(target_gpu_id, need,
-                                                        f"llm:{os.path.basename(req.model_path)}@{req.ctx_size}")
+            reservation, _, why = await MANAGER.reserve(target_gpu_id, need, purpose)
         except HTTPException:
             if state.managed_processes.get(port, {}).get("reserving"):
                 state.managed_processes.pop(port, None)
@@ -512,7 +524,7 @@ async def start_server(req: StartRequest):
         "-t", str(req.threads),
         "-ngl", str(req.n_gpu_layers),
         "--host", "127.0.0.1",
-    ]
+    ] + llama_offload_flags(req.n_cpu_moe)
     if embedding:
         cmd.append("--embedding")
     if reranking:
@@ -558,6 +570,7 @@ async def start_server(req: StartRequest):
             "ctx_size": req.ctx_size,
             "threads": req.threads,
             "n_gpu_layers": req.n_gpu_layers,
+            "n_cpu_moe": req.n_cpu_moe,
             "gpu_id": target_gpu_id,
             "embedding": embedding,
             "reranking": reranking,

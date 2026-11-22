@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-serve setup</title>
+<link rel="stylesheet" href="wizard.css">
+<script src="wizard.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1 data-t="Set up ai-serve">Set up ai-serve</h1>
+    <nav class="langs"><button type="button" data-lang="en">EN</button> | <button type="button" data-lang="de">DE</button></nav>
+  </header>
+
+  <p id="machine" class="muted"></p>
+  <p id="problem" class="problem" hidden></p>
+
+  <section id="choose" hidden>
+    <p data-t="intro">Everything is optional and can be added later. The ticks are suggestions for this computer.</p>
+    <p class="row">
+      <span data-t="Language model:">Language model:</span>
+      <select id="llm"></select>
+    </p>
+    <p id="llm-why" class="muted why"></p>
+    <ul id="offers"></ul>
+    <p id="total" class="muted"></p>
+    <p><button type="button" id="go" class="primary" data-t="Set up">Set up</button></p>
+  </section>
+
+  <section id="work" hidden>
+    <ol id="steps"></ol>
+    <div id="bar" hidden><div class="track"><div class="fill"></div></div><p class="muted" id="bar-text"></p></div>
+    <p id="failed" class="problem" hidden></p>
+    <p id="retry-row" hidden><button type="button" id="retry" data-t="Back to the choice">Back to the choice</button></p>
+    <details id="log-box"><summary data-t="Details">Details</summary><pre id="log"></pre></details>
+  </section>
+
+  <section id="done" hidden>
+    <p data-t="ai-serve is set up and running.">ai-serve is set up and running.</p>
+    <p class="muted" data-t="done-hint">Next time, starting ai-serve opens the dashboard directly.</p>
+    <p><button type="button" id="open" class="primary" data-t="Open the dashboard">Open the dashboard</button></p>
+  </section>
+</main>
+</body>
+</html>

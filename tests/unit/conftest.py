@@ -5,6 +5,9 @@ import os
 os.environ.setdefault("LLAMA_SERVE_LOG_TO_FILE", "0")
 # Starlette's TestClient sends "Host: testserver" -- a name the Host check (backend/access/hosts.py) would refuse.
 os.environ.setdefault("AI_SERVE_ALLOWED_HOSTS", "testserver")
+# ... nor into the live model header cache (model_header_cache.json)
+import tempfile as _tempfile
+os.environ.setdefault("MODEL_HEADER_CACHE_FILE", os.path.join(_tempfile.mkdtemp(prefix="ai-serve-test-"), "headers.json"))
 
 import pytest
 

@@ -43,6 +43,22 @@ class TestRoute(unittest.TestCase):
                      ("POST", "/api/plugins/comfyui/start")]:   # a plugin whose downloads a page needs (owner only)
             self.ok(m, p)
 
+    def test_video_jobs(self):
+        for m, p in [("GET", "/v1/video/models"), ("POST", "/v1/video/jobs"),
+                     ("GET", "/v1/video/jobs/comfyui.vid-0123abcd"), ("POST", "/v1/video/jobs/comfyui.vid-1/cancel"),
+                     ("GET", "/v1/video/jobs/comfyui.vid-1/files/vid-1.mp4")]:
+            self.ok(m, p)
+        for m, p in [("DELETE", "/v1/video/jobs/comfyui.vid-1"), ("GET", "/v1/video/jobs/a/b/c"),
+                     ("GET", "/v1/video/jobs/comfyui.vid-1/files/../../x"), ("POST", "/v1/video/models"),
+                     ("GET", "/v1/video/jobs/comfyui.vid-1/files/%2e%2e")]:
+            self.refused(m, p)
+
+    def test_video_prompt_writer(self):
+        self.ok("GET", "/v1/video/prompt/options")
+        self.ok("POST", "/v1/video/prompt")
+        for m, p in [("GET", "/v1/video/prompt"), ("POST", "/v1/video/prompt/options"), ("POST", "/v1/video/prompt/x")]:
+            self.refused(m, p)
+
     def test_only_plugins_are_started_never_apps_or_services(self):
         for m, p in [("POST", "/api/services/comfyui/start"), ("POST", "/api/services/playground/stop"),
                      ("POST", "/api/plugins/comfyui/release"), ("POST", "/api/plugins/../services/x/start")]:

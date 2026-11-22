@@ -73,7 +73,8 @@ class Manager:
         """(Reservation | None, [], reason). 507 while an exclusive plugin holds the GPUs (raised)."""
         try:
             r = await _call("POST", "/api/coordination/gpu-preflight",
-                            json={"purpose": purpose[:80], "gpu": gpu, "need_mb": max(0, int(need_mb))})
+                            json={"purpose": purpose[:80], "gpu": gpu, "need_mb": max(0, int(need_mb)),
+                                  "plugin": PLUGIN_ID})     # never stop us to make room for us (2026-11-13)
         except httpx.HTTPError as e:
             raise HTTPException(status_code=503, detail=f"ai-serve (the GPU owner) not reachable at {GATEWAY}: {e}")
         if r.status_code == 507:

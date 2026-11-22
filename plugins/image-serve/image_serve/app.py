@@ -26,7 +26,7 @@ import httpx
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from image_serve import audio, catalog, comfy, config, jobs, moss, moss_brief
+from image_serve import audio, catalog, comfy, config, jobs, moss, moss_brief, video
 from image_serve.config import LOGS_DIR
 from image_serve.state import state
 
@@ -38,6 +38,8 @@ LICENSES: Dict[str, tuple] = {
     "qwen-image-2.1-int8": ("Apache-2.0", True), "qwen-edit-2511": ("Apache-2.0", True),
     "qwen-edit-2511-q3": ("Apache-2.0", True), "ernie-turbo": ("", None), "ideogram-4": ("", None),
     "birefnet": ("MIT", True), "flux2-klein-4b": ("Apache-2.0", True),
+    # free below MiniMax's revenue threshold, else their commercial terms (license Section IV)
+    "minimax-h3-image": ("MiniMax-H3-Image Community License", None),
 }
 
 
@@ -369,6 +371,10 @@ async def audio_job(body: Dict[str, Any] = Body(...)):
     if not audio.available(req.model, config.COMFYUI_MODELS_ROOT):
         raise HTTPException(status_code=400, detail=f"{req.model.label} is not installed on this machine "
                                                     f"(bundle '{req.model.bundle}')")
+    seconds = req.seconds or req.model.default_seconds     # only the model files matter for the room
+    check = (audio.sa3_workflow(req.prompt, seconds, req.seed, "check") if req.model.id == "sa3-sfx"
+             else audio.ace_workflow(req, seconds, "check"))
+    await comfy.check_room(check, req.model.label)           # no room -> 507 now, no job
     job = audio.JOBS.new(req.model.id)
     job.task = asyncio.create_task(_run_audio_job(job, req))
     return {"id": job.id, "status": job.status}
@@ -417,6 +423,126 @@ async def audio_job_file(job_id: str, name: str):
     if job.status != "done" or not job.file or name != os.path.basename(job.file):
         raise HTTPException(status_code=404, detail="no such file")
     return FileResponse(job.file, media_type="audio/mpeg", filename=name)
+
+
+# ------------------------------------------------------------------ video (image_serve/video.py)
+
+VIDEO_JOBS_PATH = "/v1/video/jobs"
+_SAGE: Optional[bool] = None
+
+
+def _sage_available() -> bool:
+    """SageAttention importable in ComfyUI's own Python (checked once per start) -- and KJNodes there for its node."""
+    global _SAGE
+    if _SAGE is None:
+        import subprocess
+        try:
+            ok = subprocess.run([config.COMFYUI_PYTHON, "-c", "import sageattention"], capture_output=True,
+                                timeout=60).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        _SAGE = ok and os.path.isdir(os.path.join(config.COMFYUI_DIR, "custom_nodes", "ComfyUI-KJNodes"))
+        logger.info(f"video: SageAttention {'available' if _SAGE else 'unavailable (sageattention or KJNodes missing)'}")
+    return _SAGE
+
+
+
+@app.get("/v1/video/models")
+async def video_models():
+    return {"object": "list", "data": video.listing(config.COMFYUI_MODELS_ROOT, sage=_sage_available())}
+
+
+async def _run_video_job(job: video.Job, req: video.VideoRequest) -> None:
+    try:
+        job.status, job.message, job.started = "running", "waiting for ComfyUI", time.time()
+        job.info = {"prompt": req.prompt, "seconds": req.seconds, "frames": req.frames, "fps": req.model.fps,
+                    "resolution": f"{req.width}x{req.height}", "seed": req.seed, "lora": req.lora,
+                    "lora_strength": req.lora_strength if req.lora else None, "audio": req.model.audio,
+                    "sage_attention": req.sage and _sage_available(), "steps": req.steps}
+        image_name = None
+        if req.image is not None:
+            await comfy._ensure_comfyui_running()
+            image_name = await comfy._upload_image_to_comfyui(req.image)
+        workflow = video.workflow(req, image_name, f"video/{job.id}", sage=_sage_available())
+        queued = await comfy.queue_workflow(workflow, req.model.label)
+        job.prompt_id = queued["task_id"]
+        job.message = "generating"
+        data = base64.b64decode(await comfy._await_comfyui_task(job.prompt_id))
+        os.makedirs(config.GENERATED_VIDEO_DIR, exist_ok=True)
+        path = os.path.join(config.GENERATED_VIDEO_DIR, f"{job.id}.mp4")
+        with open(path, "wb") as f:
+            f.write(data)
+        job.file, job.status, job.message, job.finished = path, "done", "", time.time()
+    except asyncio.CancelledError:
+        job.status, job.message = "cancelled", ""
+    except HTTPException as e:
+        cancelled = e.status_code == 409 or job.status == "cancelled"
+        job.status = "cancelled" if cancelled else "failed"
+        job.error = None if cancelled else str(e.detail)[:500]
+        job.message = ""
+    except Exception as e:   # never leave a job "running" forever
+        logger.exception("video job failed")
+        job.status, job.error, job.message = "failed", f"{type(e).__name__}: {str(e)[:300]}", ""
+
+
+@app.post(VIDEO_JOBS_PATH, status_code=202)
+async def video_job(body: Dict[str, Any] = Body(...)):
+    try:
+        req = video.parse_request(body, config.COMFYUI_MODELS_ROOT)
+    except video.VideoError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not video.available(req.model, config.COMFYUI_MODELS_ROOT):
+        raise HTTPException(status_code=400, detail=f"{req.model.label} is not installed on this machine")
+    check = video.workflow(req, "start.png" if req.image is not None else None, "check", sage=_sage_available())
+    await comfy.check_room(check, req.model.label)           # no room -> 507 now, no job
+    job = video.JOBS.new(req.model.id)
+    job.task = asyncio.create_task(_run_video_job(job, req))
+    return {"id": job.id, "status": job.status}
+
+
+def _video_job(job_id: str) -> video.Job:
+    job = video.JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such video job (finished jobs are kept for 6 hours)")
+    return job
+
+
+@app.get(VIDEO_JOBS_PATH + "/{job_id}")
+async def video_job_status(job_id: str):
+    job = _video_job(job_id)
+    progress = None
+    task = state.comfyui_tasks.get(job.prompt_id) if job.prompt_id else None
+    if job.status == "running" and task:
+        progress = round(min(max(float((task.get("progress") or {}).get("value") or 0) / 100, 0.0), 1.0), 3)
+    elif job.status == "done":
+        progress = 1.0
+    return video.view(job, progress, VIDEO_JOBS_PATH)
+
+
+@app.post(VIDEO_JOBS_PATH + "/{job_id}/cancel")
+async def video_job_cancel(job_id: str):
+    job = _video_job(job_id)
+    if job.status in ("queued", "running"):
+        job.status = "cancelled"
+        if job.prompt_id:
+            task = state.comfyui_tasks.get(job.prompt_id)
+            if task is not None and task.get("status") not in ("completed", "failed"):
+                task.update(status="failed", error="cancelled")
+            try:
+                await jobs.interrupt_comfy(f"http://127.0.0.1:{state.comfyui_port}", job.prompt_id)
+            except httpx.HTTPError:
+                pass
+        if job.task and not job.task.done():
+            job.task.cancel()
+    return video.view(job, None, VIDEO_JOBS_PATH)
+
+
+@app.get(VIDEO_JOBS_PATH + "/{job_id}/files/{name}")
+async def video_job_file(job_id: str, name: str):
+    job = _video_job(job_id)
+    if job.status != "done" or not job.file or name != os.path.basename(job.file):
+        raise HTTPException(status_code=404, detail="no such file")
+    return FileResponse(job.file, media_type="video/mp4", filename=name)
 
 
 @app.get("/plugin/status")

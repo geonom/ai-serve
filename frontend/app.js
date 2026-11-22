@@ -1557,6 +1557,80 @@ function renderAPIExplorer() {
             curl: `curl -X POST ${BASE_URL}/api/stt/diarize/nemotron/unload`
         },
         {
+            category: 'audio',
+            method: 'GET',
+            path: '/v1/audio/models?task=all',
+            desc: 'MUSIC & SOUND MODELS: With task=music|sound|all this lists the models of the audio plugins (image-serve: sound effects, music) instead of the speech catalog.',
+            responseSchema: '<ul><li><code>data</code> (array): <code>id</code>, <code>label</code>, <code>provider</code>, <code>tasks</code> (music / sound), <code>min_seconds</code> / <code>max_seconds</code> / <code>default_seconds</code>, <code>lyrics</code> (true: the model sings given lyrics).</li></ul>',
+            curl: `curl "${BASE_URL}/v1/audio/models?task=all"`
+        },
+        {
+            category: 'audio',
+            method: 'POST',
+            path: '/v1/audio/jobs',
+            desc: 'MUSIC & SOUND JOB: Starts music or a sound effect as a job (202). Poll GET /v1/audio/jobs/{id}, fetch the file from result.files[].url; cancel with POST /v1/audio/jobs/{id}/cancel. Same pattern as video jobs.',
+            payload: {
+                task: "sound",
+                prompt: "a heavy wooden door creaks open slowly",
+                seconds: 4
+            },
+            payloadSchema: '<ul><li><code>model</code> (string, optional): id from GET /v1/audio/models?task=all — or <code>task</code> ("music" | "sound", default music).</li><li><code>prompt</code> (string, required).</li><li><code>lyrics</code> (string, optional): for models with <code>lyrics: true</code>.</li><li><code>seconds</code>, <code>seed</code> (optional), plus the model\'s own extras.</li></ul>',
+            responseSchema: '<ul><li><code>id</code> (string, "&lt;plugin&gt;.&lt;job&gt;"), <code>status</code> ("queued"). Status: <code>{id, status: queued|running|done|failed|cancelled, progress, message, error, result: {files: [{name, type, url}]}}</code>.</li></ul>',
+            curl: `curl -X POST ${BASE_URL}/v1/audio/jobs -H "Content-Type: application/json" -d '{"task": "sound", "prompt": "a heavy wooden door creaks open slowly", "seconds": 4}'`
+        },
+        {
+            category: 'video',
+            method: 'GET',
+            path: '/v1/video/models',
+            desc: 'VIDEO MODELS: Every video plugin\'s models (image-serve: LTX-2.5 with sound, Wan 2.2, MiniMax H3), merged. Optional ?task=text_to_video|image_to_video|all.',
+            responseSchema: '<ul><li><code>data</code> (array): <code>id</code>, <code>label</code>, <code>description</code>, <code>provider</code>, <code>tasks</code>, <code>min_seconds</code> / <code>max_seconds</code> / <code>default_seconds</code>, <code>resolutions</code> (first = default), <code>fps</code>, <code>audio</code> (with sound), <code>sage_attention</code> (true/false = switchable + default, null = not offered), <code>loras</code>, <code>steps</code> {default, min, max, adjustable} or null, <code>prompt_guide</code> (null = no prompt writer), <code>license</code>, <code>default</code>, <code>available</code>.</li><li><code>errors</code> (array, optional): plugins that didn\'t answer.</li></ul>',
+            curl: `curl ${BASE_URL}/v1/video/models`
+        },
+        {
+            category: 'video',
+            method: 'POST',
+            path: '/v1/video/jobs',
+            desc: 'VIDEO JOB: Text → video or picture → video, as a job (202). Poll GET /v1/video/jobs/{id} until status is done, then fetch result.files[0].url (GET /v1/video/jobs/{id}/files/{name}). Cancel with POST /v1/video/jobs/{id}/cancel. Without model or task a start picture means image_to_video. Values outside the model\'s catalog row → 400; no GPU room → 507 at once (nothing queued, try later); problems during the run end the job as failed with the reason in error.',
+            payload: {
+                model: "ltx-2.5",
+                prompt: "A fox runs through fresh snow at dawn, its breath steaming",
+                seconds: 4
+            },
+            payloadSchema: '<ul><li><code>model</code> (string, optional): id from GET /v1/video/models — or <code>task</code> ("text_to_video" | "image_to_video").</li><li><code>prompt</code> (string, required).</li><li><code>image_base64</code> (string, optional): start picture (required for picture → video models).</li><li><code>seconds</code>, <code>resolution</code> ("1024x576"), <code>seed</code>, <code>negative_prompt</code> (optional).</li><li><code>lora</code> (one of the row\'s <code>loras</code>) + <code>lora_strength</code> (optional).</li><li><code>sage_attention</code> (bool, where the row offers it), <code>steps</code> (int within the row\'s min..max).</li></ul>',
+            responseSchema: '<ul><li><code>id</code> (string, "&lt;plugin&gt;.&lt;job&gt;"), <code>status</code> ("queued"), <code>model</code>.</li><li>Status (GET /v1/video/jobs/{id}): <code>{id, status: queued|running|done|failed|cancelled, progress: 0..1|null, message, error, result: {files: [{name, type: "video/mp4", url}]}}</code>.</li></ul>',
+            curl: `curl -X POST ${BASE_URL}/v1/video/jobs -H "Content-Type: application/json" -d '{"model": "ltx-2.5", "prompt": "A fox runs through fresh snow at dawn, its breath steaming", "seconds": 4}'`
+        },
+        {
+            category: 'video',
+            method: 'GET',
+            path: '/v1/video/jobs/{id}',
+            desc: 'VIDEO JOB STATUS: queued / running / done / failed / cancelled with progress; when done result.files[] names the video. The file itself: GET /v1/video/jobs/{id}/files/{name}.',
+            responseSchema: '<ul><li><code>id</code>, <code>status</code>, <code>progress</code> (0..1 or null), <code>message</code>, <code>error</code>, <code>result</code> ({files: [{name, type, url}]} once done).</li></ul>',
+            curl: `curl ${BASE_URL}/v1/video/jobs/image-serve.<job-id>`
+        },
+        {
+            category: 'video',
+            method: 'GET',
+            path: '/v1/video/prompt/options',
+            desc: 'VIDEO PROMPT OPTIONS: The camera and look settings the prompt writer knows (fixed choices, for menus) plus the free-text fields dialogue and sound.',
+            responseSchema: '<ul><li><code>settings</code>: shot, camera_motion, viewpoint, lens, lighting, style, pace — each {label, choices}.</li><li><code>free_text</code>: dialogue, sound — {label, max_length}.</li><li><code>guides</code>: known prompt guides.</li></ul>',
+            curl: `curl ${BASE_URL}/v1/video/prompt/options`
+        },
+        {
+            category: 'video',
+            method: 'POST',
+            path: '/v1/video/prompt',
+            desc: 'VIDEO PROMPT WRITER: A chat model turns a short idea (any language) into a detailed prompt following the video model\'s own prompt guide (LTX, Wan, MiniMax H3 — H3 answers its three fields separated by blank lines). Only a proposal — show it, edit it, then send it to POST /v1/video/jobs. With image_base64 it describes from the start picture (retried without it if the chat model can\'t see). dialogue/sound only for models with sound.',
+            payload: {
+                model: "ltx-2.5",
+                prompt: "Ein Fuchs läuft durch Neuschnee",
+                settings: { shot: "wide shot", camera_motion: "tracking shot following the subject", lighting: "golden hour", sound: "wind, crunching snow" }
+            },
+            payloadSchema: '<ul><li><code>prompt</code> (string, required, ≤ 2000 chars): the idea.</li><li><code>model</code> (string, optional): video model (default: the one for text → video, or picture → video with a start picture).</li><li><code>image_base64</code> (string, optional): start picture.</li><li><code>settings</code> (object, optional): keys from GET /v1/video/prompt/options; omitted = the chat model chooses.</li><li><code>llm</code> (string, optional): chat model (default as for chat).</li><li><code>seed</code> (int, optional).</li><li><code>seconds</code> (number, optional): planned length, default the model\'s (H3\'s cut times stay inside it).</li></ul>',
+            responseSchema: '<ul><li><code>prompt</code> (the proposal), <code>model</code>, <code>task</code>, <code>guide</code>, <code>llm</code>, <code>used_image</code>, <code>finish_reason</code>, <code>runtime_seconds</code>.</li></ul>',
+            curl: `curl -X POST ${BASE_URL}/v1/video/prompt -H "Content-Type: application/json" -d '{"model": "ltx-2.5", "prompt": "Ein Fuchs läuft durch Neuschnee", "settings": {"shot": "wide shot", "lighting": "golden hour"}}'`
+        },
+        {
             category: 'document',
             method: 'POST',
             path: '/api/ocr',
@@ -1703,7 +1777,8 @@ function renderAPIExplorer() {
     const categories = [
         { key: 'text', title: '🔤 Text & LLM Gateway Endpoints', desc: 'Models, Chat Completions, GPU status, Does It Work? check' },
         { key: 'image', title: '🖼️ Image Generation & Edit Endpoints', desc: 'ComfyUI image generation, editing, style transfer, task status' },
-        { key: 'audio', title: '🎙️ Speech & Audio Endpoints', desc: 'OmniVoice TTS, WhisperX STT, local voice presets' },
+        { key: 'audio', title: '🎙️ Speech & Audio Endpoints', desc: 'TTS, WhisperX STT, local voice presets, music and sound-effect jobs' },
+        { key: 'video', title: '🎬 Video Endpoints', desc: 'Text → video and picture → video as jobs (LTX-2.5, Wan 2.2, MiniMax H3), prompt writer' },
         { key: 'document', title: '📄 OCR / Document Extraction Endpoints', desc: 'NuExtract3 structured extraction, image-to-Markdown, document-type detection, batch processing' },
         { key: 'training', title: '🧪 Remote Fine-Tuning Endpoints', desc: 'DPO training + merge/GGUF export jobs, gated by a separate TRAINING_SERVICE_TOKEN' }
     ];

@@ -132,6 +132,42 @@ def gguf_has_bundled_mtp(path: str) -> bool:
     return False
 
 
+def gguf_tensor_sizes(path: str) -> Optional[list]:
+    """[(tensor name, bytes)] from a GGUF's tensor table, in file order -- what -ngl / --n-cpu-moe leave in RAM is
+    counted from this (backend/gpu_share.py). Sizes come from the data offsets (padded to `general.alignment`,
+    default 32), so no quant type's block size has to be known. Reads the header only; None if unreadable."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(4) != b"GGUF":
+                return None
+            f.read(4)  # version
+            n_tensors = struct.unpack("<Q", f.read(8))[0]
+            n_kv = struct.unpack("<Q", f.read(8))[0]
+            alignment = 32
+            for _ in range(n_kv):
+                key = _read_gguf_string(f)
+                vtype = struct.unpack("<I", f.read(4))[0]
+                if key == "general.alignment" and vtype in _GGUF_INT_FMT:
+                    alignment = int(_read_gguf_value(f, vtype)) or 32
+                else:
+                    _skip_gguf_value(f, vtype)
+            entries = []
+            for _ in range(n_tensors):
+                name = _read_gguf_string(f)
+                n_dims = struct.unpack("<I", f.read(4))[0]
+                f.seek(8 * n_dims + 4, 1)  # dims, type
+                entries.append((name, struct.unpack("<Q", f.read(8))[0]))
+            data_start = -(-f.tell() // alignment) * alignment
+            data_len = os.path.getsize(path) - data_start
+    except Exception:
+        return None
+    if not entries:
+        return None
+    ends = sorted(off for _, off in entries)[1:] + [data_len]
+    next_off = dict(zip(sorted(off for _, off in entries), ends))
+    return [(name, next_off[off] - off) for name, off in entries]
+
+
 def gguf_has_bundled_vision(path: str) -> bool:
     """Detect a vision encoder bundled directly into a model's own GGUF (as opposed to a
     separate mmproj sidecar file), by checking the metadata for any '<arch>.vision.*' or

@@ -11,9 +11,61 @@ Do NOT bump for UI-only, ComfyUI, documentation, or other changes that
 don't touch the llama.cpp/model-serving path.
 """
 
-BACKEND_VERSION = 15
+BACKEND_VERSION = 21
 
 VERSION_LOG = [
+    {
+        "version": 21,
+        "date": "2026-11-03",
+        "change": (
+            "Realtime: the conversation limit comes from llama-server's /slots (an adopted instance has no recorded "
+            "count); a sentence whose speech fails is tried once more and the error names the reason; /tts gives up "
+            "after 30 s without bytes; nothing from <tool_call> on is spoken. Chats with any llama.cpp model (and Strata) "
+            "default to enable_thinking=false when the call says nothing (was: Qwen and Strata only)."
+        ),
+    },
+    {
+        "version": 20,
+        "date": "2026-11-03",
+        "change": (
+            "Speech models load with 3 slots and take at most 2 realtime conversations (one slot stays free for /tts); "
+            "a further conversation is refused at once instead of leaving spoken answers waiting for a slot."
+        ),
+    },
+    {
+        "version": 19,
+        "date": "2026-11-03",
+        "change": (
+            "Speech models load with 2 slots; /v1/realtime with session.audio.output.language (not English) speaks "
+            "each sentence with the model's own TTS in that language; /v1/audio/speech with a speech model's file "
+            "name uses its /tts (language, voice female|male, stream)."
+        ),
+    },
+    {
+        "version": 18,
+        "date": "2026-11-03",
+        "change": (
+            "Speech-to-speech models (LFM3-Omni/Audio, recognised by their TTS template) load with --reasoning off; "
+            "WebSocket /v1/realtime passes a voice conversation through to the loaded llama-server."
+        ),
+    },
+    {
+        "version": 17,
+        "date": "2026-11-03",
+        "change": (
+            "Chats with a Qwen model or Strata get chat_template_kwargs.enable_thinking=false when the call says "
+            "nothing about thinking (thinking: true or an explicit enable_thinking still wins)."
+        ),
+    },
+    {
+        "version": 16,
+        "date": "2026-11-02",
+        "change": (
+            "/api/start takes n_cpu_moe (llama.cpp --n-cpu-moe: routed MoE experts of the first N layers in RAM), and "
+            "the GPU manager's reservation for it and for a partial n_gpu_layers counts only the tensors that land in "
+            "VRAM (from the GGUF's tensor table) -- an A3B-style MoE larger than the card can be started now."
+        ),
+    },
     {
         "version": 15,
         "date": "2026-11-01",

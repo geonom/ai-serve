@@ -38,6 +38,8 @@ class FakeGateway(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         HITS.append(self.path)
+        if self.path == "/v1/video/jobs":
+            return self._json({"id": "comfyui.vid-1", "status": "queued", "model": "ltx-2.5"}, status=202)
         if self.path == "/v1/images/generations":
             n = json.loads(body).get("n", 1)
             n = n if isinstance(n, int) else 1
@@ -119,6 +121,16 @@ class TestQuotaServer(unittest.TestCase):
         u = self.req("GET", "/sw/quota", "anna")[1]["usage"]
         self.assertEqual(u["images"], 0)
         self.assertGreaterEqual(u["gpu_seconds"], 0)
+
+    def test_a_video_job_is_charged_its_estimated_gpu_time(self):
+        # 2026-11-13: POST /v1/video/jobs answers at once (202); the GPU time comes later -- charged per video
+        from playground.server import VIDEO_JOB_ESTIMATE_S
+        self.assertEqual(self.req("POST", "/v1/video/jobs", "anna", {"prompt": "x"})[0], 202)
+        u = self.req("GET", "/sw/quota", "anna")[1]["usage"]
+        self.assertGreaterEqual(u["gpu_seconds"], VIDEO_JOB_ESTIMATE_S)
+        self.assertEqual(u["images"], 0)
+        self.assertEqual(self.req("GET", "/v1/video/jobs/comfyui.vid-1", "anna")[0], 200)   # polling costs nothing
+        self.assertEqual(self.req("GET", "/sw/quota", "anna")[1]["usage"]["gpu_seconds"], u["gpu_seconds"])
 
     def test_comparison_checks_the_image_budget_up_front(self):
         st, body = self.req("POST", "/sw/compare", "anna", {"prompt": "x", "models": ["z"], "steps": [4, 8, 12, 16]})

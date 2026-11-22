@@ -24,6 +24,23 @@ FEATURES = {
     "openai": {"chat": True, "texts": True, "images": False, "speech": False, "documents": False},
     "down": {"chat": False, "texts": False, "images": False, "speech": False, "documents": False},
 }
+def upstream_kind(previous, catalog_status: int, models_status) -> str:
+    """What the upstream is, from the status of GET /v1/llm/models (ai-serve's catalog) and, if asked, of GET
+    /v1/models; 0 = no answer in time. A known ai-serve that doesn't answer in time is still ai-serve -- slow is not
+    a different server (2026-11-22: after a restart and while the backend stalled, the Playground said "gateway not
+    running" or switched images and speech off)."""
+    if catalog_status == 200:
+        return "ai-serve"
+    if catalog_status == 0 and previous == "ai-serve":
+        return "ai-serve"
+    return "openai" if models_status == 200 else "down"
+
+
+def cache_seconds(catalog_status: int) -> int:
+    """A sure answer is kept 30 s; a guess after no answer only 5 s."""
+    return 30 if catalog_status != 0 else 5
+
+
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+@-]{0,159}$")
 
 

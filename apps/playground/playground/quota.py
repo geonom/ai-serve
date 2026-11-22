@@ -57,12 +57,16 @@ _KINDS = [
     ("POST", re.compile(r"^/api/plugins/[^/]+/start$"), "owner_only"),     # starting a plugin (its first start may build it)
     ("POST", re.compile(r"^/api/(tts/generate|stt/transcribe)$"), "speech"),
     ("POST", re.compile(r"^/api/ocr$"), "ocr"),
+    ("GET", re.compile(r"^/v1/realtime$"), "speech"),
+    ("POST", re.compile(r"^/v1/audio/speech$"), "speech"),     # a voice conversation, charged for how long it lasts
     ("POST", re.compile(r"^/v1/(embeddings|rerank)$"), "text"),   # "Texte vergleichen": loads a model too
+    ("POST", re.compile(r"^/v1/video/jobs$"), "video"),           # a video job: answers at once, GPU time estimated
+    ("POST", re.compile(r"^/v1/video/prompt$"), "chat"),          # the video prompt writer asks a chat model
 ]
 
 
 def classify(method: str, path: str) -> Optional[str]:
-    """chat | image | speech | ocr | text | owner_only for GPU-bound calls, None for everything else."""
+    """chat | image | speech | ocr | text | video | owner_only for GPU-bound calls, None for everything else."""
     path = path.split("?", 1)[0]
     for m, pattern, kind in _KINDS:
         if method == m and pattern.match(path):

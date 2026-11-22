@@ -17,6 +17,7 @@ import httpx
 import psutil
 from fastapi import HTTPException
 from backend.gpu_ids import from_visible_devices, visible_devices
+from backend.header_cache import HeaderCache
 from backend.procs import processes
 
 from backend.config import LLAMA_SERVER_BIN, LOGS_DIR, MODEL_DIRS, DEFAULT_PARALLEL, DEFAULT_CHAT_MODEL, DEFAULT_CTX_SIZE
@@ -380,34 +381,25 @@ def find_mmproj_path(model_path: str, all_gguf_paths: Optional[List[str]] = None
     return best_match
 
 
-_bundle_flag_cache: Dict[str, tuple] = {}  # path -> ((mtime, size), (mtp_bundled, vision_bundled))
+def _header_cache_file() -> str:
+    from backend.config import _PROJECT_DIR
+    return os.environ.get("MODEL_HEADER_CACHE_FILE") or os.path.join(_PROJECT_DIR, "model_header_cache.json")
+
+
+# What each model's header says, kept on disk by path + size + mtime (backend/header_cache.py): a restart starts
+# with every known model answered instead of reading ~100 headers again (4-15 s). HEADER_CACHE.save() after lists.
+HEADER_CACHE = HeaderCache(_header_cache_file())
 
 
 def get_bundled_flags(path: str) -> tuple:
     """Cached (mtp_bundled, vision_bundled) for a model — both require a full header
     scan (skipping past whatever the tokenizer vocab array turns out to be) which,
     across a few dozen models on every /api/models call, was the entire reason that
-    endpoint took 15s+. Cache key is (mtime, size) so edited/replaced files are
-    re-scanned automatically but unchanged ones are free on every subsequent call.
+    endpoint took 15s+. Kept in HEADER_CACHE: edited/replaced files are re-scanned
+    automatically, unchanged ones are free -- also after a restart.
     """
-    try:
-        st = os.stat(path)
-        cache_key = (st.st_mtime, st.st_size)
-    except OSError:
-        cache_key = None
-
-    if cache_key is not None:
-        cached = _bundle_flag_cache.get(path)
-        if cached and cached[0] == cache_key:
-            return cached[1]
-
-    result = (gguf_has_bundled_mtp(path), gguf_has_bundled_vision(path))
-    if cache_key is not None:
-        _bundle_flag_cache[path] = (cache_key, result)
-    return result
-
-
-_traits_cache: Dict[str, tuple] = {}  # path -> ((mtime, size), traits)
+    flags = HEADER_CACHE.get(path, "bundled", lambda: [gguf_has_bundled_mtp(path), gguf_has_bundled_vision(path)])
+    return tuple(flags)
 
 
 DECISION_BATCH = 8192
@@ -415,24 +407,26 @@ DECISION_BATCH = 8192
 
 def get_model_traits(path: str) -> Optional[Dict[str, Any]]:
     """Cached kind (chat/embedding/rerank/base), architecture and thinking support from the GGUF header
-    (backend/llm_catalog.py), same (mtime, size) cache key as get_bundled_flags. None if unreadable."""
+    (backend/llm_catalog.py), kept in HEADER_CACHE like get_bundled_flags. None if unreadable."""
     from backend.llm_catalog import traits
     from backend.response_processing import read_gguf_header
-    try:
-        st = os.stat(path)
-        key = (st.st_mtime, st.st_size)
-    except OSError:
+    if not os.path.exists(path):
         return None
-    cached = _traits_cache.get(path)
-    if cached and cached[0] == key:
-        return cached[1]
-    try:
-        result = traits(read_gguf_header(path, full_keys=("tokenizer.chat_template",))["metadata"],
-                        os.path.basename(path))
-    except (OSError, ValueError, struct.error):
-        result = None
-    _traits_cache[path] = (key, result)
+
+    def read():
+        try:
+            return traits(read_gguf_header(path, full_keys=("tokenizer.chat_template",))["metadata"],
+                          os.path.basename(path))
+        except (OSError, ValueError, struct.error):
+            return None
+    result = HEADER_CACHE.get(path, "traits", read)
     return result
+
+
+def speech_flags(model_traits: Optional[Dict[str, Any]]) -> List[str]:
+    """A speech-to-speech model (LFM3-Omni) isn't trained to reason: llama.cpp's server README says to run it with
+    --reasoning off so its turns open with an empty think block (2026-11-03)."""
+    return ["--reasoning", "off"] if (model_traits or {}).get("speech") else []
 
 
 _context_length_cache: Dict[str, tuple] = {}  # path -> ((mtime, size), context_length)
@@ -1381,6 +1375,7 @@ async def _load_locked(
     # 8192 keeps the full 4096 tokens per picture (LiquidAI's d1 model card, 2026-10-30)
     if (get_model_traits(model_path) or {}).get("kind") == "decision":
         cmd.extend(["-b", str(DECISION_BATCH), "-ub", str(DECISION_BATCH)])
+    cmd.extend(speech_flags(get_model_traits(model_path)))
 
     try:
         log_file_path = os.path.join(LOGS_DIR, f"llama-server-{port}.log")

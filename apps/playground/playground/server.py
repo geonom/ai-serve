@@ -31,7 +31,7 @@ from playground import compare as compare_mod
 from playground import quota
 from playground.gallery import Gallery, GalleryError, decode_image
 from playground.llama_serve_identity import Unauthenticated, identify as sdk_identify
-from playground.policy import MAX_BODY_BYTES, Refused, forward_headers, route
+from playground.policy import MAX_BODY_BYTES, Refused, forward_headers, route, wants_websocket, websocket_headers
 
 
 class QuickHTTPServer(ThreadingHTTPServer):
@@ -47,6 +47,8 @@ APP_ID = "playground"   # was "spielwiese" until 2026-10-24 (English names, like
 MAX_SW_BODY = 40 * 1024 * 1024   # one image as base64 + metadata
 _ID = r"([0-9a-f]{25})"
 COMFY_ASYNC_ESTIMATE_S = 20   # ComfyUI generate/edit return at once; the GPU time comes later -- charged per image
+VIDEO_JOB_ESTIMATE_S = 120    # a video job answers 202 at once; one clip takes ~1-4 min of GPU (measured 2026-11-13)
+TUNNEL_IDLE_S = 600   # a voice conversation silent in both directions this long is closed
 UPSTREAM_TIMEOUT = 1800  # Strata and big image jobs are slow
 _HOP = frozenset({"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
                   "proxy-connection", "content-length", "server", "date"})
@@ -91,8 +93,11 @@ class Handler(BaseHTTPRequestHandler):
     def _proxy(self, person) -> None:
         try:
             target = route(self.command, self.path)
+            websocket = wants_websocket(self.path, dict(self.headers.items()))
         except Refused as e:
             return self._error(e.status, str(e))
+        if websocket:
+            return self._tunnel(target, person)
         if self._catalog_without_ai_serve(urlsplit(self.path).path):
             return
         length = int(self.headers.get("Content-Length") or 0)
@@ -120,7 +125,52 @@ class Handler(BaseHTTPRequestHandler):
                 seconds = time.time() - started
                 if ok and kind == "image" and urlsplit(self.path).path.startswith("/api/comfyui/"):
                     seconds += COMFY_ASYNC_ESTIMATE_S * images
+                if ok and kind == "video":
+                    seconds += VIDEO_JOB_ESTIMATE_S
                 self.ledger.end(ticket, seconds=seconds, images=images if ok else 0)
+
+    def _tunnel(self, target: str, person) -> None:
+        """A WebSocket (only /v1/realtime, policy.wants_websocket): the upgrade goes to the gateway with the usual
+        header rules, then bytes are copied both ways until one side closes; the time counts as speech."""
+        import select
+        import socket
+        try:
+            ticket = self.ledger.begin(person.sub, self._limits(person), "speech")
+        except quota.QuotaExceeded as e:
+            return self._error(429, str(e))
+        started = time.time()
+        try:
+            try:
+                up = socket.create_connection(self.gateway, timeout=10)
+            except OSError as e:
+                return self._error(502, f"ai-serve-ui gateway not reachable: {e}")
+            headers = self._upstream_headers(websocket_headers(dict(self.headers.items()),
+                                                               peer=self.client_address[0]))
+            headers["Host"] = f"{self.gateway[0]}:{self.gateway[1]}"
+            head = f"GET {target} HTTP/1.1\r\n" + "".join(f"{k}: {v}\r\n" for k, v in headers.items()) + "\r\n"
+            up.sendall(head.encode("latin-1"))
+            up.settimeout(None)
+            client = self.connection
+            client.settimeout(None)
+            self.wfile.flush()
+            self.close_connection = True
+            pairs = {up: client, client: up}
+            try:
+                while True:
+                    ready, _, _ = select.select(list(pairs), [], [], TUNNEL_IDLE_S)
+                    if not ready:
+                        break           # nothing in either direction for too long
+                    for sock in ready:
+                        data = sock.recv(65536)
+                        if not data:
+                            return
+                        pairs[sock].sendall(data)
+            except OSError:
+                pass
+            finally:
+                up.close()
+        finally:
+            self.ledger.end(ticket, seconds=time.time() - started, images=0)
 
     def _images_requested(self, body: Optional[bytes]) -> int:
         """Images a call asks for -- at least 1; an unreadable n counts as 1, a big one as asked."""
@@ -133,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
         return n if type(n) is int and 1 <= n <= 100 else 1
 
     upstream_key: str = ""          # Bearer key for a standard server that wants one (LM Studio, a remote vLLM ...)
-    _backend: dict = {}             # {"kind", "at"} -- what the upstream is, cached briefly
+    _backend: dict = {}             # {"kind", "until"} -- what the upstream is, cached briefly (backends.cache_seconds)
 
     def _upstream_headers(self, headers: dict) -> dict:
         if self.upstream_key:
@@ -158,17 +208,17 @@ class Handler(BaseHTTPRequestHandler):
             conn.close()
 
     def _backend_kind(self) -> str:
-        """ai-serve (has its catalogs) | openai (a standard server: /v1/models only) | down. Cached 30 s."""
+        """ai-serve (has its catalogs) | openai (a standard server: /v1/models only) | down (backends.upstream_kind)."""
         cached = type(self)._backend
-        if cached and time.time() - cached["at"] < 30:
+        if cached and time.time() < cached["until"]:
             return cached["kind"]
-        status, _ = self._upstream_get("/v1/llm/models")
-        if status == 200:
-            kind = "ai-serve"
-        else:
-            status, _ = self._upstream_get("/v1/models")
-            kind = "openai" if status == 200 else "down"
-        type(self)._backend = {"kind": kind, "at": time.time()}
+        previous = cached.get("kind") if cached else None
+        status, _ = self._upstream_get("/v1/llm/models", timeout=15.0)
+        models_status = None
+        if backends.upstream_kind(previous, status, None) != "ai-serve":
+            models_status, _ = self._upstream_get("/v1/models", timeout=15.0)
+        kind = backends.upstream_kind(previous, status, models_status)
+        type(self)._backend = {"kind": kind, "until": time.time() + backends.cache_seconds(status)}
         return kind
 
     def _catalog_without_ai_serve(self, path: str) -> bool:
@@ -303,6 +353,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json_out(200, {"name": person.name or "", "is_owner": bool(person.is_owner)})
             if path == "/sw/quota" and m == "GET":
                 return self._json_out(200, self._quota_view(person))
+            if path == "/sw/client-error" and m == "POST":
+                # a script error in a browser, so it can be traced here (2026-11-22: sending did nothing on the
+                # owner's Mac and the reason was only in that browser's console); shortened, never stored
+                length = int(self.headers.get("Content-Length") or 0)
+                if self.headers.get("Transfer-Encoding") or length > 20000:
+                    return self._error(413, "too large")
+                try:
+                    body = json.loads(self.rfile.read(length) or b"null")
+                except ValueError:
+                    body = None
+                if not isinstance(body, dict):
+                    return self._error(400, "expected an object")
+                parts = [str(body.get(k, ""))[:n] for k, n in (("message", 500), ("where", 200), ("page", 40),
+                                                               ("stack", 1200))]
+                log.warning("browser error (%s): %s at %s [%s]\n%s", sub or "?", *parts)
+                return self._send(204, b"")
             if path == "/sw/admin/quotas":
                 if not person.is_owner:
                     return self._error(403, "for the owner only")

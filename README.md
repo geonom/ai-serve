@@ -3,10 +3,10 @@
 [![tests](https://github.com/geonom/ai-serve/actions/workflows/tests.yml/badge.svg)](https://github.com/geonom/ai-serve/actions/workflows/tests.yml)
 
 A gateway for local AI on your own machine: language models (llama.cpp), text-to-speech, speech-to-text, image
-generation and document reading – behind **one** OpenAI-compatible API (`/v1/...`) plus a dashboard. Installed
-models are loaded when a request needs them (the plugin serving them is started too) and unloaded after a while unused
-or when the memory is needed for something else. Apps such as the Playground are started by you, or with ai-serve
-(Autostart).
+generation, video (text or picture → video), sound effects and document reading – behind **one** OpenAI-compatible
+API (`/v1/...`) plus a dashboard. Installed models are loaded when a request needs them (the plugin serving them is
+started too) and unloaded after a while unused or when the memory is needed for something else. Apps such as the
+Playground are started by you, or with ai-serve (Autostart).
 
 > **Alpha.** Developed and tested on Linux with NVIDIA GPUs; first runs on one Apple Silicon Mac. AMD, Vulkan-only and
 > CPU-only machines are meant to work (the installer picks the matching llama.cpp build) but haven't been tried.
@@ -110,6 +110,7 @@ What has actually been run, as of this release (one NVIDIA Linux machine, one Ap
 | Chatterbox (TTS), Whisper (STT) offers in `./ai-serve setup` | engines run here; the offers themselves not run on a clean machine | not tried (Chatterbox uses MLX there) | – |
 | Iris (sd-serve) | ✅ clean setup, Vulkan build | memory check fixed after a refusal; an image not confirmed | – |
 | ComfyUI (image-serve): Z-Image, Qwen-Image-Edit, style transfer, MOSS | ✅ clean setup | not tried (int8/fp8 weights are made for CUDA; may be slow or fail) | – |
+| Video (image-serve): LTX-2.5 text/picture → video with sound, Wan 2.2 picture → video, prompt writer | ✅ through the gateway (`/v1/video/jobs`, Playground); not on a clean setup | not tried | – |
 | Faces in photos (vision-serve: YuNet + AuraFace) | ✅ through the gateway, CUDA and CPU | not tried (CPU should work) | – |
 | Downloads from the Playground / dashboard | ✅ ComfyUI model bundle; TTS/STT/Iris items unit-tested only | – | – |
 | More machines (Tailscale) | ✅ | ✅ (as a device: Metal llama.cpp, model sent, chat through the coordinator) | Raspberry Pi, Android/Termux, WireGuard etc.: not tried |

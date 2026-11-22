@@ -110,3 +110,113 @@ test("if the login can't be renewed, the request fails with its own error (no bl
     await assert.rejects(ds.fetch('/api/x'), /NetworkError/);
     assert.equal(calls, 1);
 });
+
+// ---- 2026-11-22: a login that broke at Nextcloud's host (429 Too Many Requests) was made worse by us: every tab
+// renewed at once, a failed renewal was tried again on the next background poll, and the door was asked once a
+// second for 30 minutes. Now: nothing is checked unless a request fails; one renewal for all tabs; a failed
+// silent renewal waits 5 minutes; background reads never wait for the person; the door is only asked while the
+// login window is open.
+
+function shared() {
+    let held = Promise.resolve();
+    const data = new Map();
+    const listeners = [];
+    return {
+        lock: (name, fn) => { const run = held.then(fn); held = run.catch(() => {}); return run; },
+        store: { get: (k) => data.get(k) ?? null, set: (k, v) => data.set(k, v) },
+        signal: { send: (m) => listeners.forEach((l) => l(m)), listen: (l) => listeners.push(l) },
+    };
+}
+
+function tab(world, common, extra = {}) {
+    const state = { frames: 0, popups: 0, banner: null, probes: 0, sent: 0 };
+    const ds = createDoorSession({
+        fetch: async (input, init = {}) => {
+            if (init.redirect === 'manual') { state.probes += 1; return world.session ? ok() : redirected(); }
+            state.sent += 1;
+            return world.session ? ok(typeof input === 'string' ? input : input.url) : redirected();
+        },
+        origin: ORIGIN, sleep: () => new Promise((r) => setTimeout(r, 1)), now: () => world.now,
+        frame: () => { state.frames += 1; world.silentAttempts = (world.silentAttempts || 0) + 1;
+                       if (world.silentWorks) world.session = true; return () => {}; },
+        popup: () => { state.popups += 1; const w = { closed: false, close() { w.closed = true; } };
+                       world.window = w; return w; },
+        banner: (onClick) => { state.banner = onClick; return () => { state.banner = 'closed'; }; },
+        ...common, ...extra,
+    });
+    return { ds, state };
+}
+
+test('two tabs share one renewal -- the second one finds the session back and asks nobody', async () => {
+    const world = { session: false, silentWorks: true, now: 0 };
+    const common = shared();
+    const a = tab(world, common), b = tab(world, common);
+    await Promise.all([a.ds.fetch('/a', { method: 'POST' }), b.ds.fetch('/b', { method: 'POST' })]);
+    assert.equal(world.silentAttempts, 1);
+});
+
+test('a failed silent renewal is not tried again for 5 minutes, in no tab', async () => {
+    const world = { session: false, silentWorks: false, now: 0 };
+    const common = shared();
+    const a = tab(world, common), b = tab(world, common);
+    await a.ds.fetch('/poll');                          // a background read: fails, banner shown
+    assert.equal(world.silentAttempts, 1);
+    world.now = 60_000;
+    await b.ds.fetch('/poll');                          // another tab a minute later: no new Nextcloud login
+    assert.equal(world.silentAttempts, 1);
+    assert.equal(typeof b.state.banner, 'function');
+    const c = tab(world, common);
+    world.now = 5 * 60_000 + 1;
+    await c.ds.fetch('/poll');                          // after 5 minutes one quiet try again
+    assert.equal(world.silentAttempts, 2);
+});
+
+test('while signed out, background reads fail at once and ask nothing more', async () => {
+    const world = { session: false, silentWorks: false, now: 0 };
+    const t = tab(world, shared());
+    const first = await t.ds.fetch('/api/status');
+    assert.equal(first.type, 'opaqueredirect');
+    const probes = t.state.probes;
+    for (let i = 0; i < 20; i++) await t.ds.fetch('/api/status');   // the page keeps polling
+    assert.equal(world.silentAttempts, 1);
+    assert.ok(t.state.probes - probes <= 20, 'at most the one cheap check per failed request');
+    assert.equal(t.state.popups, 0);
+});
+
+test('a send waits for the person, and the door is only asked while the login window is open', async () => {
+    const world = { session: false, silentWorks: false, now: 0 };
+    const t = tab(world, shared());
+    const pending = t.ds.fetch('/api/save', { method: 'POST', body: 'Kapitel 3' });
+    for (let i = 0; i < 50 && typeof t.state.banner !== 'function'; i++) await new Promise((r) => setTimeout(r, 1));
+    await new Promise((r) => setTimeout(r, 20));
+    const before = t.state.probes;
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(t.state.probes, before, 'no checks while nobody is logging in');
+    t.state.banner();                                   // "Anmelden"
+    world.window.closed = true;                         // closed without logging in
+    await new Promise((r) => setTimeout(r, 30));
+    const afterClose = t.state.probes;
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(t.state.probes, afterClose, 'checks stop when the window is closed');
+    t.state.banner();                                   // second try, this time with a login
+    world.session = true;
+    const r = await pending;
+    assert.equal(r.body, '/api/save');
+    assert.equal(t.state.banner, 'closed');
+    assert.equal(world.window.closed, true);
+});
+
+test("a login in another tab releases this tab's waiting send", async () => {
+    const world = { session: false, silentWorks: false, now: 0 };
+    const common = shared();
+    const a = tab(world, common), b = tab(world, common);
+    const pending = b.ds.fetch('/api/save', { method: 'POST' });
+    for (let i = 0; i < 50 && typeof b.state.banner !== 'function'; i++) await new Promise((r) => setTimeout(r, 1));
+    a.ds.fetch('/x', { method: 'POST' });
+    for (let i = 0; i < 50 && typeof a.state.banner !== 'function'; i++) await new Promise((r) => setTimeout(r, 1));
+    a.state.banner();
+    world.session = true;                               // logged in through tab a's window
+    const r = await pending;
+    assert.equal(r.body, '/api/save');
+    assert.equal(b.state.popups, 0);
+});

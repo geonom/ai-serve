@@ -428,14 +428,12 @@ curl -so out.mp4 localhost:8030/v1/video/jobs/image-serve.ab12…/files/<name>
   {label, choices}}, "free_text": {dialogue, sound: {label, max_length}}, "guides"}` -- for building menus.
 * **POST** `/v1/video/prompt` body `{"prompt": "<idea, any language, ≤ 2000 chars>", "model"?, "image_base64"?,
   "settings"?: {<key>: <one of its choices>, "dialogue"?: "...", "sound"?: "..."}, "llm"?: "<chat model>", "seed"?,
-  "seconds"?}` (`seconds`: the planned length, default the model's; MiniMax H3's cut times must fall inside it)
+  "seconds"?}` (`seconds`: the planned length, default the model's; guides that time their cuts keep them inside it)
   → `{prompt, model, task, guide, llm, used_image, finish_reason, runtime_seconds}`. Only a **proposal**: show it,
   let the person edit it, then send it as `prompt` to `/v1/video/jobs`. Omitted settings = the chat model chooses;
   `dialogue` / `sound` are refused (400) for models without sound; a model without `prompt_guide` → 400. Guides:
-  `ltx-2` and `wan-2.2` answer one paragraph; `minimax-h3` (MiniMax's own writing guide) answers its three fields
-  `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music` separated by blank lines (with a
-  start picture, MiniMax's first-frame line on top) -- send it as it is. With a
-  start picture the description begins from it (if the chat model can't see, it is retried without the picture:
+  `ltx-2` and `wan-2.2` answer one paragraph; a guide with several fields answers them separated by blank lines --
+  send it as it is (`GET /v1/video/prompt/options` → `guides` lists what this server has). With a start picture the description begins from it (if the chat model can't see, it is retried without the picture:
   `used_image: false`). Thinking is off; `llm` defaults to the chat default.
 
 **Music and sound effects**

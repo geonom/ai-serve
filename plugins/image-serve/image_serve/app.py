@@ -39,9 +39,9 @@ LICENSES: Dict[str, tuple] = {
     "qwen-edit-2511-q3": ("Apache-2.0", True), "ernie-turbo": ("", None), "ideogram-4": ("", None),
     "birefnet": ("MIT", True), "flux2-klein-4b": ("Apache-2.0", True),
     "realesrgan-x4": ("BSD-3-Clause", True), "realesrgan-x4-anime": ("BSD-3-Clause", True),
-    # free below MiniMax's revenue threshold, else their commercial terms (license Section IV)
-    "minimax-h3-image": ("MiniMax-H3-Image Community License", None),
 }
+for _extra in __import__("image_serve.extras", fromlist=["load"]).load("extra_image_"):
+    LICENSES.update(getattr(_extra, "LICENSES", {}))
 
 
 @asynccontextmanager

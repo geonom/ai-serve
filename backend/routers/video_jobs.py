@@ -158,8 +158,8 @@ async def write_video_prompt(body: Dict[str, Any] = Body(..., examples=[{
                      "lighting": "golden hour", "sound": "wind, crunching snow"}}])):
     """`prompt` (the idea, any language), `model` (video model; default: text -> video's, or picture -> video's with
     `image_base64`), `settings` (GET /v1/video/prompt/options; omitted = the chat model picks), `llm` (chat model,
-    default as for chat), `seed`, `seconds` (the video's length; default the model's -- MiniMax H3's cut times must
-    fall inside it). With a start picture the caption begins from it (when the chat model can see).
+    default as for chat), `seed`, `seconds` (the video's length; default the model's -- guides that time their cuts keep
+    them inside it). With a start picture the caption begins from it (when the chat model can see).
     Answers `{prompt, model, task, guide, llm, used_image, runtime_seconds}`; send `prompt` to POST /v1/video/jobs."""
     from backend.routers.gateway import (_begin_request, _build_chat_template_kwargs, _end_request, _for_upstream,
                                          _resolve_upstream, _thinking_default, _upstream_client)

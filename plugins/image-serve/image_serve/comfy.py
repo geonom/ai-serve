@@ -378,58 +378,14 @@ def build_klein_edit_workflow(image_names: List[str], prompt: str, model_name: s
     return wf
 
 
-# MiniMax-H3-Image (33B DiT; 2026-11-14, owner: Abiray's GGUF to save disk and VRAM), built like Comfy-Org's
-# image_minimax_h3_image_t2i template: MiniMaxH3ImageConditioning (ComfyUI >= v0.45) gives the positive and the
-# 24-channel latent, the negative is the zeroed positive, KSampler euler/simple at cfg 1 and exactly 6 steps (the
-# distilled PDD heads are calibrated for 6). The model is tuned for 2048x2048 of area (ComfyUI's IMAGE_SIZE) and
-# "doesn't work well in low resolution", so ~4 MP sizes on its 32 px grid. Text encoder = the int8 Qwen3-VL-32B the
-# H3 video model already uses. Edits: the pictures go in as image_0.. (<Picture 1>.. in the prompt); without an aspect
-# ratio the node takes the first one's shape. Tests: tests/test_h3_image.py.
-H3_IMAGE_TEXT_ENCODER = "qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
-H3_IMAGE_VAE = "minimax_h3_image_vae_fp16.safetensors"
-H3_IMAGE_MAX_IMAGES = 4
-H3_IMAGE_SIZES = {"1:1": (2048, 2048), "4:3": (2304, 1728), "3:4": (1728, 2304), "16:9": (2720, 1536),
-                  "9:16": (1536, 2720)}
+# Image models with a graph of their own from local extra modules (image_serve/extra_image_*.py, see extras.py):
+# each module's GRAPH has `matches(model_name)`, `purpose`, `label`, `max_images` and
+# `build(image_names, prompt, model_name, seed, aspect_ratio)` (raises ValueError for a bad request).
+EXTRA_IMAGE_GRAPHS: List[Any] = []
 
 
-def is_h3_image(model_name: Optional[str]) -> bool:
-    name = os.path.basename(model_name or "").lower().replace("_", "-")
-    return name.startswith("minimax-h3-image")
-
-
-def build_h3_image_workflow(image_names: List[str], prompt: str, model_name: str, seed: int,
-                            aspect_ratio: Optional[str] = None) -> Dict[str, Any]:
-    """MiniMax-H3-Image: text to image (no pictures) or an edit guided by up to H3_IMAGE_MAX_IMAGES pictures."""
-    if len(image_names) > H3_IMAGE_MAX_IMAGES:
-        raise ValueError(f"MiniMax H3 Image takes at most {H3_IMAGE_MAX_IMAGES} images")
-    if aspect_ratio is not None and aspect_ratio not in H3_IMAGE_SIZES:
-        raise ValueError(f"aspect_ratio: {', '.join(H3_IMAGE_SIZES)}")
-    if aspect_ratio is None:
-        width, height = (0, 0) if image_names else H3_IMAGE_SIZES["1:1"]
-    else:
-        width, height = H3_IMAGE_SIZES[aspect_ratio]
-    gguf = model_name.lower().endswith(".gguf")
-    cond: Dict[str, Any] = {"clip": ["2", 0], "vae": ["3", 0], "prompt": prompt, "width": width, "height": height}
-    wf: Dict[str, Any] = {
-        "1": {"class_type": "UnetLoaderGGUF" if gguf else "UNETLoader",
-              "inputs": {"unet_name": model_name} if gguf else {"unet_name": model_name, "weight_dtype": "default"}},
-        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": H3_IMAGE_TEXT_ENCODER, "type": "minimax",
-                                                     "device": "default"}},
-        "3": {"class_type": "VAELoader", "inputs": {"vae_name": H3_IMAGE_VAE}},
-    }
-    for i, name in enumerate(image_names):
-        wf[str(10 + i)] = {"class_type": "LoadImage", "inputs": {"image": name}}
-        cond[f"images.image_{i}"] = [str(10 + i), 0]
-    wf.update({
-        "4": {"class_type": "MiniMaxH3ImageConditioning", "inputs": cond},
-        "5": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["4", 0]}},
-        "6": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0],
-                                                   "latent_image": ["4", 1], "seed": seed, "steps": 6, "cfg": 1,
-                                                   "sampler_name": "euler", "scheduler": "simple", "denoise": 1}},
-        "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["3", 0]}},
-        "8": {"class_type": "SaveImage", "inputs": {"images": ["7", 0], "filename_prefix": "minimax-h3-image"}},
-    })
-    return wf
+def extra_image_graph(model_name: Optional[str]) -> Optional[Any]:
+    return next((g for g in EXTRA_IMAGE_GRAPHS if g.matches(model_name)), None)
 
 
 # MOSS-Image edits with an edit LoRA (2026-11-23, owner via V-Noveller: akhaliq/MOSS-Image-Edit-HQ v5, Apache-2.0),
@@ -1276,11 +1232,12 @@ def _build_patched_generate_workflow(req: ComfyUIGenerateRequest) -> dict:
     extracted so the batch runner below can reuse it verbatim per item."""
     _comfyui_dir = WORKFLOWS_DIR
     model_lower = req.model_name.lower()
-    if is_h3_image(req.model_name):   # its own graph: fixed 6 steps, its own ~4 MP sizes, no LoRA node
+    extra = extra_image_graph(req.model_name)
+    if extra:   # its own graph (its own sizes and steps, no LoRA node)
         try:
-            return build_h3_image_workflow([], prompt=req.prompt, model_name=req.model_name,
-                                           seed=req.seed if req.seed is not None else random.randint(1, 10**14 - 1),
-                                           aspect_ratio=req.aspect_ratio)
+            return extra.build([], prompt=req.prompt, model_name=req.model_name,
+                               seed=req.seed if req.seed is not None else random.randint(1, 10**14 - 1),
+                               aspect_ratio=req.aspect_ratio)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     if "ernie" in model_lower:
@@ -1393,7 +1350,7 @@ def _build_patched_generate_workflow(req: ComfyUIGenerateRequest) -> dict:
 
 COMFY_SAMPLING_MARGIN_MB = 1500   # activations / latents while sampling, on top of the weights
 # A text encoder runs once per prompt and ComfyUI streams what doesn't fit from RAM: one counts at most this much
-# (2026-11-14: MiniMax H3's 27 GB Qwen3-VL-32B fits no card; LTX's 14.3 GB Gemma next to LTX Q3 made the 4060 Ti
+# (2026-11-14: a 27 GB Qwen3-VL-32B encoder fits no card; LTX's 14.3 GB Gemma next to LTX Q3 made the 4060 Ti
 # refuse by ~350 MB). Smaller encoders (Z-Image's, Qwen-Image's) count in full as before.
 TEXT_ENCODER_ON_GPU_MB = 12000
 _TEXT_ENCODER_LOADERS = {"CLIPLoader", "CLIPLoaderGGUF", "DualCLIPLoader"}
@@ -1879,15 +1836,15 @@ async def comfyui_edit(req: ComfyUIEditRequest):
     if req.aspect_ratio is not None and req.aspect_ratio not in EDIT_SIZES:
         raise HTTPException(status_code=400, detail=f"aspect_ratio: {', '.join(EDIT_SIZES)}")
     klein = is_klein(req.model_name)
-    h3 = is_h3_image(req.model_name)
+    extra = extra_image_graph(req.model_name)
     if klein and 1 + len(req.extra_images_base64) > KLEIN_MAX_IMAGES:
         raise HTTPException(status_code=400, detail=f"FLUX.2 [klein] takes at most {KLEIN_MAX_IMAGES} images")
-    if h3 and 1 + len(req.extra_images_base64) > H3_IMAGE_MAX_IMAGES:
-        raise HTTPException(status_code=400, detail=f"MiniMax H3 Image takes at most {H3_IMAGE_MAX_IMAGES} images")
+    if extra and 1 + len(req.extra_images_base64) > extra.max_images:
+        raise HTTPException(status_code=400, detail=f"{extra.label} takes at most {extra.max_images} images")
     moss_edit = is_moss_edit(req.model_name)
     if moss_edit and 1 + len(req.extra_images_base64) > MOSS_EDIT_MAX_IMAGES:
         raise HTTPException(status_code=400, detail=f"MOSS-Image Edit takes at most {MOSS_EDIT_MAX_IMAGES} images")
-    if not (klein or h3 or moss_edit):
+    if not (klein or extra or moss_edit):
         try:
             with open(os.path.join(WORKFLOWS_DIR, "Qwen-Image-Edit.json"), "r") as f:
                 workflow = json.load(f)
@@ -1899,9 +1856,12 @@ async def comfyui_edit(req: ComfyUIEditRequest):
     if moss_edit:   # its own graph; `loras` go after the edit LoRA (its LoraLoaderModelOnly)
         workflow = build_moss_edit_workflow(names, prompt=req.prompt, lora=req.model_name, seed=seed,
                                             steps=req.steps, aspect_ratio=req.aspect_ratio)
-    elif h3:      # its own graph, fixed 6 steps; no LoRA node
-        workflow = build_h3_image_workflow(names, prompt=req.prompt, model_name=req.model_name, seed=seed,
-                                           aspect_ratio=req.aspect_ratio)
+    elif extra:   # its own graph; no LoRA node
+        try:
+            workflow = extra.build(names, prompt=req.prompt, model_name=req.model_name, seed=seed,
+                                   aspect_ratio=req.aspect_ratio)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     elif klein:   # its own graph; no LoRA node, so `loras` don't apply (like Ideogram 4)
         workflow = build_klein_edit_workflow(names, prompt=req.prompt, model_name=req.model_name, seed=seed,
                                              steps=req.steps, aspect_ratio=req.aspect_ratio)
@@ -1915,7 +1875,7 @@ async def comfyui_edit(req: ComfyUIEditRequest):
             _extend_lora_chain(workflow, lora_node_id, req.loras)
 
     client_id = str(uuid.uuid4())
-    await _comfyui_gpu_preflight(workflow, getattr(req, "model", None) or ("moss-edit" if moss_edit else "minimax-h3-image" if h3 else "flux2-klein" if klein else "qwen-image-edit"),
+    await _comfyui_gpu_preflight(workflow, getattr(req, "model", None) or ("moss-edit" if moss_edit else extra.purpose if extra else "flux2-klein" if klein else "qwen-image-edit"),
                                  pinned=getattr(req, "gpu_id", None) is not None)
     payload = {"prompt": workflow, "client_id": client_id}
     state.comfyui_progress = {"step": 0, "max_steps": 0, "node": "", "value": 0}
@@ -2141,3 +2101,7 @@ def _catalog_file(name: Optional[str], task: str) -> Optional[str]:
     if not catalog.listing_row(model)["available"]:
         raise HTTPException(status_code=400, detail=f"{model.label} is not installed on this machine")
     return model.file
+
+
+EXTRA_IMAGE_GRAPHS.extend(mod.GRAPH for mod in __import__("image_serve.extras", fromlist=["load"]).load("extra_image_")
+                          if hasattr(mod, "GRAPH"))

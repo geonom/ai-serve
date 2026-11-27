@@ -9,7 +9,7 @@ model makers use for picture -> video; copied 2026-11-13. (Their text -> video p
 to silently replace some requests, e.g. two men kissing, with other content -- and our Wan models only do picture ->
 video anyway.)
 
-MiniMax H3's guide lives in video_prompt_guide_minimax.py: local only (its licence's territory excludes the EU)."""
+Guides whose licence doesn't allow publishing them stay local (video_prompt_extra_*.py, see video_prompt._add_extras)."""
 
 LTX2_TEXT_TO_VIDEO = """You are given a user's short text-to-video request. Write a single, highly detailed audio-visual caption describing the video that best fulfills that request, in the EXACT style of the training captions used for this video model. The generated video is scored against the user's ORIGINAL request, so preserve every element the user stated; expand faithfully into the full caption style without contradicting or dropping anything they asked for.
 

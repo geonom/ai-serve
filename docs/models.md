@@ -132,14 +132,13 @@ image-serve also makes videos (ComfyUI workflows, started as jobs: `POST /v1/vid
 | `ltx-2.5-q3` | the same as GGUF Q3 | For 16 GB cards |
 | `wan-2.2`, `wan-2.2-q3` | Wan 2.2 I2V A14B, 4 steps (Q4 / Q3): picture → video, 16 fps, no sound | SageAttention on by default |
 | `wan-2.2-5b` | Wan 2.2 5B Turbo (Q8): picture → video, 24 fps, no sound | Faster, less detail |
-| `minimax-h3`, `minimax-h3-4step` | MiniMax H3 33B (Q4 + turbo LoRA): text or first frame → video with stereo sound | MiniMax Community License |
 
 `GET /v1/video/models` is the authority (lengths, resolutions, steps, LoRAs, licence per row). Each row's licence
 applies to what you make with it -- LTX-2's community licence, for one, is free only below a revenue limit.
 
 - **Writing prompts:** video models want long, concrete prompts (what moves, camera, light, sound). `POST
   /v1/video/prompt` lets a chat model write one from a short idea in any language, following the model's own
-  prompt guide (LTX, Wan and MiniMax H3 -- for H3 MiniMax's own writing guide, with its three fields); you see it and
+  prompt guide (LTX, Wan); you see it and
   can edit it before the video starts.
 - **LoRAs:** `.safetensors` into image-serve's LoRA folder for that family (`loras/<family>/`); the catalog row lists
   them, a job names one with `lora` (+ `lora_strength`).

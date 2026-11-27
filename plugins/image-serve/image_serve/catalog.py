@@ -78,12 +78,6 @@ CATALOG: Tuple[ImageModel, ...] = (
                "Edits from up to four reference images in 4 steps; small and fast, Apache-2.0. Trained on filtered data: "
                "not for explicit pictures.", tasks=("edit",), steps_default=4, steps_max=50, max_images=4),
     # ComfyUI's own BiRefNet node (comfy_extras/nodes_bg_removal.py, since 2026-05); Comfy-Org's repackaged file
-    # MiniMax-H3-Image 33B (2026-11-14, owner): Abiray's GGUF Q4_K_M + the int8 Qwen3-VL-32B encoder of the H3 video
-    # model; distilled to exactly 6 steps, ~4 MP output; edits with pictures (comfy.build_h3_image_workflow)
-    ImageModel("minimax-h3-image", "MiniMax H3 Image (Q4_K_M)", "comfyui", "MiniMax-H3-Image-Pruned-Q4_K_M.gguf",
-               "Large 33B model: ~4 MP images with rich detail and lettering, also edits from up to four pictures "
-               "(<Picture 1>.. in the prompt); fixed 6 steps.", text_in_image=True, tasks=("generate", "edit"),
-               steps_default=6, steps_adjustable=False, steps_max=6, max_images=4),
     # MOSS-Image edits (2026-11-23, owner via V-Noveller): akhaliq's MOSS-Image-Edit-HQ LoRA v5 (Apache-2.0, the
     # card's recommended checkpoint; its ai-toolkit-format weights/armV5/armV5.safetensors) on the int8 MOSS main
     # model, ComfyUI's native TextEncodeMOSSImageEdit (comfy.build_moss_edit_workflow). `file` is the LoRA.
@@ -197,3 +191,18 @@ def for_task(name: Optional[str], task: str) -> Optional[ImageModel]:
         raise CatalogError(f"{model.label} can't {task}; models that can: "
                            + ", ".join(m.id for m in CATALOG if task in m.tasks))
     return model
+
+
+BUILT_IN = 0   # how many rows are built in; the rest came from extras
+
+
+def _add_extras() -> None:
+    """Rows of models kept on this machine only (image_serve/extra_image_*.py, see extras.py)."""
+    global CATALOG, BUILT_IN
+    BUILT_IN = len(CATALOG)
+    from image_serve import extras
+    for mod in extras.load("extra_image_"):
+        CATALOG = CATALOG + tuple(mod.MODELS)
+
+
+_add_extras()

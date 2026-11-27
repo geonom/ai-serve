@@ -143,7 +143,7 @@ never started, stopped or unloaded by ai-serve and has no GPU in the GPU manager
   with sound), `sage_attention` (true/false: switchable per job, the value is its default; leave it out when not
   offered), `loras` (file names a job may name), `steps` `{default, min, max, adjustable}` (leave it out when the
   plugin fixes the steps) and `prompt_guide` (whose prompt rules the gateway's prompt writer follows for this model;
-  known: `ltx-2`, `wan-2.2`, `minimax-h3`). Mark one model per task `default: true`.
+  known: `ltx-2`, `wan-2.2`; `GET /v1/video/prompt/options` → `guides`). Mark one model per task `default: true`.
 - `jobs` body: `{"model", "prompt", "image_base64"? (start picture), "seconds"?, "resolution"?, "seed"?,
   "negative_prompt"?, "lora"?, "lora_strength"?, "sage_attention"?, "steps"?}` -- check everything against the
   model's row and answer 400 with the reason; result files are videos (`video/mp4`).
@@ -329,7 +329,7 @@ missing model should be downloadable from the Playground and the dashboard inste
 ## Which plugins exist
 
 Bundled with this release: tts-serve (`tts`), stt-serve (`stt`), sd-serve and image-serve (`image`; image-serve also
-carries MOSS-Image, and is the `video` plugin -- LTX-2.5, Wan 2.2, MiniMax H3 -- and the `audio` plugin for sound
+carries MOSS-Image, and is the `video` plugin -- LTX-2.5, Wan 2.2 -- and the `audio` plugin for sound
 effects and music). In repositories of their own, added with `./ai-serve plugin add <url>`:
 [ai-serve-piper](https://github.com/geonom/ai-serve-piper) (`tts`, CPU, MIT -- also the template for new plugins) and
 [ai-serve-strata](https://github.com/geonom/ai-serve-strata) (`llm`, `gpu: exclusive`). Built and used on the developer's machine but **not part of this release**: an `access` plugin

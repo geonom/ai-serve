@@ -12,12 +12,8 @@ Models (all distilled / few-step variants; files in COMFYUI_MODELS_ROOT):
                   video, 16 fps, no sound. Apache 2.0.
 - `wan-2.2-q3`    the same as Q3_K_M (both experts fit the 3090 at once -- measured to see whether that saves the swap).
 - `wan-2.2-5b`    Wan 2.2 TI2V 5B Turbo GGUF Q8_0: smaller, faster, weaker; 24 fps.
-- `minimax-h3`    MiniMax H3 FL2VA (33B, pruned) as unsloth's GGUF Q4_K + Comfy-Org's int8 Qwen3-VL-32B encoder (unsloth's
-                  GGUF encoder has no architecture tag -- ComfyUI-GGUF refuses it, 2026-11-14), with lightx2v's
-                  8-step turbo LoRA (6 steps, as Comfy-Org's template); `minimax-h3-4step` with the 4-step 768p LoRA.
-                  Text or first frame -> video with stereo sound, 24 fps, frames on a 17k+5 grid. MiniMax Community
-                  License. Added 2026-11-14 (owner: "download minimax h3 now"); speed LoRAs in loras/minimax-h3-speed/.
-- `sulphur-3`     SulphurAI's uncensored MiniMax H3 fine-tune (Abiray's GGUF Q4_K_M), otherwise as minimax-h3 (2026-11-26).
+Models kept on this machine only come from local extra modules (image_serve/extra_video_*.py, see extras.py):
+each adds catalog rows, prompt guides and a Family (frame rule + graph).
 Graphs follow Comfy-Org's templates (video_ltx2_5_t2v.json, video_wan2_2_14B_i2v.json, video_wan2_2_5B_ti2v.json)
 in API form, measured 2026-11-13 (CLAUDE.md "Video").
 
@@ -38,7 +34,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 TASKS = ("text_to_video", "image_to_video")
 JOB_TTL_S = 6 * 3600
@@ -76,6 +72,16 @@ class VideoModel:
     sage_default: bool = False               # SageAttention on unless the request says otherwise (Wan: on)
     default_steps: int = 4                   # the distillation's own count (LTX 8, the 4-step Wan merges 4)
 
+
+@dataclass(frozen=True)
+class Family:
+    """A model family from an extra module: how many frames for a length, and its ComfyUI graph
+    (workflow(request, prefix, sage, image_name or None))."""
+    frames: Callable[[VideoModel, float], int]
+    workflow: Callable[..., Dict[str, Any]]
+
+
+FAMILIES: Dict[str, Family] = {}
 
 _WAN_TE = ("text_encoders", "umt5_xxl_fp8_e4m3fn_scaled.safetensors")
 _WAN_RES = ("832x480", "480x832", "640x640")
@@ -115,31 +121,6 @@ CATALOG: Tuple[VideoModel, ...] = (
                "Picture -> video with the small Wan model: faster, less detail; no sound.", "Apache 2.0", 24, 2, 5, 5,
                ("1280x704", "704x1280", "832x480", "480x832"), sage_default=True),
 )
-_H3_FILES = (("diffusion_models", "minimax_h3_fl2va_pruned-Q4_K.gguf"),
-             ("text_encoders", "qwen3vl_32b_minimax_h3_int8_convrot.safetensors"),
-             ("vae", "minimax_h3_video_vae_fp16.safetensors"), ("vae", "minimax_h3_audio_vae_fp32.safetensors"))
-_H3_RES = ("864x480", "480x864", "1056x608", "608x1056", "1344x768", "768x1344")
-_H3_LICENSE = "MiniMax Community License"
-CATALOG = CATALOG + (
-    VideoModel("minimax-h3", "MiniMax H3 (turbo 8-step LoRA, Q4)", "minimax-h3", ("text_to_video", "image_to_video"),
-               _H3_FILES + (("loras", "minimax-h3-speed/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"),),
-               "Text or picture -> video with stereo sound, 33B (unsloth GGUF Q4, int8 Qwen3-VL encoder, lightx2v's turbo LoRA).",
-               _H3_LICENSE, 24, 2, 10, 5, _H3_RES, audio=True, default_steps=6),
-    VideoModel("minimax-h3-4step", "MiniMax H3 (turbo 4-step LoRA, Q4)", "minimax-h3",
-               ("text_to_video", "image_to_video"),
-               _H3_FILES + (("loras", "minimax-h3-speed/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"),),
-               "MiniMax H3 with the 4-step turbo LoRA (trained for 768p): faster, possibly less detail.",
-               _H3_LICENSE, 24, 2, 10, 5, _H3_RES, audio=True, default_steps=4),
-    # 2026-11-26 (owner: "runterladen und testen"): SulphurAI's uncensored MiniMax H3 fine-tune (s3, RL-baked), as
-    # Abiray's GGUF Q4_K_M; a non-turbo base, run with the same 8-step turbo LoRA as minimax-h3
-    VideoModel("sulphur-3", "Sulphur-3 (MiniMax H3 fine-tune, uncensored, Q4)", "minimax-h3",
-               ("text_to_video", "image_to_video"),
-               (("diffusion_models", "Sulphur-3-Q4_K_M.gguf"),) + _H3_FILES[1:]
-               + (("loras", "minimax-h3-speed/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"),),
-               "SulphurAI's uncensored fine-tune of MiniMax H3: text or picture -> video with stereo sound "
-               "(Abiray's GGUF Q4_K_M, the same encoder and turbo LoRA as minimax-h3).",
-               _H3_LICENSE, 24, 2, 10, 5, _H3_RES, audio=True, default_steps=6),
-)
 DEFAULTS = {"text_to_video": "ltx-2.5", "image_to_video": "ltx-2.5"}   # LTX: faster and with sound (owner, 2026-11-13)
 
 
@@ -170,7 +151,7 @@ def upscale_available(models_root: str) -> bool:
 
 # whose prompt rules the gateway's prompt writer (POST /v1/video/prompt) follows: LTX-2's own (same Gemma 4 encoder),
 # Wan 2.2's picture -> video prompt extension (for the 5B too)
-PROMPT_GUIDES = {"ltx-2.5": "ltx-2", "wan-2.2": "wan-2.2", "wan-2.2-5b": "wan-2.2", "minimax-h3": "minimax-h3"}
+PROMPT_GUIDES = {"ltx-2.5": "ltx-2", "wan-2.2": "wan-2.2", "wan-2.2-5b": "wan-2.2"}
 
 
 def listing(models_root: str, sage: bool = False) -> List[Dict[str, Any]]:
@@ -212,10 +193,9 @@ class VideoRequest:
 
 
 def frame_count(m: VideoModel, seconds: float) -> int:
-    """LTX wants 8n+1 frames, Wan 4n+1, MiniMax H3 17k+5 (rounded up, as Comfy-Org's template does)."""
-    if m.family == "minimax-h3":
-        n = max(5, round(seconds * m.fps))
-        return n + (5 - n % 17) % 17
+    """LTX wants 8n+1 frames, Wan 4n+1; an extra family says its own."""
+    if m.family in FAMILIES:
+        return FAMILIES[m.family].frames(m, seconds)
     step = 8 if m.family == "ltx-2.5" else 4
     n = max(1, round(seconds * m.fps / step))
     return n * step + 1
@@ -495,54 +475,14 @@ def wan5b_workflow(r: VideoRequest, image_name: str, prefix: str, sage: bool = F
     return g
 
 
-def h3_workflow(r: VideoRequest, prefix: str, sage: bool = False, image_name: Optional[str] = None) -> Dict[str, Any]:
-    """MiniMax H3 (Comfy-Org's video_minimax_h3_t2v / _i2v template): Qwen3-VL text encoder, the turbo LoRA,
-    res_multistep with a plain guider (no CFG), one joint video+audio latent decoded by both VAEs."""
-    unet, te, vvae, avae, speed = (f for _, f in r.model.files)
-    g: Dict[str, Any] = {
-        "unet": _loader(unet),
-        "clip": {"class_type": "CLIPLoaderGGUF" if te.endswith(".gguf") else "CLIPLoader",
-                 "inputs": {"clip_name": te, "type": "minimax"}},
-        "vvae": {"class_type": "VAELoader", "inputs": {"vae_name": vvae}},
-        "avae": {"class_type": "VAELoader", "inputs": {"vae_name": avae}},
-        "speed": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["unet", 0], "lora_name": speed,
-                                                                  "strength_model": 1.0}},
-        "cond": {"class_type": "MiniMaxH3ImageToVideo", "inputs": {
-            "clip": ["clip", 0], "vae": ["vvae", 0], "prompt": r.prompt, "width": r.width, "height": r.height,
-            "length": r.frames}},
-    }
-    if image_name:
-        g["img"] = {"class_type": "LoadImage", "inputs": {"image": image_name}}
-        g["cond"]["inputs"]["first_frame"] = ["img", 0]
-    model = ["speed", 0]
-    if r.lora:
-        g["lora"] = _lora_node(model, r)
-        model = ["lora", 0]
-    if sage:
-        g["sage"] = _sage_node(model)
-        model = ["sage", 0]
-    g["sched"] = {"class_type": "BasicScheduler", "inputs": {"model": model, "scheduler": "simple", "steps": r.steps,
-                                                             "denoise": 1.0}}
-    g["samp"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}}
-    g["noise"] = {"class_type": "RandomNoise", "inputs": {"noise_seed": r.seed}}
-    g["guide"] = {"class_type": "BasicGuider", "inputs": {"model": model, "conditioning": ["cond", 0]}}
-    g["run"] = {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["noise", 0], "guider": ["guide", 0],
-                                                                  "sampler": ["samp", 0], "sigmas": ["sched", 0],
-                                                                  "latent_image": ["cond", 1]}}
-    g["dec"] = {"class_type": "VAEDecode", "inputs": {"samples": ["run", 0], "vae": ["vvae", 0]}}
-    g["adec"] = {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["run", 0], "vae": ["avae", 0]}}
-    g.update(_save(["dec", 0], r.model.fps, prefix, audio=["adec", 0]))
-    return g
-
-
 def workflow(r: VideoRequest, image_name: Optional[str], prefix: str, sage: bool = False) -> Dict[str, Any]:
     """`sage`: SageAttention is installed in ComfyUI's Python. Used when the request wants it (`r.sage`; default on
     for Wan, off for LTX -- LTX gained only 48 -> 45 s, measured 2026-11-13)."""
     sage = sage and r.sage
     if r.model.family == "ltx-2.5":
         return ltx_workflow(r, prefix, sage, image_name if r.image is not None else None)
-    if r.model.family == "minimax-h3":
-        return h3_workflow(r, prefix, sage, image_name if r.image is not None else None)
+    if r.model.family in FAMILIES:
+        return FAMILIES[r.model.family].workflow(r, prefix, sage, image_name if r.image is not None else None)
     if r.model.family == "wan-2.2-5b":
         return wan5b_workflow(r, image_name or "", prefix, sage)
     return wan_workflow(r, image_name or "", prefix, sage)
@@ -599,3 +539,17 @@ def view(job: Job, progress: Optional[float], jobs_path: str) -> Dict[str, Any]:
         out["result"] = {"files": [{"name": name, "type": "video/mp4", "url": f"{jobs_path}/{job.id}/files/{name}"}],
                          "data": data}
     return out
+
+
+# ------------------------------------------------------------------ local extra models (extras.py)
+
+def _add_extras() -> None:
+    global CATALOG
+    from image_serve import extras
+    for mod in extras.load("extra_video_"):
+        CATALOG = CATALOG + tuple(mod.MODELS)
+        PROMPT_GUIDES.update(getattr(mod, "PROMPT_GUIDES", {}))
+        FAMILIES.update(getattr(mod, "FAMILIES", {}))
+
+
+_add_extras()

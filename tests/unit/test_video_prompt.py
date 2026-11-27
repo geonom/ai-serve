@@ -14,8 +14,6 @@ from backend.main import app
 from backend.plugins import video_gen
 from backend.routers import gateway
 
-HAS_H3 = "minimax-h3" in video_prompt.GUIDES   # local only: the public tree ships without MiniMax's guide
-needs_h3 = pytest.mark.skipif(not HAS_H3, reason="MiniMax H3's guide is local only")
 
 client = TestClient(app, client=("127.0.0.1", 50000))
 
@@ -61,39 +59,44 @@ def test_the_answer_is_one_clean_paragraph():
     assert video_prompt.clean("   ", "idea") == "idea" and video_prompt.clean(None, "idea") == "idea"
 
 
-@needs_h3
-def test_minimax_h3_follows_its_makers_guide_with_mode_and_length():
-    """MiniMax H3 (2026-11-15): MiniMax's own VIDEO_PROMPT_WRITING_GUIDE_base_en.md verbatim, the mode (T2VA / I2VA
-    first frame) said in the system prompt, the length in the request -- cut times must fall inside it."""
-    from backend import video_prompt_guide_minimax as g
-    t2v, i2v = video_prompt.GUIDES["minimax-h3"]["text_to_video"], video_prompt.GUIDES["minimax-h3"]["image_to_video"]
-    assert t2v.endswith(g.MINIMAX_H3_BASE) and i2v.endswith(g.MINIMAX_H3_BASE)
-    assert g.MINIMAX_H3_BASE.startswith("# Video Prompt Writing Guide (T2VA / I2VA / FL2VA / L2VA)")
-    assert "T2VA" in t2v[:2000] and "I2VA" in i2v[:2000] and "first frame" in i2v[:2000]
+def test_paragraph_guides_keep_their_blank_line_parts():
+    raw = "```text\nFirst part,\n on two lines.\n\nSecond part.\n```"
+    assert video_prompt.clean(raw, "idea", paragraphs=True) == "First part, on two lines.\n\nSecond part."
+    assert video_prompt.clean(raw, "idea") == "First part, on two lines. Second part."
+
+
+def test_the_length_is_checked_and_reaches_guides_that_ask_for_it(monkeypatch):
     r = video_prompt.parse({"prompt": "Ein Bäcker öffnet", "seconds": 6})
     assert r.seconds == 6
-    u = video_prompt.user_text(r, "minimax-h3", "text_to_video")
-    assert "6 seconds" in u and "Ein Bäcker öffnet" in u
-    assert video_prompt.user_text(r, "ltx-2", "text_to_video") == "user prompt: Ein Bäcker öffnet"   # others as before
+    monkeypatch.setitem(video_prompt.FRAMING, "timed", {"text_to_video": "Length {s} s. {p}"})
+    assert video_prompt.user_text(r, "timed", "text_to_video") == "Length 6 s. Ein Bäcker öffnet"
+    assert video_prompt.user_text(r, "ltx-2", "text_to_video") == "user prompt: Ein Bäcker öffnet"
     for bad in (0, 601, "4", True):
         with pytest.raises(video_prompt.PromptError):
             video_prompt.parse({"prompt": "x", "seconds": bad})
 
 
-def test_h3_answers_keep_their_three_fields_as_paragraphs():
-    raw = ("```text\nFor the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully "
-           "referenced.\n\nintegrated_multimodal_description: [Shot 1] Live-action,\n cinematic.\n\n"
-           "overall_soundscape: Rain.\n\nnon_diegetic_music: N/A\n```")
-    assert video_prompt.clean(raw, "idea", paragraphs=True) == (
-        "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced."
-        "\n\nintegrated_multimodal_description: [Shot 1] Live-action, cinematic.\n\noverall_soundscape: Rain."
-        "\n\nnon_diegetic_music: N/A")
+def test_guides_kept_on_this_machine_come_from_extra_modules(monkeypatch, tmp_path):
+    """backend/video_prompt_extra_*.py (2026-11-27): guides whose licence doesn't allow publishing them stay local."""
+    import sys
+    import types
+    mod = types.ModuleType("backend.video_prompt_extra_test")
+    mod.GUIDES = {"test-guide": {"text_to_video": "SYSTEM"}}
+    mod.FRAMING = {"test-guide": {"text_to_video": "{p}"}}
+    mod.PARAGRAPH_GUIDES = {"test-guide"}
+    monkeypatch.setitem(sys.modules, "backend.video_prompt_extra_test", mod)
+    monkeypatch.setattr(video_prompt, "_extra_names", lambda: ["video_prompt_extra_test"])
+    for d in ("GUIDES", "FRAMING"):
+        monkeypatch.setattr(video_prompt, d, dict(getattr(video_prompt, d)))
+    monkeypatch.setattr(video_prompt, "PARAGRAPH_GUIDES", set(video_prompt.PARAGRAPH_GUIDES))
+    video_prompt._add_extras()
+    assert video_prompt.GUIDES["test-guide"]["text_to_video"] == "SYSTEM" and "test-guide" in video_prompt.PARAGRAPH_GUIDES
 
 
 def test_options_list_settings_and_guides():
     o = client.get("/v1/video/prompt/options").json()
     assert "close-up" in o["settings"]["shot"]["choices"] and o["free_text"]["dialogue"]["max_length"] == 500
-    assert o["guides"] == (["ltx-2", "minimax-h3", "wan-2.2"] if HAS_H3 else ["ltx-2", "wan-2.2"])
+    assert {"ltx-2", "wan-2.2"} <= set(o["guides"]) and o["guides"] == sorted(o["guides"])
 
 
 # ------------------------------------------------------------------ the route, with a fake chat model
@@ -102,9 +105,6 @@ ROWS = [{"id": "ltx-2.5", "label": "LTX-2.5", "plugin": "comfyui", "tasks": ["te
          "default": True, "available": True, "prompt_guide": "ltx-2", "audio": True},
         {"id": "wan-2.2", "label": "Wan 2.2", "plugin": "comfyui", "tasks": ["image_to_video"], "default": False,
          "available": True, "prompt_guide": "wan-2.2", "audio": False},
-        {"id": "minimax-h3", "label": "MiniMax H3", "plugin": "comfyui", "tasks": ["text_to_video", "image_to_video"],
-         "default": False, "available": True, "prompt_guide": "minimax-h3", "audio": True, "min_seconds": 2,
-         "max_seconds": 10, "default_seconds": 5},
         {"id": "other", "label": "Other", "plugin": "comfyui", "tasks": ["text_to_video"], "default": False,
          "available": True, "prompt_guide": None}]
 
@@ -182,29 +182,3 @@ def test_wan_gets_its_own_picture_guide_and_no_sound_settings(chat):
     assert len(chat.calls) == n
 
 
-@needs_h3
-def test_minimax_h3_gets_its_guide_the_length_and_paragraphs(chat):
-    chat.answer = "integrated_multimodal_description: [Shot 1] Cinematic.\n\noverall_soundscape: Wind.\n\nnon_diegetic_music: N/A"
-    out = client.post("/v1/video/prompt", json={"prompt": "Ein Fuchs", "model": "minimax-h3"}).json()
-    assert out["guide"] == "minimax-h3" and out["prompt"].count("\n\n") == 2
-    sent = chat.calls[-1]["messages"]
-    assert sent[0]["content"] == video_prompt.GUIDES["minimax-h3"]["text_to_video"]
-    assert "5 seconds" in sent[1]["content"]                                   # the model's default length
-    client.post("/v1/video/prompt", json={"prompt": "Ein Fuchs", "model": "minimax-h3", "seconds": 8})
-    assert "8 seconds" in chat.calls[-1]["messages"][1]["content"]
-    n = len(chat.calls)
-    r = client.post("/v1/video/prompt", json={"prompt": "x", "model": "minimax-h3", "seconds": 30})
-    assert r.status_code == 400 and "seconds" in r.text and len(chat.calls) == n
-
-
-def test_without_minimaxs_guide_there_is_no_h3_guide_and_nothing_breaks(monkeypatch):
-    """The public tree ships without video_prompt_guide_minimax.py (licence territory excludes the EU, 2026-11-22)."""
-    import importlib
-    import sys
-    monkeypatch.setitem(sys.modules, "backend.video_prompt_guide_minimax", None)   # import fails, as when missing
-    try:
-        vp = importlib.reload(video_prompt)
-        assert "minimax-h3" not in vp.GUIDES and {"ltx-2", "wan-2.2"} <= set(vp.GUIDES)
-    finally:
-        monkeypatch.delitem(sys.modules, "backend.video_prompt_guide_minimax")
-        importlib.reload(video_prompt)

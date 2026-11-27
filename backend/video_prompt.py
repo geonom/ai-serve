@@ -36,37 +36,40 @@ OPTIONS: Dict[str, Dict[str, Any]] = {
 FREE_TEXT = {"dialogue": ("Spoken words (quote them exactly, in their original language)", 500),
              "sound": ("Sound, music and ambience", 500)}
 
-# MiniMax's guide is written for people, not as a system prompt: this line in front says what to do with it (ours)
-_H3_TASK = ("You write the final prompt for the MiniMax H3 video model, following its makers' writing guide below "
-            "exactly. The mode is {mode}. The user's request may be short and in any language: expand it faithfully, "
-            "keep every element they asked for, and write in English -- spoken words and on-screen text stay verbatim "
-            "in their original language, as the guide says. The user message gives the video's length; every cut time "
-            "must fall inside it. Output ONLY the final prompt: {start}the three fields integrated_multimodal_"
-            "description, overall_soundscape and non_diegetic_music, each beginning with its name and a colon, "
-            "separated by blank lines. No markdown, no code fences, no commentary.\n\n--- WRITING GUIDE ---\n\n")
-_H3_T2V = _H3_TASK.format(mode="T2VA (text only, no reference picture)", start="")
-_H3_I2V = _H3_TASK.format(mode="I2VA (the attached picture is the first frame of the video, at 0.00 seconds)",
-                          start="the I2VA first-frame instruction line, one blank line, then ")
-
 # guide -> task -> system prompt; FRAMING: how the guide's makers hand over the user's words ({p}; {s} = seconds)
 GUIDES = {"ltx-2": {"text_to_video": video_prompt_guides.LTX2_TEXT_TO_VIDEO,
                     "image_to_video": video_prompt_guides.LTX2_IMAGE_TO_VIDEO},
           "wan-2.2": {"image_to_video": video_prompt_guides.WAN22_IMAGE_TO_VIDEO}}
-try:   # local only (licence territory excludes the EU) -- not in the public tree, see video_prompt_guide_minimax.py
-    from backend.video_prompt_guide_minimax import MINIMAX_H3_BASE
-    GUIDES["minimax-h3"] = {"text_to_video": _H3_T2V + MINIMAX_H3_BASE, "image_to_video": _H3_I2V + MINIMAX_H3_BASE}
-except ImportError:
-    pass
 FRAMING = {"ltx-2": {"text_to_video": "user prompt: {p}", "image_to_video": "User Raw Input Prompt: {p}."},
-           "wan-2.2": {"image_to_video": "{p}"},
-           "minimax-h3": {"text_to_video": "Video length: {s} seconds.\n\nUser request: {p}",
-                          "image_to_video": "Video length: {s} seconds.\n\nUser request: {p}"}}
-PARAGRAPH_GUIDES = {"minimax-h3"}       # answers keep their blank-line structure (instruction line + three fields)
+           "wan-2.2": {"image_to_video": "{p}"}}
+PARAGRAPH_GUIDES = set()                # answers keep their blank-line structure (guides with several fields)
+
+
+def _extra_names() -> List[str]:
+    import pkgutil
+    from pathlib import Path
+    return [m.name for m in pkgutil.iter_modules([str(Path(__file__).resolve().parent)])
+            if m.name.startswith("video_prompt_extra_")]
+
+
+def _add_extras() -> None:
+    """Guides kept on this machine only (backend/video_prompt_extra_*.py, 2026-11-27): their licences don't allow
+    publishing them, so the public tree has none and simply offers fewer guides. Each gives GUIDES, and may give
+    FRAMING and PARAGRAPH_GUIDES."""
+    import importlib
+    for name in sorted(_extra_names()):
+        mod = importlib.import_module(f"backend.{name}")
+        GUIDES.update(mod.GUIDES)
+        FRAMING.update(getattr(mod, "FRAMING", {}))
+        PARAGRAPH_GUIDES.update(getattr(mod, "PARAGRAPH_GUIDES", ()))
+
+
+_add_extras()
 SOUND_SETTINGS = ("dialogue", "sound")      # only for models that make sound
 
 MAX_PROMPT = 2000
 MAX_IMAGE_B64 = 28_000_000          # ~20 MB picture
-MAX_TOKENS = 1200                   # LTX asks for 150-220 words; H3's three fields run longer
+MAX_TOKENS = 1200                   # LTX asks for 150-220 words; guides with several fields run longer
 
 
 class PromptError(ValueError):
@@ -80,7 +83,7 @@ class PromptRequest:
     image: Optional[str] = None
     llm: Optional[str] = None
     seed: Optional[int] = None
-    seconds: Optional[float] = None     # the video's length (H3's cut times); None = the model's default
+    seconds: Optional[float] = None     # the video's length (for guides that time their cuts); None = the model's default
 
 
 def options() -> Dict[str, Any]:

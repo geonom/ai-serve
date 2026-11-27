@@ -1,6 +1,7 @@
 import pytest
 
 from image_serve import catalog as _catalog
+from image_serve import video
 
 _REAL_ON_DISK = _catalog._on_disk   # taken before any test patches it
 
@@ -51,3 +52,19 @@ def _no_live_comfyui(monkeypatch):
     from image_serve.state import state
     monkeypatch.setattr(state, "comfyui_port", 9)          # discard port: refused at once
     monkeypatch.setattr(comfy, "find_comfyui_process", lambda *a, **kw: None)
+
+
+@pytest.fixture
+def root(tmp_path):
+    """A models root with every catalog file, the upscaler and one LoRA per family."""
+    for m in video.CATALOG:
+        for d, f in m.files:
+            (tmp_path / d / f).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / d / f).write_bytes(b"x")
+    (tmp_path / "latent_upscale_models").mkdir()
+    (tmp_path / "latent_upscale_models" / video.UPSCALER).write_bytes(b"x")
+    for fam, name in (("ltx-2.5", "style A"), ("wan-2.2", "motion")):
+        (tmp_path / "loras" / fam).mkdir(parents=True)
+        (tmp_path / "loras" / fam / f"{name}.safetensors").write_bytes(b"x")
+    (tmp_path / "loras" / "ltx-2.5" / "notes.txt").write_text("not a lora")
+    return str(tmp_path)

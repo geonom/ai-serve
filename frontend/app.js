@@ -1582,7 +1582,7 @@ function renderAPIExplorer() {
             category: 'video',
             method: 'GET',
             path: '/v1/video/models',
-            desc: 'VIDEO MODELS: Every video plugin\'s models (image-serve: LTX-2.5 with sound, Wan 2.2, MiniMax H3), merged. Optional ?task=text_to_video|image_to_video|all.',
+            desc: 'VIDEO MODELS: Every video plugin\'s models (image-serve: LTX-2.5 with sound, Wan 2.2), merged. Optional ?task=text_to_video|image_to_video|all.',
             responseSchema: '<ul><li><code>data</code> (array): <code>id</code>, <code>label</code>, <code>description</code>, <code>provider</code>, <code>tasks</code>, <code>min_seconds</code> / <code>max_seconds</code> / <code>default_seconds</code>, <code>resolutions</code> (first = default), <code>fps</code>, <code>audio</code> (with sound), <code>sage_attention</code> (true/false = switchable + default, null = not offered), <code>loras</code>, <code>steps</code> {default, min, max, adjustable} or null, <code>prompt_guide</code> (null = no prompt writer), <code>license</code>, <code>default</code>, <code>available</code>.</li><li><code>errors</code> (array, optional): plugins that didn\'t answer.</li></ul>',
             curl: `curl ${BASE_URL}/v1/video/models`
         },
@@ -1620,7 +1620,7 @@ function renderAPIExplorer() {
             category: 'video',
             method: 'POST',
             path: '/v1/video/prompt',
-            desc: 'VIDEO PROMPT WRITER: A chat model turns a short idea (any language) into a detailed prompt following the video model\'s own prompt guide (LTX, Wan, MiniMax H3 — H3 answers its three fields separated by blank lines). Only a proposal — show it, edit it, then send it to POST /v1/video/jobs. With image_base64 it describes from the start picture (retried without it if the chat model can\'t see). dialogue/sound only for models with sound.',
+            desc: 'VIDEO PROMPT WRITER: A chat model turns a short idea (any language) into a detailed prompt following the video model\'s own prompt guide (LTX, Wan; guides with several fields answer them separated by blank lines). Only a proposal — show it, edit it, then send it to POST /v1/video/jobs. With image_base64 it describes from the start picture (retried without it if the chat model can\'t see). dialogue/sound only for models with sound.',
             payload: {
                 model: "ltx-2.5",
                 prompt: "Ein Fuchs läuft durch Neuschnee",
@@ -1778,7 +1778,7 @@ function renderAPIExplorer() {
         { key: 'text', title: '🔤 Text & LLM Gateway Endpoints', desc: 'Models, Chat Completions, GPU status, Does It Work? check' },
         { key: 'image', title: '🖼️ Image Generation & Edit Endpoints', desc: 'ComfyUI image generation, editing, style transfer, task status' },
         { key: 'audio', title: '🎙️ Speech & Audio Endpoints', desc: 'TTS, WhisperX STT, local voice presets, music and sound-effect jobs' },
-        { key: 'video', title: '🎬 Video Endpoints', desc: 'Text → video and picture → video as jobs (LTX-2.5, Wan 2.2, MiniMax H3), prompt writer' },
+        { key: 'video', title: '🎬 Video Endpoints', desc: 'Text → video and picture → video as jobs (LTX-2.5, Wan 2.2), prompt writer' },
         { key: 'document', title: '📄 OCR / Document Extraction Endpoints', desc: 'NuExtract3 structured extraction, image-to-Markdown, document-type detection, batch processing' },
         { key: 'training', title: '🧪 Remote Fine-Tuning Endpoints', desc: 'DPO training + merge/GGUF export jobs, gated by a separate TRAINING_SERVICE_TOKEN' }
     ];

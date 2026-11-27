@@ -77,7 +77,8 @@ def test_edit_and_style_models_are_in_the_catalog():
     edit = {m.id for m in catalog.CATALOG if "edit" in m.tasks}
     style = {m.id for m in catalog.CATALOG if "style" in m.tasks}
     assert style == {"qwen-edit-2511", "qwen-edit-2511-q3"}
-    assert edit == style | {"flux2-klein-4b", "minimax-h3-image", "moss-edit-v5"}
+    local = {m.id for m in catalog.CATALOG[catalog.BUILT_IN:]}                      # extras.py: this machine only
+    assert edit - local == style | {"flux2-klein-4b", "moss-edit-v5"}
     assert catalog.DEFAULTS == {"generate": "z-image-turbo", "edit": "qwen-edit-2511", "style": "qwen-edit-2511",
                                 "remove_background": "birefnet", "upscale": "realesrgan-x4"}
 
@@ -92,8 +93,9 @@ def test_listing_by_task():
     gen = {r["id"] for r in catalog.listing()}
     assert "z-image-turbo" in gen and "qwen-edit-2511" not in gen          # generate stays as it was
     rows = {r["id"]: r for r in catalog.listing(task="edit")}
-    h3 = {m for m in ("minimax-h3-image", "moss-edit-v5") if catalog.available(catalog.resolve(m))}   # not bundles
-    assert set(rows) == {"qwen-edit-2511", "qwen-edit-2511-q3", "flux2-klein-4b"} | h3 and rows["qwen-edit-2511"]["default"]
+    local = {m.id for m in catalog.CATALOG[catalog.BUILT_IN:]}                      # extras.py: this machine only
+    moss = {"moss-edit-v5"} if catalog.available(catalog.resolve("moss-edit-v5")) else set()   # not a bundle
+    assert set(rows) - local == {"qwen-edit-2511", "qwen-edit-2511-q3", "flux2-klein-4b"} | moss and rows["qwen-edit-2511"]["default"]
     assert {r["id"] for r in catalog.listing(task="style") if r["default"]} == {"qwen-edit-2511"}
     assert len(catalog.listing(task="all")) == len(catalog.CATALOG)
     with pytest.raises(catalog.CatalogError):

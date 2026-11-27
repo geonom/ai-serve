@@ -15,22 +15,6 @@ client = TestClient(plugin.app, client=("127.0.0.1", 50000))
 PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\0" * 64).decode()
 
 
-@pytest.fixture
-def root(tmp_path):
-    """A models root with every catalog file, the upscaler and one LoRA per family."""
-    for m in video.CATALOG:
-        for d, f in m.files:
-            (tmp_path / d / f).parent.mkdir(parents=True, exist_ok=True)
-            (tmp_path / d / f).write_bytes(b"x")
-    (tmp_path / "latent_upscale_models").mkdir()
-    (tmp_path / "latent_upscale_models" / video.UPSCALER).write_bytes(b"x")
-    for fam, name in (("ltx-2.5", "style A"), ("wan-2.2", "motion")):
-        (tmp_path / "loras" / fam).mkdir(parents=True)
-        (tmp_path / "loras" / fam / f"{name}.safetensors").write_bytes(b"x")
-    (tmp_path / "loras" / "ltx-2.5" / "notes.txt").write_text("not a lora")
-    return str(tmp_path)
-
-
 # ------------------------------------------------------------------ catalog
 
 def test_listing_marks_installed_models_and_their_loras(root, tmp_path):
@@ -42,7 +26,6 @@ def test_listing_marks_installed_models_and_their_loras(root, tmp_path):
     assert rows["ltx-2.5"]["default"] and not rows["wan-2.2"]["default"]          # LTX is the default for both tasks
     assert rows["ltx-2.5"]["prompt_guide"] == rows["ltx-2.5-q3"]["prompt_guide"] == "ltx-2"
     assert rows["wan-2.2"]["prompt_guide"] == rows["wan-2.2-5b"]["prompt_guide"] == "wan-2.2"
-    assert rows["minimax-h3"]["prompt_guide"] == rows["minimax-h3-4step"]["prompt_guide"] == "minimax-h3"
     assert not any(r["available"] for r in video.listing(str(tmp_path / "empty")))
 
 
@@ -209,38 +192,6 @@ def test_steps_reach_every_workflow(root):
     assert small["k"]["inputs"]["steps"] == 10
 
 
-def test_minimax_h3_frames_follow_its_17k_plus_5_grid(root):
-    m = video.resolve("minimax-h3")
-    assert m.audio and m.fps == 24 and m.tasks == ("text_to_video", "image_to_video")
-    assert video.frame_count(m, 5) == 124 and video.frame_count(m, 3) == 73     # Comfy-Org's template formula
-    assert all((video.frame_count(m, s) - 5) % 17 == 0 for s in (2, 4, 7, 10))
-
-
-def test_minimax_h3_text_to_video_follows_comfy_orgs_template(root):
-    r = video.parse_request({"prompt": "rain on a tin roof", "model": "minimax-h3", "seed": 3}, root)
-    assert r.steps == 6                                             # the 8-step turbo LoRA at the template's 6
-    g = video.workflow(r, None, "video/x")
-    assert g["unet"]["class_type"] == "UnetLoaderGGUF" and g["clip"]["class_type"] == "CLIPLoader"
-    assert g["clip"]["inputs"]["type"] == "minimax"
-    assert g["speed"]["inputs"]["lora_name"].startswith("minimax-h3-speed/") and g["speed"]["inputs"]["model"] == ["unet", 0]
-    assert g["cond"]["class_type"] == "MiniMaxH3ImageToVideo" and g["cond"]["inputs"]["length"] == 124
-    assert "first_frame" not in g["cond"]["inputs"] and g["cond"]["inputs"]["width"] == 864
-    assert g["sched"]["inputs"] == {"model": ["speed", 0], "scheduler": "simple", "steps": 6, "denoise": 1.0}
-    assert g["samp"]["inputs"]["sampler_name"] == "res_multistep" and g["guide"]["class_type"] == "BasicGuider"
-    assert g["run"]["inputs"]["latent_image"] == ["cond", 1]
-    assert g["dec"]["inputs"]["samples"] == ["run", 0] and g["adec"]["class_type"] == "VAEDecodeAudio"
-    assert g["vid"]["inputs"]["audio"] == ["adec", 0] and g["vid"]["inputs"]["fps"] == 24
-    assert comfy.comfy_model_files(g) >= {f for _, f in r.model.files}
-
-
-def test_minimax_h3_picture_is_the_first_frame_and_the_fast_row_uses_four_steps(root):
-    g = video.workflow(video.parse_request({"prompt": "x", "model": "minimax-h3", "image_base64": PNG}, root),
-                       "start.png", "p")
-    assert g["cond"]["inputs"]["first_frame"] == ["img", 0] and g["img"]["inputs"]["image"] == "start.png"
-    fast = video.parse_request({"prompt": "x", "model": "minimax-h3-4step"}, root)
-    assert fast.steps == 4 and "4step" in video.workflow(fast, None, "p")["speed"]["inputs"]["lora_name"]
-
-
 # ------------------------------------------------------------------ jobs through the endpoints
 
 def test_job_flow_with_a_fake_comfyui(monkeypatch, root, tmp_path):
@@ -315,10 +266,3 @@ def test_no_gpu_room_is_a_507_before_any_job_exists(monkeypatch, root):
     assert len(video.JOBS._jobs) == before
 
 
-def test_sulphur_3_is_minimax_h3_with_its_own_main_model(root):
-    g = video.workflow(video.parse_request({"prompt": "x", "model": "sulphur-3", "seed": 1}, root), None, "p")
-    assert g["unet"]["inputs"]["unet_name"] == "Sulphur-3-Q4_K_M.gguf"
-    h3 = video.workflow(video.parse_request({"prompt": "x", "model": "minimax-h3", "seed": 1}, root), None, "p")
-    assert {k: v for k, v in g.items() if k != "unet"} == {k: v for k, v in h3.items() if k != "unet"}
-    row = next(r for r in video.listing(str(root)) if r["id"] == "sulphur-3")
-    assert row["audio"] and row["prompt_guide"] == "minimax-h3" and not row["default"]

@@ -15,6 +15,7 @@ import httpx
 
 from backend.cluster.consumers import Consumer
 from backend.plugins.contracts import ContractError, Provision, normalize_status, plugin_url
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.plugins")
 _transport: Optional[httpx.AsyncBaseTransport] = None   # tests put a MockTransport here
@@ -68,7 +69,7 @@ def url(p: Plugin, endpoint: str, suffix: str = "") -> str:
 
 
 def _client(timeout: float) -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=timeout, transport=_transport) if _transport else httpx.AsyncClient(timeout=timeout)
+    return httpclient.AsyncClient(timeout=timeout, transport=_transport) if _transport else httpclient.AsyncClient(timeout=timeout)
 
 
 async def call(p: Plugin, endpoint: str, method: str = "GET", suffix: str = "", timeout: float = TIMEOUT_S,

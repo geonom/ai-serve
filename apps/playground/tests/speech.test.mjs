@@ -56,3 +56,25 @@ test('srt and readable text', () => {
     assert.equal(R.readable({ segments: segs }), '[0:00] SPEAKER_00: Hallo\n[1:01] SPEAKER_01: Ja');
     assert.equal(R.readable({ transcript: 'Nur Text', segments: [{ text: 'Nur Text' }] }), 'Nur Text');
 });
+
+test('ready-made voices first; recordings in the server folder only for the owner (2026-11-27)', () => {
+    const mode = { inputs: { reference: 'optional' }, voices: [
+        { id: 'synthetic:warm-narrator', label: 'Warm narrator', languages: ['de', 'en'] },
+        { id: 'my:abc', label: 'My voice', own: true }] };
+    const clips = [{ name: 'Some Person - Talk.wav', path: '/srv/voices/Some Person - Talk.wav' }];
+    const guest = R.voiceChoices(mode, clips, false);
+    assert.deepEqual(guest.map(g => g.label), ['Ready-made voices']);
+    assert.deepEqual(guest[0].options.map(o => o.value), ['voice:synthetic:warm-narrator', 'voice:my:abc']);
+    const owner = R.voiceChoices(mode, clips, true);
+    assert.deepEqual(owner.map(g => g.label), ['Ready-made voices', 'Recordings on this server']);
+    assert.deepEqual(owner[1].options, [{ value: 'path:/srv/voices/Some Person - Talk.wav', text: 'Some Person - Talk' }]);
+    assert.deepEqual(R.voiceChoices({ inputs: {} }, clips, true), []);     // the mode takes no reference
+});
+
+test('a chosen ready-made voice goes as `voice`, never together with a clip', () => {
+    const e = { id: 'cosyvoice' }, m = { variant: 'zero_shot', inputs: { reference: 'optional', ref_text: 'optional' } };
+    const b = R.ttsPayload(e, m, { text: 'Hallo', language: 'de', voice: 'synthetic:warm-narrator', refVoicePath: '/x.wav' });
+    assert.equal(b.voice, 'synthetic:warm-narrator');
+    assert.equal(b.ref_voice_path, undefined);
+    assert.equal(b.ref_audio_base64, undefined);
+});

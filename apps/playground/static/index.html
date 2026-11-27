@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=1">
     <link rel="stylesheet" href="redesign.css?v=1">
-    <link rel="stylesheet" href="playground.css?v=120">
+    <link rel="stylesheet" href="playground.css?v=123">
 </head>
 <body>
     <header class="sw-bar">
@@ -45,7 +45,7 @@
         <div class="sw-actions">
             <span id="quota-badge" class="quota-badge" hidden title="Your daily quota on the Playground"></span>
             <div id="status-backend" class="status-indicator offline" title="ai-serve-ui Gateway"><span class="dot"></span><span class="status-label">Gateway</span></div>
-            <div id="status-comfyui" class="status-indicator offline" title="ComfyUI"><span class="dot"></span><span class="status-label">ComfyUI</span></div>
+            <div id="status-comfyui" class="status-indicator offline" title="Whether the gateway can make pictures right now"><span class="dot"></span><span class="status-label">Images</span></div>
             <button id="help-btn" class="btn-icon-sm" title="Help for this page" aria-label="Help for this page">?</button>
             <span id="lang-slot"></span>
             <a id="dashboard-link" class="btn btn-secondary btn-sm" href="http://localhost:8030/" target="_blank" rel="noopener">Dashboard</a>
@@ -98,7 +98,7 @@
                             </div>
 
                             <div class="toggle-group" style="margin-bottom: 1rem;">
-                                <input type="checkbox" id="gateway-thinking" checked>
+                                <input type="checkbox" id="gateway-thinking">
                                 <label for="gateway-thinking">Let it think (thinking)</label>
                             </div>
 
@@ -231,6 +231,8 @@
                                 <button type="button" id="comfy-mode-generate-btn" class="sub-tab-link active">Generate</button>
                                 <button type="button" id="comfy-mode-edit-btn" class="sub-tab-link">Edit</button>
                                 <button type="button" id="comfy-mode-style-btn" class="sub-tab-link">Transfer style</button>
+                                <button type="button" id="comfy-mode-upscale-btn" class="sub-tab-link">Enlarge</button>
+                                <button type="button" id="comfy-mode-cutout-btn" class="sub-tab-link">Cut out</button>
                                 <button type="button" id="comfy-mode-batch-btn" class="sub-tab-link">Batch</button>
                             </div>
                             <div id="comfy-generate-only-fields">
@@ -267,15 +269,8 @@
                                     <input type="number" id="comfy-lora-strength" value="1.0" step="0.05" min="0" max="2">
                                 </div>
                             </div>
-                            <div id="comfy-edit-fields" style="display: none;">
-                                <div class="input-group">
-                                    <label for="comfy-edit-model">Model</label>
-                                    <select id="comfy-edit-model"><option value="qwen-edit-2511">Qwen-Image-Edit 2511 (Q2_K)</option></select>
-                                    <div id="comfy-edit-model-note" class="muted small"></div>
-                                    <div id="dl-image-edit" class="dl-panel" hidden></div>
-                                </div>
-                                <div class="input-group">
-                                    <label>Picture 1 – the image to edit, or the scene</label>
+                                <div class="input-group" id="comfy-picture-group" style="display: none;">
+                                    <label id="comfy-picture-label">Picture 1 – the image to edit, or the scene</label>
                                     <div id="comfy-edit-upload-zone" class="image-upload-zone">
                                         <input type="file" id="comfy-edit-input" accept="image/*" style="display: none;">
                                         <div id="comfy-edit-preview-container" style="display: none; position: relative;">
@@ -286,6 +281,14 @@
                                             <span>🖼️ Drop an image here or click</span>
                                         </div>
                                     </div>
+                                    <button type="button" class="btn-link pick-mine" data-slot="edit">Choose from My images</button>
+                                </div>
+                            <div id="comfy-edit-fields" style="display: none;">
+                                <div class="input-group">
+                                    <label for="comfy-edit-model">Model</label>
+                                    <select id="comfy-edit-model"><option value="qwen-edit-2511">Qwen-Image-Edit 2511 (Q2_K)</option></select>
+                                    <div id="comfy-edit-model-note" class="muted small"></div>
+                                    <div id="dl-image-edit" class="dl-panel" hidden></div>
                                 </div>
                                 <div class="input-group" id="comfy-edit-extra-group">
                                     <label>More pictures (optional) – e.g. characters for the scene above</label>
@@ -295,6 +298,7 @@
                                         <input type="file" id="comfy-edit-extra-input" accept="image/*" multiple style="display: none;">
                                         <div class="upload-placeholder"><span>➕ Add pictures (several at once are fine)</span></div>
                                     </div>
+                                    <button type="button" class="btn-link pick-mine" data-slot="edit-extra">Choose from My images</button>
                                     <div id="comfy-edit-extra-hint" class="muted small"></div>
                                 </div>
                                 <div class="input-group">
@@ -321,6 +325,7 @@
                                             <span>🖼️ Drop the content image here or click</span>
                                         </div>
                                     </div>
+                                    <button type="button" class="btn-link pick-mine" data-slot="style-content">Choose from My images</button>
                                 </div>
                                 <div class="input-group">
                                     <label>Style reference</label>
@@ -334,15 +339,30 @@
                                             <span>🎨 Drop the style reference here or click</span>
                                         </div>
                                     </div>
+                                    <button type="button" class="btn-link pick-mine" data-slot="style">Choose from My images</button>
+                                </div>
+                            </div>
+                            <div id="comfy-tool-fields" style="display: none;">
+                                <div class="input-group">
+                                    <label for="comfy-tool-model">Model</label>
+                                    <select id="comfy-tool-model"></select>
+                                    <div id="comfy-tool-model-note" class="muted small"></div>
+                                </div>
+                                <div class="input-group" id="comfy-upscale-factor-group">
+                                    <label for="comfy-upscale-factor">How much larger</label>
+                                    <select id="comfy-upscale-factor">
+                                        <option value="2">2 × (twice as wide and high)</option>
+                                        <option value="4">4 ×</option>
+                                    </select>
+                                    <div id="comfy-upscale-note" class="muted small"></div>
                                 </div>
                             </div>
                             <div id="comfy-batch-fields" style="display: none;">
                                 <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0.75rem;">
-                                    Generate a whole list of images from one JSON file, one at a time, using the same
-                                    Z-Image-Turbo (or Ernie Turbo / Ideogram-4) workflow as Generate mode above.
-                                    Upload a file or edit the JSON directly below. Add a per-item "filename" to also
-                                    save that image to disk (as .png) — retrievable later via
-                                    GET /api/comfyui/images/{filename}.
+                                    Make a whole list of pictures from one JSON file, one after the other, with the
+                                    models of “Generate” (Z-Image Turbo, ERNIE Turbo, Qwen-Image). Upload a file or
+                                    edit the list below. An item's "filename" also keeps that picture as a file on
+                                    the server under this name.
                                 </p>
                                 <div class="input-group">
                                     <label for="comfy-batch-file-input">Upload a JSON file</label>
@@ -418,10 +438,10 @@
                                 </div>
                                 <div class="timeline-nodes">
                                     <span class="node-label">Now:</span>
-                                    <code id="comfy-progress-node" class="node-code">Starte …</code>
+                                    <code id="comfy-progress-node" class="node-code">Starting …</code>
                                 </div>
                                 <div class="timeline-warning">
-                                    ⏳ Model loading takes up to 30s. GPU memory is auto-freed 10s after completion.
+                                    ⏳ The first picture loads the model – that can take a minute.
                                 </div>
                             </div>
                         </div>
@@ -435,6 +455,7 @@
                                 🖼️ Generated image will appear here
                             </div>
                             <img id="comfy-result-img" src="" style="display: none; max-width: 100%; border-radius: 12px; box-shadow: var(--shadow-lg);">
+                            <div id="comfy-result-actions" class="picture-actions" hidden></div>
                         </div>
                     </div>
 
@@ -632,7 +653,9 @@ France is known for its cheese.</textarea></div>
                             <button id="ocr-copy-btn" class="btn btn-secondary btn-sm" disabled>Copy</button>
                         </div>
                         <div id="ocr-status" class="muted small"></div>
-                        <pre id="ocr-result" class="sw-result">Noch nichts gelesen.</pre>
+                        <div id="ocr-rendered" class="doc-rendered" hidden></div>
+                        <pre id="ocr-result" class="sw-result">Nothing read yet.</pre>
+                        <button type="button" id="ocr-view-btn" class="btn-link" hidden>Show the raw text</button>
                     </div>
                 </div>
             </div>
@@ -732,7 +755,7 @@ France is known for its cheese.</textarea></div>
                             </div>
                             <div class="input-group">
                                 <label for="cmp-steps">Step counts <span class="muted small">(empty = each model's default)</span></label>
-                                <input type="text" id="cmp-steps" placeholder="z. B. 4, 8, 20" inputmode="numeric">
+                                <input type="text" id="cmp-steps" placeholder="e.g. 4, 8, 20" inputmode="numeric">
                             </div>
                             <div class="input-group">
                                 <label for="cmp-seeds">Seeds <span class="muted small">(empty = one random seed for all)</span></label>
@@ -797,6 +820,7 @@ France is known for its cheese.</textarea></div>
                                     <label class="btn btn-secondary btn-sm" for="video-image-file">Upload a picture</label>
                                     <input type="file" id="video-image-file" accept="image/png,image/jpeg,image/webp" hidden>
                                     <button type="button" id="video-image-generate" class="btn btn-secondary btn-sm">Create one from the description</button>
+                                    <button type="button" class="btn btn-secondary btn-sm pick-mine" data-slot="video">Choose from My images</button>
                                     <button type="button" id="video-image-clear" class="btn btn-secondary btn-sm" hidden>Remove</button>
                                 </div>
                                 <img id="video-image-preview" class="video-image-preview" alt="" hidden>
@@ -909,6 +933,7 @@ France is known for its cheese.</textarea></div>
                 <div id="sw-lb-meta" class="sw-lb-meta"></div>
                 <div class="sw-lb-actions">
                     <a id="sw-lb-download" class="btn btn-secondary btn-sm" download>Save</a>
+                    <span id="sw-lb-use" class="picture-actions inline"></span>
                     <button id="sw-lb-reuse" class="btn btn-secondary btn-sm">Use the prompt in a comparison</button>
                     <button id="sw-lb-delete" class="btn btn-danger-outline btn-sm">Delete</button>
                     <button id="sw-lb-close" class="btn btn-primary btn-sm">Close (Esc)</button>
@@ -985,25 +1010,40 @@ France is known for its cheese.</textarea></div>
     </div>
 
 
+    <dialog id="pick-dialog" class="pick-dialog">
+        <div class="pick-head">
+            <h2>Choose from My images</h2>
+            <button type="button" id="pick-close" class="btn btn-secondary btn-sm">Close (Esc)</button>
+        </div>
+        <p id="pick-empty" class="muted small" hidden>Nothing here yet – pictures you make in the Playground show up here.</p>
+        <div id="pick-grid" class="pick-grid"></div>
+        <button type="button" id="pick-more" class="btn btn-secondary btn-sm" hidden>Show more</button>
+    </dialog>
     <script src="errors.js?v=1"></script>
     <script src="i18n.js?v=1"></script>
-    <script src="i18n.de.js?v=10"></script>
+    <script src="i18n.de.js?v=18"></script>
     <script src="door-session.js?v=1"></script>
     <script src="models.js?v=3"></script>
     <script src="imagesteps.js?v=1"></script>
     <script src="editimages.js?v=1"></script>
-    <script src="app.js?v=119"></script>
+    <script src="imageroute.js?v=1"></script>
+    <script src="pictureuse.js?v=1"></script>
+    <script src="apierror.js?v=2"></script>
+    <script src="safehtml.js?v=1"></script>
+    <script src="app.js?v=126"></script>
     <script src="downloads.js?v=6"></script>
-    <script src="docs.js?v=2"></script>
+    <script src="docsrender.js?v=1"></script>
+    <script src="docs.js?v=3"></script>
     <script src="layout.js?v=21"></script>
-    <script src="compare.js?v=15"></script>
-    <script src="quota.js?v=2"></script>
-    <script src="speech.js?v=5"></script>
+    <script src="compare.js?v=17"></script>
+    <script src="quota.js?v=3"></script>
+    <script src="speech.js?v=6"></script>
     <script src="talk.js?v=14"></script>
-    <script src="texts.js?v=2"></script>
-    <script src="video.js?v=6"></script>
-    <script src="overview.js?v=4"></script>
-    <script src="help.js?v=5"></script>
+    <script src="texts.js?v=3"></script>
+    <script src="video.js?v=8"></script>
+    <script src="pictures.js?v=3"></script>
+    <script src="overview.js?v=6"></script>
+    <script src="help.js?v=6"></script>
     <script>document.getElementById('lang-slot').replaceWith(I18N.switcher());</script>
 </body>
 </html>

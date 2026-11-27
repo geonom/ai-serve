@@ -156,9 +156,12 @@ async function loadVideoModels() {
     try {
         const r = await api('/v1/video/models');
         VIDEO.models = (r.data || []).filter(m => m.available);
+        VIDEO.listFailed = false;
+        window.dispatchEvent(new CustomEvent('pg-video-models', { detail: VIDEO.models }));   // pictures.js: "Make a video"
     } catch (err) {
         VIDEO.models = [];
-        document.getElementById('video-status').textContent = tx('No video models: {err}', { err: err.message });
+        VIDEO.listFailed = true;
+        document.getElementById('video-status').textContent = errorText.friendly(err.status || 503, err.message).text;
     }
     const keep = sel.value;
     sel.innerHTML = '';
@@ -167,7 +170,8 @@ async function loadVideoModels() {
         sel.append(new Option(`${m.label} (${kind})`, m.id));
     }
     if (keep && VIDEO.models.some(m => m.id === keep)) sel.value = keep;
-    if (!VIDEO.models.length) sel.append(new Option(tx('no video model installed'), ''));
+    if (!VIDEO.models.length) sel.append(new Option(VIDEO.listFailed ? tx('the video models could not be asked for') : tx('no video model installed'), ''));
+    document.getElementById('video-run-btn').disabled = !VIDEO.models.length;
     fillVideoForm();
 }
 
@@ -222,6 +226,7 @@ document.getElementById('video-image-generate').addEventListener('click', async 
     try {
         const r = await api('/v1/images/generations', 'POST', { prompt, aspect_ratio: aspect, response_format: 'b64_json' });
         showVideoPicture(r.data[0].b64_json, tx('Created with {model}', { model: r.model || tx('the default image model') }));
+        if (typeof saveToGallery === 'function') saveToGallery(r.data[0].b64_json, { prompt, model: r.model, aspect_ratio: aspect, source: 'bild' });
     } catch (err) {
         document.getElementById('video-image-note').textContent = tx('Failed: {err}', { err: err.message });
     }
@@ -306,7 +311,9 @@ document.getElementById('video-run-btn').addEventListener('click', async () => {
         VIDEO.started = performance.now();
         pollVideo();
     } catch (err) {
-        status.textContent = tx('Failed: {err}', { err: err.message });
+        const f = errorText.friendly(err.status || 0, err.message);
+        status.textContent = f.text;
+        if (f.details && f.details !== f.text) addLog(tx('Video: {err}', { err: f.details }), 'error');
         videoBusy(false);
     }
 });

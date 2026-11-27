@@ -52,6 +52,7 @@ from backend.plugins import llm as llm_plugins
 from backend.plugins import registry as plugin_registry
 from backend.state import state
 from backend.version import BACKEND_VERSION, VERSION_LOG
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.dashboard")
 router = APIRouter()
@@ -719,7 +720,7 @@ async def get_status():
         health_details: Dict[str, Any] = {}
         if running:
             try:
-                async with httpx.AsyncClient(timeout=0.5) as client:
+                async with httpclient.AsyncClient(timeout=0.5) as client:
                     resp = await client.get(f"http://127.0.0.1:{port}/health")
                     if resp.status_code == 200:
                         ready = True
@@ -739,7 +740,7 @@ async def get_status():
         tps: Optional[float] = None
         if ready:
             try:
-                async with httpx.AsyncClient(timeout=0.5) as client:
+                async with httpclient.AsyncClient(timeout=0.5) as client:
                     slots_resp = await client.get(f"http://127.0.0.1:{port}/slots")
                     if slots_resp.status_code == 200:
                         now = time.time()
@@ -857,7 +858,7 @@ async def tokenize_text(req: TokenizeRequest):
     port = find_active_model_port(req.model_name)
     if port:
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpclient.AsyncClient(timeout=5.0) as client:
                 resp = await client.post(f"http://127.0.0.1:{port}/tokenize", json={"content": req.content})
                 if resp.status_code == 200:
                     return {"success": True, "tokens_count": len(resp.json().get("tokens", []))}
@@ -992,7 +993,7 @@ async def compare_chat(req: CompareRequest):
         proc = info.get("process")
         if proc and proc.poll() is None:
             try:
-                async with httpx.AsyncClient(timeout=0.5) as client:
+                async with httpclient.AsyncClient(timeout=0.5) as client:
                     resp = await client.get(f"http://127.0.0.1:{port}/health")
                     if resp.status_code == 200:
                         ready_ports.append(port)
@@ -1036,7 +1037,7 @@ async def compare_chat(req: CompareRequest):
             "stream": False,
         }
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpclient.AsyncClient(timeout=120.0) as client:
                 t0 = asyncio.get_event_loop().time()
                 resp = await client.post(f"http://127.0.0.1:{port}/v1/chat/completions", json=payload)
                 duration = asyncio.get_event_loop().time() - t0
@@ -1091,7 +1092,7 @@ async def get_system_status():
         if running:
             llama_running = True
             try:
-                async with httpx.AsyncClient(timeout=0.2) as client:
+                async with httpclient.AsyncClient(timeout=0.2) as client:
                     resp = await client.get(f"http://127.0.0.1:{port}/health")
                     if resp.status_code == 200:
                         ready = True

@@ -68,6 +68,7 @@ router = APIRouter(tags=["services"])
 SERVICE_LOGS_DIR = LOGS_DIR
 # Ports a service manifest may not claim: this backend.
 from backend.config import GATEWAY_PORT  # noqa: E402
+from backend import httpclient
 _RESERVED_PORTS = frozenset({8030, GATEWAY_PORT})
 # Copies started from here (service id -> Popen), for "starting"/"exited" status + reaping.
 _launched: Dict[str, subprocess.Popen] = {}
@@ -405,7 +406,7 @@ async def _reports_busy(m, inst) -> bool:
         return False
     port = m.port if m.port in inst.ports else (min(inst.ports) if inst.ports else m.port)
     try:
-        async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+        async with httpclient.AsyncClient(timeout=3.0, follow_redirects=False) as client:
             r = await client.get(f"http://127.0.0.1:{port}{m.status_path}")
         data = r.json() if r.status_code == 200 and len(r.content) <= _STATUS_MAX_BYTES else {}
     except (httpx.HTTPError, ValueError):
@@ -497,7 +498,7 @@ async def service_status(service_id: str):
     inst = instances[0]
     port = m.port if m.port in inst.ports else min(inst.ports)
     try:
-        async with httpx.AsyncClient(timeout=2.0, follow_redirects=False) as client:
+        async with httpclient.AsyncClient(timeout=2.0, follow_redirects=False) as client:
             r = await client.get(f"http://127.0.0.1:{port}{m.status_path}")
         if r.status_code != 200 or len(r.content) > _STATUS_MAX_BYTES:
             return {"id": m.id, "running": True, "facts": []}

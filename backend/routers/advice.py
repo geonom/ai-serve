@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from backend.config import DEFAULT_CHAT_MODEL, GATEWAY_PORT
 from backend.plugins import advice
 from backend.version import BACKEND_VERSION
+from backend import httpclient
 
 router = APIRouter()
 ASK_TIMEOUT_S = 600.0                 # a cold model load, then two short completions
@@ -59,7 +60,7 @@ async def _chat(model: str, messages, response_format=None, max_tokens: int = 60
     payload = {"model": model, "messages": messages, "temperature": 0, "max_tokens": max_tokens, "thinking": False}
     if response_format:
         payload["response_format"] = response_format
-    async with httpx.AsyncClient(timeout=ASK_TIMEOUT_S) as c:
+    async with httpclient.AsyncClient(timeout=ASK_TIMEOUT_S) as c:
         r = await c.post(f"http://127.0.0.1:{GATEWAY_PORT}/v1/chat/completions", json=payload)
     if r.status_code != 200:
         raise advice.AdviceError(f"{model}: chat answered {r.status_code}: {r.text[:200]}", 502)

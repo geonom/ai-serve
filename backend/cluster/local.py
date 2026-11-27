@@ -363,14 +363,14 @@ class LocalGpuManager:
             if holder:
                 self._refuse_exclusive(holder, purpose)
             reserved = self._outstanding(gpu)
-            plan = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved)
+            plan = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved, requester=requester)
             if not plan.ok:
                 # the learned headroom is a margin, not a must: if the measured peak itself fits, reserve that;
                 # failing that, a peak learned on another GPU gives way to what this GPU has seen (NeedBook.on_gpu)
                 for low in (self.needs.minimum(purpose, declared), self.needs.on_gpu(purpose, declared, gpu_ids.key(gpu))):
                     if low >= need_mb:
                         continue
-                    low_plan = plan_room(gpu, low, gpus, consumers, att, self.pins(), reserved_mb=reserved)
+                    low_plan = plan_room(gpu, low, gpus, consumers, att, self.pins(), reserved_mb=reserved, requester=requester)
                     if low_plan.ok:
                         need_mb, plan = low, low_plan
                         break
@@ -390,7 +390,7 @@ class LocalGpuManager:
                     consumers = self._mark_loading(consumers)
                     spent = _spent(consumers, tried)
                     plan = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved,
-                                     spent=spent)
+                                     spent=spent, requester=requester)
                     if not plan.ok:
                         # the first plan counted memory that turned out to stay (CUDA contexts): before stopping
                         # processes, the smaller needs a smaller card may use get their turn here too (2026-11-14:
@@ -399,13 +399,13 @@ class LocalGpuManager:
                                     self.needs.on_gpu(purpose, declared, gpu_ids.key(gpu))):
                             if low < need_mb:
                                 low_plan = plan_room(gpu, low, gpus, consumers, att, self.pins(),
-                                                     reserved_mb=reserved, spent=spent)
+                                                     reserved_mb=reserved, spent=spent, requester=requester)
                                 if low_plan.ok:
                                     need_mb, plan = low, low_plan
                                     break
                     if not plan.ok:
                         full = plan_room(gpu, need_mb, gpus, consumers, att, self.pins(), reserved_mb=reserved,
-                                         spent=frozenset(exited))
+                                         spent=frozenset(exited), requester=requester)
                         stop = [cid for cid in full.evict if cid in spent]
                         own = [c.id for c in consumers if requester and c.plugin == requester and c.id in stop]
                         declared_plan = None
@@ -414,7 +414,7 @@ class LocalGpuManager:
                             # good (2026-11-14: ComfyUI's cache filled the 3090, its LTX peak became 23650 MB):
                             # the need it declared gets its turn -- no process is stopped for it
                             declared_plan = plan_room(gpu, declared, gpus, consumers, att, self.pins(),
-                                                      reserved_mb=reserved, spent=spent)
+                                                      reserved_mb=reserved, spent=spent, requester=requester)
                         if declared_plan is not None and declared_plan.ok:
                             need_mb, plan, stop = declared, declared_plan, []
                         elif own:

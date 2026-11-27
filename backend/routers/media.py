@@ -1050,16 +1050,16 @@ async def openai_audio_models(task: Optional[str] = None):
     from backend import synthetic_voices as sv
     voices, _ = sv.load(_VOICES_DIR, SYNTHETIC_VOICES_FILE)
     return audio_catalog(tts_view, stt_view, default_voice=DEFAULT_TTS_VOICE,
-                         synthetic_voices=sv.catalog_entries(voices))
+                         synthetic_voices=sv.catalog_entries(voices), default_engine=DEFAULT_TTS_ENGINE or "")
 
 
 @router.get("/v1/images/models", summary="Image models from the image plugins (ComfyUI, MOSS, Iris ...) for apps to pick from")
 async def image_models(task: str = "generate"):
-    """task: generate (default) | edit | style | remove_background | all. Every image model comes from an image
-    plugin (backend/plugins/images.py); `default` is the plugin's suggestion for that task."""
+    """task: generate (default) | edit | style | remove_background | upscale | all. Every image model comes from an
+    image plugin (backend/plugins/images.py); `default` is the plugin's suggestion for that task."""
     from backend.plugins import images as image_plugins
-    if task not in ("generate", "edit", "style", "remove_background", "all"):
-        raise HTTPException(status_code=400, detail="task: generate | edit | style | remove_background | all")
+    if task not in ("generate", "edit", "style", "remove_background", "upscale", "all"):
+        raise HTTPException(status_code=400, detail="task: generate | edit | style | remove_background | upscale | all")
     entries, errors = await image_plugins.catalog()
     rows = [image_plugins.row(e) for e in entries if task == "all" or task in e["tasks"]]
     default = next((r["id"] for r in rows if r.get("default") and r.get("available")), rows[0]["id"] if rows else None)
@@ -1149,6 +1149,27 @@ async def cancel_image_generation(req: ImageCancelRequest):
     return {"cancelled": await image_plugins.cancel(req.request_id)}
 
 
+class ImageUpscaleRequest(BaseModel):
+    image: str                       # the picture: base64, or a data: URL
+    scale: Literal[2, 4] = 2
+    model: Optional[str] = None      # an upscale model from /v1/images/models?task=upscale; none = its default
+
+
+@router.post("/v1/images/upscale", summary="Enlarge a picture 2x or 4x (extension; the image plugin's upscale models)")
+async def image_upscale(req: ImageUpscaleRequest, x_request_id: Optional[str] = Header(None)):
+    """JSON in, OpenAI's image answer out ({data: [{b64_json}], model}). The same as /v1/images/edits with
+    task=upscale -- this shape is for callers that hold the picture as base64 already."""
+    raw = req.image.split(",", 1)[1] if req.image.startswith("data:") else req.image
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="image: base64 or a data: URL")
+    if not data:
+        raise HTTPException(status_code=400, detail="image is empty")
+    return await _image_edit(req.model, "upscale", [("image.png", data, "application/octet-stream")], scale=req.scale,
+                             x_request_id=x_request_id)
+
+
 @router.post("/v1/images/edits", summary="OpenAI-compatible image editing (routed to the image plugin of the model)")
 async def openai_image_edit(
     # one or more images (`image` repeated, or OpenAI's `image[]`), in prompt order: "picture 1", "picture 2" ...;
@@ -1159,24 +1180,39 @@ async def openai_image_edit(
     model: Optional[str] = Form(None),
     seed: Optional[int] = Form(None),   # extension: same seed + image + prompt = same result (Figurenwerkstatt)
     # extension: edit | style (style: `reference` = the style image) | remove_background (no prompt; the image back
-    # as a PNG with alpha -- cut-out figures)
+    # as a PNG with alpha -- cut-out figures) | upscale (no prompt; `scale` 2 or 4, the plugin's default otherwise)
     task: str = Form("edit"),
     reference: Optional[UploadFile] = File(None),
     aspect_ratio: Optional[str] = Form(None),   # extension: the output's shape (else the first image's)
+    scale: Optional[int] = Form(None),          # extension, task=upscale only
     x_request_id: Optional[str] = Header(None),
 ):
-    from backend.plugins import images as image_plugins
     if seed is not None and not 0 <= seed < 2 ** 50:
         raise HTTPException(status_code=400, detail="seed must be 0 .. 2^50")
-    if task not in ("edit", "style", "remove_background"):
-        raise HTTPException(status_code=400, detail="task: edit | style | remove_background")
-    if task != "remove_background" and not prompt:
+    if task not in ("edit", "style", "remove_background", "upscale"):
+        raise HTTPException(status_code=400, detail="task: edit | style | remove_background | upscale")
+    if task not in ("remove_background", "upscale") and not prompt:
         raise HTTPException(status_code=400, detail=f"{task} needs a prompt")
     if image and image_list:
         raise HTTPException(status_code=400, detail="send the images either as image or as image[], not both")
     images = image or image_list or []
     if not images:
         raise HTTPException(status_code=400, detail="an edit needs an image")
+    uploads = [(i.filename or "image.png", await i.read(), i.content_type or "application/octet-stream") for i in images]
+    ref = None if reference is None else (reference.filename or "reference.png", await reference.read(),
+                                          reference.content_type or "application/octet-stream")
+    return await _image_edit(model, task, uploads, prompt=prompt, seed=seed, aspect_ratio=aspect_ratio, scale=scale,
+                             reference=ref, x_request_id=x_request_id)
+
+
+async def _image_edit(model, task, uploads, prompt=None, seed=None, aspect_ratio=None, scale=None, reference=None,
+                      x_request_id=None):
+    """Checks against the model's catalog row, then the plugin listing it does the work. `uploads`: (filename,
+    bytes, content type) per image."""
+    from backend.plugins import images as image_plugins
+    if scale is not None and (task != "upscale" or scale not in (2, 4)):
+        raise HTTPException(status_code=400, detail="scale: 2 or 4, with task=upscale")
+    images = uploads
     p, entry = await _image_target(model, task)
     top = entry.get("max_images") or 1
     if len(images) > top:
@@ -1186,12 +1222,11 @@ async def openai_image_edit(
                                                     f"{', '.join(entry.get('aspect_ratios', [])) or '(none)'}")
     fields = {"model": entry["id"], "task": task, **({"prompt": prompt} if prompt else {}),
               **({"seed": str(seed)} if seed is not None else {}),
-              **({"aspect_ratio": aspect_ratio} if aspect_ratio else {})}
-    files = [("image", (i.filename or "image.png", await i.read(), i.content_type or "application/octet-stream"))
-             for i in images]
+              **({"aspect_ratio": aspect_ratio} if aspect_ratio else {}),
+              **({"scale": str(scale)} if scale is not None else {})}
+    files = [("image", u) for u in images]
     if reference is not None:
-        files.append(("reference", (reference.filename or "reference.png", await reference.read(),
-                                    reference.content_type or "application/octet-stream")))
+        files.append(("reference", reference))
     rid = x_request_id if x_request_id and re.fullmatch(r"[A-Za-z0-9_-]{16,64}", x_request_id) else None
     try:
         r = await image_plugins.forward(p, "edit", request_id=rid, data=fields, files=files)

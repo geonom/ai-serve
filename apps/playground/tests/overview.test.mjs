@@ -37,3 +37,25 @@ test('a gateway that does not answer', () => {
     assert.ok(c.filter(x => x.tab !== 'mine').every(x => !x.ok));
     assert.deepEqual(c[0].facts, ['Gateway unreachable right now.']);
 });
+
+test('a card for videos, and enlarging / cutting out among the picture facts (2026-11-26)', () => {
+    const VIDEO = [{ id: 'ltx', available: true, tasks: ['text_to_video', 'image_to_video'], audio: true },
+                   { id: 'wan', available: true, tasks: ['image_to_video'], audio: false },
+                   { id: 'gone', available: false, tasks: ['text_to_video'] }];
+    const img = [...IMG, { id: 'esr', available: true, tasks: ['upscale'] }, { id: 'bir', available: true, tasks: ['remove_background'] }];
+    const c = Object.fromEntries(R.cards(LLM, img, AUDIO, [], VIDEO).map(x => [x.tab, x]));
+    assert.equal(c.video.ok, true);
+    assert.equal(c.video.title, 'Create videos');
+    assert.deepEqual(c.video.facts, ['2 video models', '2 from a picture', '1 with sound']);
+    assert.deepEqual(c['image-gen'].facts, ['2 image models', '1 for editing', '1 for style', 'enlarge and cut out']);
+    // no video plugin, or the gateway didn't answer
+    assert.equal(Object.fromEntries(R.cards(LLM, IMG, AUDIO, [], []).map(x => [x.tab, x])).video.ok, false);
+    assert.equal(R.cards(null, null, null).find(x => x.tab === 'video').ok, false);
+});
+
+test('reading models: only those the Read documents page can use (NuExtract), not every OCR-named model', () => {
+    const llm = [...LLM, { id: 'GLM-OCR-Q8_0.gguf', label: 'GLM-OCR', kind: 'chat', vision: true, where: [local] },
+                 { id: 'RolmOCR.i1-IQ4_XS.gguf', label: 'RolmOCR', kind: 'chat', vision: true, where: [local] }];
+    const c = Object.fromEntries(R.cards(llm, IMG, AUDIO).map(x => [x.tab, x]));
+    assert.deepEqual(c.docs.facts, ['1 reading model']);
+});

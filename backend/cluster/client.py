@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from backend.cluster.enrollment import NodeRecord
+from backend import httpclient
 
 GITHUB_RELEASES = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
 
@@ -15,7 +16,7 @@ class NodeUnreachable(RuntimeError):
 async def agent_call(node: NodeRecord, method: str, path: str, body: Optional[Dict[str, Any]] = None,
                      timeout: float = 10.0) -> Dict[str, Any]:
     try:
-        async with httpx.AsyncClient(timeout=timeout) as c:
+        async with httpclient.AsyncClient(timeout=timeout) as c:
             r = await c.request(method, node.url + path, json=body,
                                 headers={"Authorization": f"Bearer {node.token}"})
     except httpx.HTTPError as e:
@@ -32,7 +33,7 @@ async def agent_call(node: NodeRecord, method: str, path: str, body: Optional[Di
 async def fetch_release(tag: Optional[str] = None) -> Dict[str, Any]:
     """A llama.cpp release with binary assets: the given tag, or the newest one
     that has them (the plain vX.Y.Z releases carry none)."""
-    async with httpx.AsyncClient(timeout=20.0, headers={"Accept": "application/vnd.github+json"}) as c:
+    async with httpclient.AsyncClient(timeout=20.0, headers={"Accept": "application/vnd.github+json"}) as c:
         if tag:
             r = await c.get(f"{GITHUB_RELEASES}/tags/{tag}")
             r.raise_for_status()
@@ -48,7 +49,7 @@ async def fetch_release(tag: Optional[str] = None) -> Dict[str, Any]:
 
 async def hf_meta(ref) -> tuple:
     """(size, sha256) of a Hugging Face file, from HF's own metadata (lfs.oid)."""
-    async with httpx.AsyncClient(timeout=20.0) as c:
+    async with httpclient.AsyncClient(timeout=20.0) as c:
         r = await c.post(f"https://huggingface.co/api/models/{ref.repo}/paths-info/{ref.revision}",
                          json={"paths": [ref.file]})
         r.raise_for_status()

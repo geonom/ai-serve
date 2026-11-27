@@ -32,3 +32,13 @@ test('models of a kind, reachable only', () => {
     assert.deepEqual(R.modelsOfKind(ms, 'embedding').map(m => m.id), ['a']);
     assert.deepEqual(R.modelsOfKind(ms, 'rerank').map(m => m.id), ['c']);
 });
+
+test('scores a visitor can read: rerank logits and similarities as percent (2026-11-27)', () => {
+    // a cross-encoder answers with logits (-1.55, -9.4, ...) -- shown raw they meant nothing
+    assert.equal(R.percent(0, 'rerank'), 50);
+    assert.equal(R.percent(-1.55, 'rerank'), 18);
+    assert.equal(R.percent(-9.4, 'rerank'), 0);
+    assert.equal(R.percent(4, 'rerank'), 98);
+    assert.equal(R.percent(0.92, 'similarity'), 92);
+    assert.equal(R.percent(-0.2, 'similarity'), 0);      // cosine below zero: no likeness
+});

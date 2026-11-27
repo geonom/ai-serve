@@ -11,6 +11,7 @@ import psutil
 from backend.procs import processes
 
 from backend.services.domain import LaunchPlan, ObservedProcess, child_environment
+from backend import httpclient
 
 
 _recent: Dict = {"at": 0.0, "value": None}
@@ -146,7 +147,7 @@ def terminate(pids: FrozenSet[int], timeout: float = 15) -> Dict[str, List[int]]
 
 async def health(port: int, path: str) -> bool:
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
+        async with httpclient.AsyncClient(timeout=2.0) as client:
             return (await client.get(f"http://127.0.0.1:{port}{path}")).status_code < 500
     except httpx.HTTPError:
         return False

@@ -43,7 +43,8 @@ class FakeImageServer:
                 {"id": "group-edit", "label": "Group Edit", "available": True, "tasks": ["edit"], "max_images": 5,
                  "aspect_ratios": ["1:1", "16:9"]},
                 {"id": "cutter", "label": "Cutter", "available": True, "tasks": ["remove_background"],
-                 "default": True}]})
+                 "default": True},
+                {"id": "enlarger", "label": "Enlarger", "available": True, "tasks": ["upscale"], "default": True}]})
         if path == "/v1/images/generations":
             if body.get("prompt") == "boom":
                 return httpx.Response(400, json={"detail": "steps can't be set for this model"})
@@ -174,6 +175,35 @@ def test_remove_background_refuses_a_model_that_cannot():
     r = client.post("/v1/images/edits", files={"image": ("a.png", b"\x89PNG")},
                     data={"task": "remove_background", "model": "pix-edit"})
     assert r.status_code == 400 and "remove_background" in r.json()["detail"]
+
+
+def test_upscale_needs_no_prompt_and_forwards_the_scale(server):
+    """2026-11-24 (V-Noveller: zoomed-in backgrounds): task=upscale on /v1/images/edits, and /v1/images/upscale for
+    callers holding base64 -- both reach the upscale model with `scale`."""
+    rows = client.get("/v1/images/models?task=upscale").json()
+    assert [r["id"] for r in rows["data"]] == ["enlarger"] and rows["default"] == "enlarger"
+    r = client.post("/v1/images/edits", files={"image": ("a.png", b"\x89PNG", "image/png")},
+                    data={"task": "upscale", "scale": "4"})
+    assert r.status_code == 200 and r.json()["model"] == "enlarger"
+    body = server.calls[-1][2]
+    assert b'name="task"\r\n\r\nupscale' in body and b'name="scale"\r\n\r\n4' in body and b'name="prompt"' not in body
+    r = client.post("/v1/images/upscale", json={"image": "data:image/png;base64," + base64.b64encode(b"\x89PNG").decode()})
+    assert r.status_code == 200, r.text
+    body = server.calls[-1][2]
+    assert b'name="scale"\r\n\r\n2' in body and b"\x89PNG" in body and b"enlarger" in body
+
+
+def test_upscale_refusals(server):
+    before = len(server.calls)
+    png = {"image": ("a.png", b"\x89PNG", "image/png")}
+    assert client.post("/v1/images/edits", files=png, data={"task": "upscale", "scale": "3"}).status_code == 400
+    assert client.post("/v1/images/edits", files=png, data={"task": "edit", "prompt": "p", "model": "pix-edit",
+                                                            "scale": "2"}).status_code == 400
+    assert client.post("/v1/images/upscale", json={"image": "!!", "scale": 2}).status_code == 400
+    assert client.post("/v1/images/upscale", json={"image": "QUJD", "scale": 3}).status_code == 422
+    r = client.post("/v1/images/upscale", json={"image": "QUJD", "model": "pix-edit"})
+    assert r.status_code == 400 and "upscale" in r.json()["detail"]
+    assert not [c for c in server.calls[before:] if c[1] == "/v1/images/edits"]
 
 
 def test_edit_and_style_still_need_a_prompt():

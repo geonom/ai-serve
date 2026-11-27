@@ -16,12 +16,15 @@ class TestClassify(unittest.TestCase):
         for m, p, kind in [("POST", "/v1/chat/completions", "chat"), ("POST", "/api/chat/completions", "chat"),
                            ("POST", "/v1/images/generations", "image"), ("POST", "/api/comfyui/generate", "image"),
                            ("POST", "/api/comfyui/edit", "image"), ("POST", "/api/comfyui/style-transfer", "image"),
+                           ("POST", "/v1/images/upscale", "image"), ("POST", "/v1/images/edits", "image"),
                            ("POST", "/api/tts/generate", "speech"), ("POST", "/api/stt/transcribe", "speech"),
                            ("POST", "/api/ocr", "ocr"), ("POST", "/api/comfyui/batch", "owner_only"),
                            ("POST", "/api/plugins/sd-serve/install", "owner_only"),
                            ("POST", "/api/plugins/comfyui/start", "owner_only"),
                            ("POST", "/v1/embeddings", "text"), ("POST", "/v1/rerank", "text"),   # load models too
                            ("POST", "/api/comfyui/batch/pause", "owner_only"),
+                           ("GET", "/api/comfyui/images/cat-yarn.png", "owner_only"),   # files saved by name: shared folder
+                           ("GET", "/api/voices", "owner_only"),      # recordings of real people, with transcripts
                            ("GET", "/api/models", None), ("GET", "/v1/images/models", None),
                            ("POST", "/api/tokenize", None), ("GET", "/api/comfyui/task/abc", None),
                            ("POST", "/v1/chat/completions?x=1", "chat"),

@@ -31,7 +31,7 @@ from playground import compare as compare_mod
 from playground import quota
 from playground.gallery import Gallery, GalleryError, decode_image
 from playground.llama_serve_identity import Unauthenticated, identify as sdk_identify
-from playground.policy import MAX_BODY_BYTES, Refused, forward_headers, route, wants_websocket, websocket_headers
+from playground.policy import guest_body, MAX_BODY_BYTES, Refused, forward_headers, route, wants_websocket, websocket_headers
 
 
 class QuickHTTPServer(ThreadingHTTPServer):
@@ -108,7 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) if length else None
         kind = quota.classify(self.command, urlsplit(self.path).path)
         if kind == "owner_only" and not person.is_owner:
-            return self._error(403, "Only the owner can do this (batch runs, downloads).")
+            return self._error(403, "Only the owner can do this (batch runs, downloads, files saved by name).")
+        if not person.is_owner:
+            body = guest_body(self.command, urlsplit(self.path).path, body)
         ticket, images = None, 0
         if kind and kind != "owner_only":
             images = self._images_requested(body) if kind == "image" else 0

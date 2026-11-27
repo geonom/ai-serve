@@ -54,6 +54,7 @@ from backend.gpu_ids import GpuRef
 from backend.model_manager import find_mmproj_path, get_or_load_model, get_upstream_error_detail, resolve_model_path
 from backend.response_processing import process_completion_response
 from backend.state import state
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.ocr")
 router = APIRouter()
@@ -450,7 +451,7 @@ async def _run_ocr_page(
             "temperature": temperature,
             "chat_template_kwargs": chat_template_kwargs,
         }
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        async with httpclient.AsyncClient(timeout=300.0) as client:
             resp = await client.post(f"http://127.0.0.1:{port}/v1/chat/completions", json=payload)
             resp.raise_for_status()
             data = resp.json()

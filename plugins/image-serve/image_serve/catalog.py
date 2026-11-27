@@ -15,9 +15,11 @@ from typing import Dict, List, Optional, Tuple
 
 ASPECTS = ("1:1", "4:3", "3:4", "16:9", "9:16")
 DEFAULT = "z-image-turbo"
-TASKS = ("generate", "edit", "style", "remove_background")   # text-to-image, edit one image, content + style image,
-                                                             # cut out the foreground (alpha channel)
-DEFAULTS = {"generate": DEFAULT, "edit": "qwen-edit-2511", "style": "qwen-edit-2511", "remove_background": "birefnet"}
+TASKS = ("generate", "edit", "style", "remove_background", "upscale")   # text-to-image, edit one image, content +
+                                                             # style image, cut out the foreground (alpha channel),
+                                                             # enlarge 2x / 4x
+DEFAULTS = {"generate": DEFAULT, "edit": "qwen-edit-2511", "style": "qwen-edit-2511", "remove_background": "birefnet",
+            "upscale": "realesrgan-x4"}
 
 
 class CatalogError(ValueError):
@@ -40,6 +42,7 @@ class ImageModel:
     steps_max: int = 60
     tasks: Tuple[str, ...] = ("generate",)
     max_images: int = 0            # input images an edit takes (0 = none: text to image)
+    needs: Tuple[str, ...] = ()    # when set: every file it needs, relative to the models root (else the checkpoint)
 
 
 CATALOG: Tuple[ImageModel, ...] = (
@@ -52,7 +55,7 @@ CATALOG: Tuple[ImageModel, ...] = (
     ImageModel("qwen-image-2.1", "Qwen-Image 2.1", "comfyui", "qwen-image-2.1-Q4_K_M.gguf",
                "Rich in detail, needs ~40 steps (~100 s); symmetric subjects sometimes come out mirrored (ComfyUI, GGUF Q4).",
                text_in_image=True, steps_default=40),
-    ImageModel("qwen-image-2.1-int8", "Qwen-Image 2.1 (offiziell, int8)", "comfyui", "qwen_image_2.1_int8_convrot.safetensors",
+    ImageModel("qwen-image-2.1-int8", "Qwen-Image 2.1 (official, int8)", "comfyui", "qwen_image_2.1_int8_convrot.safetensors",
                "The official Comfy-Org file instead of the GGUF – slightly finer details, but slower here (~4 s per step).",
                text_in_image=True, steps_default=40),
     ImageModel("ideogram-4", "Ideogram 4", "comfyui", "ideogram4_nvfp4_mixed.safetensors",
@@ -81,10 +84,30 @@ CATALOG: Tuple[ImageModel, ...] = (
                "Large 33B model: ~4 MP images with rich detail and lettering, also edits from up to four pictures "
                "(<Picture 1>.. in the prompt); fixed 6 steps.", text_in_image=True, tasks=("generate", "edit"),
                steps_default=6, steps_adjustable=False, steps_max=6, max_images=4),
+    # MOSS-Image edits (2026-11-23, owner via V-Noveller): akhaliq's MOSS-Image-Edit-HQ LoRA v5 (Apache-2.0, the
+    # card's recommended checkpoint; its ai-toolkit-format weights/armV5/armV5.safetensors) on the int8 MOSS main
+    # model, ComfyUI's native TextEncodeMOSSImageEdit (comfy.build_moss_edit_workflow). `file` is the LoRA.
+    ImageModel("moss-edit-v5", "MOSS-Image Edit v5 (LoRA)", "comfyui", "MOSS/moss-edit-hq-armV5.safetensors",
+               "MOSS-Image with an edit LoRA (Apache-2.0): 50 steps, ~1 MP, very clean single-picture edits. Several "
+               "pictures mix the people up -- to combine figures, paste them into one picture and edit that.",
+               tasks=("edit",), steps_default=50, steps_max=60, max_images=4, aliases=("moss-edit",),
+               needs=("loras/MOSS/moss-edit-hq-armV5.safetensors", "diffusion_models/moss_image_sft_int8_convrot.safetensors",
+                      "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors", "vae/flux2-vae.safetensors")),
     ImageModel("birefnet", "BiRefNet (remove background)", "comfyui", "birefnet.safetensors",
                "Cuts out the foreground: the same image back as a PNG with transparency (~1 GB VRAM, seconds).",
                aspects=(), tasks=("remove_background",), steps_default=1, steps_adjustable=False, steps_max=1,
                max_images=1),
+    # Upscalers (2026-11-24, owner via V-Noveller: zoomed-in reader backgrounds): xinntao's Real-ESRGAN weights
+    # (BSD-3-Clause, from the project's GitHub releases) on ComfyUI's own UpscaleModelLoader/ImageUpscaleWithModel
+    # (comfy.upscale_workflow). Always 4x; 2x = the 4x result halved (lanczos). Enlarges, adds no new content.
+    ImageModel("realesrgan-x4", "Real-ESRGAN x4plus (upscale)", "comfyui", "RealESRGAN_x4plus.pth",
+               "Enlarges a picture 2x or 4x (`scale`), sharp edges, keeps the look; for photos and painted pictures. "
+               "Seconds, ~1-2 GB VRAM.", aspects=(), tasks=("upscale",), steps_default=1, steps_adjustable=False,
+               steps_max=1, max_images=1, aliases=("realesrgan",), needs=("upscale_models/RealESRGAN_x4plus.pth",)),
+    ImageModel("realesrgan-x4-anime", "Real-ESRGAN x4plus anime (upscale)", "comfyui", "RealESRGAN_x4plus_anime_6B.pth",
+               "Enlarges 2x or 4x (`scale`), tuned for drawn and anime-like pictures: flatter areas, clean lines. "
+               "Seconds, ~1 GB VRAM.", aspects=(), tasks=("upscale",), steps_default=1, steps_adjustable=False,
+               steps_max=1, max_images=1, needs=("upscale_models/RealESRGAN_x4plus_anime_6B.pth",)),
 )
 
 def resolve(name: Optional[str]) -> Optional[ImageModel]:
@@ -111,6 +134,8 @@ def available(m: ImageModel, models_root: Optional[str] = None) -> bool:
     if not config.comfy_ready():                     # no engine yet: nothing can run
         return False
     root = models_root or MODELS_ROOT
+    if m.needs:
+        return all(os.path.isfile(os.path.join(root, rel)) for rel in m.needs)
     bundle = BUNDLE_OF.get(m.id)
     return bundles.present(bundle, root) if bundle else _on_disk(root, m.file)
 
@@ -145,7 +170,7 @@ def check_steps(model: Optional[ImageModel], steps: Optional[int]) -> None:
 
 def listing(models_root: Optional[str] = None, task: str = "generate") -> List[dict]:
     """task: generate (default -- what apps listed before edit models were in here) | edit | style |
-    remove_background | all.
+    remove_background | upscale | all.
     `default` marks the default for the task asked for."""
     if task != "all" and task not in TASKS:
         raise CatalogError(f"task must be one of {', '.join(TASKS)}, all")

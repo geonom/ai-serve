@@ -71,6 +71,10 @@ async def lifespan(app: FastAPI):
         lg = logging.getLogger(logger_name)
         if _file_handler not in lg.handlers:
             lg.addHandler(_file_handler)
+    # where the event loop gets stuck, once a minute in the log (backend/loop_watch.py)
+    from backend.loop_watch import LoopWatch
+    loop_watch = LoopWatch()
+    loop_watch.start(asyncio.get_running_loop())
     scan_existing_llama_servers()
     try:
         # Owner gates live in this process; Serve routes persist in tailscaled.

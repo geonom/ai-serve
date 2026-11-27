@@ -36,6 +36,9 @@ class TestRules(unittest.TestCase):
                         "seed": 7, "aspect_ratio": "16:9", "seconds": 9.5, "source": "bild"})
         self.assertEqual(m["prompt"], "a fox")
         self.assertEqual(parse_meta({}), {"source": "bild"})
+        # edited, restyled, enlarged and cut-out pictures are kept too (2026-11-26), so they can be reused
+        for src in ("edit", "style", "upscale", "cutout"):
+            self.assertEqual(parse_meta({"source": src})["source"], src)
         # labels are display text (shown via textContent): brackets and commas are fine, control characters not
         self.assertEqual(parse_meta({"label": "Qwen-Image 2.1 (offiziell, int8)"})["label"], "Qwen-Image 2.1 (offiziell, int8)")
         for bad_label in ("a\nb", "x" * 121, "", 5):

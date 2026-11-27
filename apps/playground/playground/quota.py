@@ -50,11 +50,13 @@ _FIELDS = ("gpu_seconds_per_day", "images_per_day", "concurrent")
 
 _KINDS = [
     ("POST", re.compile(r"^/(v1|api)/chat/completions$"), "chat"),
-    ("POST", re.compile(r"^/v1/images/generations$"), "image"),
+    ("POST", re.compile(r"^/v1/images/(generations|upscale|edits)$"), "image"),
     ("POST", re.compile(r"^/api/comfyui/(generate|edit|style-transfer)$"), "image"),
     ("POST", re.compile(r"^/api/comfyui/batch(/.*)?$"), "owner_only"),
     ("POST", re.compile(r"^/api/plugins/[^/]+/install$"), "owner_only"),   # downloads (several GB, setup scripts)
-    ("POST", re.compile(r"^/api/plugins/[^/]+/start$"), "owner_only"),     # starting a plugin (its first start may build it)
+    ("POST", re.compile(r"^/api/plugins/[^/]+/start$"), "owner_only"),
+    ("GET", re.compile(r"^/api/comfyui/images/.+$"), "owner_only"),          # files saved by name: one shared folder
+    ("GET", re.compile(r"^/api/voices$"), "owner_only"),                     # recordings of real people (voices/)     # starting a plugin (its first start may build it)
     ("POST", re.compile(r"^/api/(tts/generate|stt/transcribe)$"), "speech"),
     ("POST", re.compile(r"^/api/ocr$"), "ocr"),
     ("GET", re.compile(r"^/v1/realtime$"), "speech"),

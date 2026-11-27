@@ -66,6 +66,42 @@ class TestPlanRoom:
         p = self.plan(20000)
         assert p.ok and p.evict == ["comfyui", "llm:8081"]
 
+    def test_the_askers_own_recent_model_still_gives_way(self):
+        """2026-11-25: image-serve stamps ComfyUI's last use as a call starts, so its idle edit model counted as
+        just used and every next picture was refused for minutes. The recent-use rule protects others, not the asker."""
+        import time
+        gpus = [dict(GPUS[0], free=2000), GPUS[1]]
+        att = {("llm:8081", 0): 9000, ("comfyui:comfyui", 0): 10000}
+        now = time.time()
+        fresh = [Consumer(id="llm:8081", kind="llm", label="gemma-31b", root_pids={100}, last_used=now - 1),
+                 Consumer(id="comfyui:comfyui", kind="image", label="ComfyUI", root_pids={200}, last_used=now - 1,
+                          plugin="comfyui")]
+        assert not plan_room(0, 9000, gpus, fresh, att).ok
+        p = plan_room(0, 9000, gpus, fresh, att, requester="comfyui")
+        assert p.ok and p.evict == ["comfyui:comfyui"]
+        assert not plan_room(0, 15000, gpus, fresh, att, requester="comfyui").ok   # Gemma stays protected
+
+    def test_used_in_the_last_20_s_is_never_unloaded(self):
+        """2026-11-25 (V-Noveller): a story run sends Gemma calls back to back; a picture's make_room caught Gemma
+        idle between two calls and stopped it while the next one arrived. Used < RECENT_USE_S ago = busy."""
+        import time
+        from backend.cluster.consumers import RECENT_USE_S
+        gpus = [dict(GPUS[0], free=2000), GPUS[1]]
+        att = {("llm:8081", 0): 9000, ("comfyui", 0): 10000}
+        now = time.time()
+        fresh = [Consumer(id="llm:8081", kind="llm", label="gemma-31b", root_pids={100}, last_used=now - 0.05),
+                 Consumer(id="comfyui", kind="image", label="ComfyUI", root_pids={200}, last_used=10)]
+        p = plan_room(0, 9000, gpus, fresh, att)
+        assert p.ok and p.evict == ["comfyui"]
+        p = plan_room(0, 15000, gpus, fresh, att)
+        assert not p.ok and p.evict == []
+        # it isn't working, it was just used: say so, and when it may give way (2026-11-27: "busy" read as a fault)
+        assert "gemma-31b (used 0 s ago, can be unloaded in 20 s" in p.reason
+        stale = [dict(c.__dict__) for c in fresh]
+        stale[0]["last_used"] = now - RECENT_USE_S - 1
+        p = plan_room(0, 15000, gpus, [Consumer(**c) for c in stale], att)
+        assert p.ok and p.evict == ["comfyui", "llm:8081"]
+
     def test_busy_and_pinned_never(self):
         p = self.plan(9000, pinned=frozenset({"comfyui"}))
         assert p.ok and p.evict == ["llm:8081"]

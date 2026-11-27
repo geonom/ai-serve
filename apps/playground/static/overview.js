@@ -8,8 +8,8 @@ const OverviewRules = (() => {
 
     // One card per page: {tab, group, title, text, facts[], ok}. `ok` false = the gateway can't do this now; then
     // the card names what could be downloaded for it (`downloads`: GET /api/plugins/installs items).
-    function cards(llm, images, audio, downloads) {
-        const out = baseCards(llm, images, audio);
+    function cards(llm, images, audio, downloads, video) {
+        const out = baseCards(llm, images, audio, video);
         const CAPS = { 'image-gen': ['image'], layout: ['image'], compare: ['image'], speech: ['tts', 'stt'] };
         for (const c of out) {
             const can = (downloads || []).filter(d => d.state !== 'installed' && (CAPS[c.tab] || []).includes(d.capability));
@@ -18,12 +18,12 @@ const OverviewRules = (() => {
         return out;
     }
 
-    function baseCards(llm, images, audio) {
+    function baseCards(llm, images, audio, video) {
         const llmOk = Array.isArray(llm), imgOk = Array.isArray(images);
         const models = llmOk ? llm.filter(reachable) : [];
         const chat = models.filter(m => m.kind === 'chat');
         const emb = models.filter(m => m.kind === 'embedding'), rr = models.filter(m => m.kind === 'rerank');
-        const ocr = chat.filter(m => /nuextract|ocr/i.test(m.id));
+        const ocr = chat.filter(m => /nuextract/i.test(m.id));   // what /api/ocr (Read documents) can drive
         const onDevices = chat.filter(m => m.where.length && m.where.every(p => p.place === 'device'));
         const loaded = chat.filter(m => m.loaded).map(m => m.label);
         const imgs = imgOk ? images.filter(m => m.available) : [];
@@ -31,10 +31,12 @@ const OverviewRules = (() => {
         const edit = imgs.filter(m => (m.tasks || []).includes('edit'));
         const style = imgs.filter(m => (m.tasks || []).includes('style'));
         const layout = gen.filter(m => m.layout);
+        const tools = imgs.some(m => (m.tasks || []).includes('upscale')) && imgs.some(m => (m.tasks || []).includes('remove_background'));
+        const vids = Array.isArray(video) ? video.filter(m => m.available) : [];
         const tts = audio && audio.tts && audio.tts.available ? audio.tts.engines : null;
         const stt = audio && audio.stt && audio.stt.available ? audio.stt.engines.filter(e => e.available) : null;
         const down = tx('Gateway unreachable right now.');
-        const TEXT = tx('Text'), IMAGE = tx('Image'), SOUND = tx('Sound');
+        const TEXT = tx('Text'), IMAGE = tx('Image'), VIDEO = tx('Video'), SOUND = tx('Sound');
         return [
             { tab: 'gateway', group: TEXT, title: tx('Chat'), ok: chat.length > 0,
               text: tx('Write with language models – questions, texts, code, describing images.'),
@@ -52,7 +54,8 @@ const OverviewRules = (() => {
               facts: llmOk ? [ocr.length ? plural(ocr.length, '{n} reading model', '{n} reading models') : tx('no reading model available')] : [down] },
             { tab: 'image-gen', group: IMAGE, title: tx('Create images'), ok: gen.length > 0,
               text: tx('Images from a description, changing images by instruction, transferring a style.'),
-              facts: imgOk ? [plural(gen.length, '{n} image model', '{n} image models'), tx('{n} for editing', { n: edit.length }), tx('{n} for style', { n: style.length })] : [down] },
+              facts: imgOk ? [plural(gen.length, '{n} image model', '{n} image models'), tx('{n} for editing', { n: edit.length }), tx('{n} for style', { n: style.length }),
+                              tools ? tx('enlarge and cut out') : null].filter(Boolean) : [down] },
             { tab: 'layout', group: IMAGE, title: tx('With positions'), ok: layout.length > 0,
               text: tx('Decide what goes where in the image – including lettering that appears exactly as written.'),
               facts: imgOk ? [layout.length ? plural(layout.length, '{n} variant', '{n} variants') + ' (MOSS-Image)' : tx('MOSS-Image not installed')] : [down] },
@@ -61,6 +64,11 @@ const OverviewRules = (() => {
               facts: imgOk ? [tx('{n} models to choose from', { n: gen.length })] : [down] },
             { tab: 'mine', group: IMAGE, title: tx('My images'), ok: true,
               text: tx('Everything you\'ve made here – only for you.'), facts: [] },
+            { tab: 'video', group: VIDEO, title: tx('Create videos'), ok: vids.length > 0,
+              text: tx('Short clips from a description or from a picture – some with sound.'),
+              facts: Array.isArray(video) ? [plural(vids.length, '{n} video model', '{n} video models'),
+                  tx('{n} from a picture', { n: vids.filter(m => (m.tasks || []).includes('image_to_video')).length }),
+                  tx('{n} with sound', { n: vids.filter(m => m.audio).length })] : [down] },
             { tab: 'speech', group: SOUND, title: tx('Speech'), ok: !!(tts && tts.length) || !!(stt && stt.length),
               text: tx('Have texts read out (with a cloned voice too) and transcribe recordings.'),
               facts: [tts ? tx('Speaking: {names}', { names: tts.map(e => e.label).join(', ') }) : tx('Speech output unreachable'),
@@ -96,10 +104,10 @@ if (typeof document !== 'undefined' && document.getElementById('overview-tab')) 
         const status = document.getElementById('ov-status');
         status.textContent = tx('Asking the gateway what it can do right now …');
         const get = path => api(path).catch(() => null);
-        const [llm, img, audio, backend] = await Promise.all([get('/v1/llm/models'), get('/v1/images/models?task=all'),
-                                                              get('/v1/audio/models'), get('/sw/backend')]);
+        const [llm, img, audio, backend, video] = await Promise.all([get('/v1/llm/models'), get('/v1/images/models?task=all'),
+                                                              get('/v1/audio/models'), get('/sw/backend'), get('/v1/video/models')]);
         const downloads = await Downloads.ready().then(() => Downloads.items()).catch(() => []);
-        render(OverviewRules.cards(llm && llm.models, img && img.data, audio, downloads));
+        render(OverviewRules.cards(llm && llm.models, img && img.data, audio, downloads, video && video.data));
         const ok = llm || img || audio;
         status.textContent = !ok ? tx('The gateway isn\'t answering right now – the pages work again once it runs.')
             : backend && backend.kind === 'openai'

@@ -78,10 +78,28 @@ def get_pid_on_port(port: int) -> Optional[int]:
     return p.pid if p else None
 
 
-def adopt_running() -> None:
-    """A ComfyUI that survived an image-serve restart (own session) is picked up again: pid and --cuda-device."""
+def _tracked_alive() -> bool:
+    return state.comfyui_process is not None and state.comfyui_process.poll() is None
+
+
+def live_pid() -> Optional[int]:
+    """The pid of the ComfyUI really running on our port. The tracked one only while it lives: a start that lost a
+    race (two jobs auto-starting at once; the second dies on the taken port) left its dead pid behind, and the GPU
+    manager then counted ComfyUI's memory as "other programs" and never freed it (2026-11-24)."""
+    if _tracked_alive() and state.comfyui_pid:
+        return state.comfyui_pid
     p = find_comfyui_process()
-    if p is None or state.comfyui_pid:
+    if p is None:
+        return None
+    adopt_running(force=True)
+    return p.pid
+
+
+def adopt_running(force: bool = False) -> None:
+    """A ComfyUI that survived an image-serve restart (own session) is picked up again: pid and --cuda-device.
+    `force`: also when a (dead) process is still tracked."""
+    p = find_comfyui_process()
+    if p is None or (state.comfyui_pid and not force) or (_tracked_alive() and state.comfyui_pid == p.pid):
         return
     state.comfyui_pid = p.pid
     try:
@@ -414,6 +432,84 @@ def build_h3_image_workflow(image_names: List[str], prompt: str, model_name: str
     return wf
 
 
+# MOSS-Image edits with an edit LoRA (2026-11-23, owner via V-Noveller: akhaliq/MOSS-Image-Edit-HQ v5, Apache-2.0),
+# the model card's native ComfyUI path: LoRA loader after the MOSS main model, TextEncodeMOSSImageEdit (ComfyUI's own
+# node, >= v0.43) with edit_format "ai-toolkit" (the LoRA's training layout) for the positive and, with an empty
+# prompt, the negative; the node uses the references at the size they come in, so each is scaled to ~1 MP first (the
+# text encoder sees them at <= 384x384 by itself). The card's settings: euler, 50 steps, cfg 3, SLG on single layer
+# 22, shift 5 (ComfyUI's MOSS default). Trained on single-picture edits -- the node takes more (references in order),
+# but every reference sits on the output's own position grid, so a second person comes out as a see-through ghost over
+# the first or the two get mixed (tested 2026-11-23 with 512 px .. 1 MP references, kv_cache off, image_strength 1.5,
+# swapped order; the card's own multi-reference test shows the same). What works: paste the figures into one scene
+# picture first, then one single-picture "blend them in" edit.
+# Tests: tests/test_moss_edit.py.
+MOSS_EDIT_MAIN_MODEL = "moss_image_sft_int8_convrot.safetensors"
+MOSS_EDIT_TEXT_ENCODER = "qwen3.5_9b_w4a8_gptq.safetensors"
+MOSS_EDIT_VAE = "flux2-vae.safetensors"
+MOSS_EDIT_MAX_IMAGES = 4
+MOSS_EDIT_SIZES = {"1:1": (1024, 1024), "16:9": (1360, 768), "9:16": (768, 1360), "4:3": (1184, 896), "3:4": (896, 1184)}
+
+
+def is_moss_edit(model_name: Optional[str]) -> bool:
+    return "moss-edit" in os.path.basename(model_name or "").lower()
+
+
+def build_moss_edit_workflow(image_names: List[str], prompt: str, lora: str, seed: int, steps: Optional[int] = None,
+                             aspect_ratio: Optional[str] = None, ref_max_edge: Optional[int] = None) -> Dict[str, Any]:
+    """A MOSS-Image edit with this edit LoRA and these uploaded pictures (in order)."""
+    if not 1 <= len(image_names) <= MOSS_EDIT_MAX_IMAGES:
+        raise ValueError(f"MOSS-Image Edit takes 1 to {MOSS_EDIT_MAX_IMAGES} images")
+    if aspect_ratio is not None and aspect_ratio not in MOSS_EDIT_SIZES:
+        raise ValueError(f"aspect_ratio: {', '.join(MOSS_EDIT_SIZES)}")
+    if ref_max_edge is None and aspect_ratio is not None:
+        # the references share the output's position grid and people keep their reference size: a 1 MP upright
+        # figure in a 16:9 frame lost head and feet (2026-11-23) -- so no reference is longer than the frame is short
+        ref_max_edge = min(MOSS_EDIT_SIZES[aspect_ratio])
+    wf: Dict[str, Any] = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": MOSS_EDIT_MAIN_MODEL, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": MOSS_EDIT_TEXT_ENCODER, "type": "moss_image",
+                                                     "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": MOSS_EDIT_VAE}},
+        "4": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": lora,
+                                                              "strength_model": 1.0}},
+        "5": {"class_type": "SkipLayerGuidanceDiTSimple", "inputs": {"model": ["4", 0], "double_layers": "",
+                                                                     "single_layers": "22", "start_percent": 0.0,
+                                                                     "end_percent": 1.0}},
+    }
+    refs: Dict[str, Any] = {}
+    for i, name in enumerate(image_names):
+        load, scale = str(10 + 2 * i), str(11 + 2 * i)
+        wf[load] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        wf[scale] = {"class_type": "ImageScaleToTotalPixels",
+                     "inputs": {"image": [load, 0], "upscale_method": "lanczos", "megapixels": 1.0,
+                                "resolution_steps": 16}}
+        refs[f"images.image_{i}"] = [scale, 0]
+        if ref_max_edge:
+            ref = str(40 + i)
+            wf[ref] = {"class_type": "ImageScaleToMaxDimension",
+                       "inputs": {"image": [scale, 0], "upscale_method": "lanczos", "largest_size": ref_max_edge}}
+            refs[f"images.image_{i}"] = [ref, 0]
+    for nid, text, title in (("6", prompt, "Positive"), ("7", "", "Negative")):
+        wf[nid] = {"class_type": "TextEncodeMOSSImageEdit", "_meta": {"title": title},
+                   "inputs": {"clip": ["2", 0], "prompt": text, "vae": ["3", 0], "edit_format": "ai-toolkit",
+                              "image_strength": 1.0, **refs}}
+    if aspect_ratio is None:
+        wf["8"] = {"class_type": "GetImageSize", "inputs": {"image": ["11", 0]}}
+        width, height = ["8", 0], ["8", 1]
+    else:
+        width, height = MOSS_EDIT_SIZES[aspect_ratio]
+    wf.update({
+        "9": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "30": {"class_type": "KSampler", "inputs": {"model": ["5", 0], "positive": ["6", 0], "negative": ["7", 0],
+                                                    "latent_image": ["9", 0], "seed": seed, "steps": steps or 50,
+                                                    "cfg": 3.0, "sampler_name": "euler", "scheduler": "normal",
+                                                    "denoise": 1.0}},
+        "31": {"class_type": "VAEDecode", "inputs": {"samples": ["30", 0], "vae": ["3", 0]}},
+        "32": {"class_type": "SaveImage", "inputs": {"images": ["31", 0], "filename_prefix": "moss-edit"}},
+    })
+    return wf
+
+
 class ComfyUIEditRequest(BaseModel):
     image_base64: str
     prompt: str
@@ -738,8 +834,18 @@ async def get_comfyui_image(filename: str):
 # ---------------------------------------------------------------------------
 
 
+_START_LOCK = asyncio.Lock()
+
+
 @router.post("/api/comfyui/start", summary="Start ComfyUI instance")
 async def start_comfyui(req: ComfyUIStartRequest):
+    async with _START_LOCK:     # one start at a time (two at once: the second dies on the port, see live_pid)
+        return await _start_comfyui_locked(req)
+
+
+async def _start_comfyui_locked(req: ComfyUIStartRequest):
+    if not _tracked_alive() and find_comfyui_process() is not None:
+        adopt_running(force=True)
     if state.comfyui_process and state.comfyui_process.poll() is None:
         return {
             "status": "already running", "port": state.comfyui_port, "pid": state.comfyui_pid,
@@ -874,7 +980,7 @@ async def stop_comfyui(force: bool = False):
 
 @router.get("/api/comfyui/status", summary="Get status of ComfyUI instance")
 async def get_comfyui_status():
-    running = state.comfyui_process is not None and state.comfyui_process.poll() is None
+    running = _tracked_alive()
     ready = False
     pid = state.comfyui_pid if running else None
     try:
@@ -883,8 +989,7 @@ async def get_comfyui_status():
             if resp.status_code == 200:
                 ready = True
                 running = True
-                if not pid:
-                    pid = get_pid_on_port(state.comfyui_port)
+                pid = live_pid()
     except Exception:
         pass
     return {
@@ -1297,9 +1402,10 @@ _COMFY_LOADERS = {
     "CLIPLoader": ("clip_name",), "CLIPLoaderGGUF": ("clip_name",), "DualCLIPLoader": ("clip_name1", "clip_name2"),
     "VAELoader": ("vae_name",), "LoraLoaderModelOnly": ("lora_name",), "LoraLoader": ("lora_name",),
     "LoadBackgroundRemovalModel": ("bg_removal_name",), "LatentUpscaleModelLoader": ("model_name",),
+    "UpscaleModelLoader": ("model_name",),
 }
 _COMFY_MODEL_SUBDIRS = ("diffusion_models", "unet", "text_encoders", "clip", "vae", "loras", "checkpoints",
-                        "background_removal", "latent_upscale_models")
+                        "background_removal", "latent_upscale_models", "upscale_models")
 
 
 def comfy_model_files(workflow: Dict[str, Any]) -> frozenset:
@@ -1383,14 +1489,49 @@ async def _comfyui_gpu_preflight(workflow: Dict[str, Any], label: str, pinned: b
             gpu, need = target, full
     if need > 0:
         from image_serve.gpu import MANAGER
-        res, _, why = await MANAGER.reserve(gpu, need, f"image:{label}")  # 507 while an exclusive plugin holds it
+        refusal = None
+        try:   # the gateway answers a plain no with 507 too, which reserve() raises (also for an exclusive hold)
+            res, _, why = await MANAGER.reserve(gpu, need, f"image:{label}")
+        except HTTPException as e:
+            if e.status_code != 507:
+                raise
+            res, why, refusal = None, e.detail, e
+        if res is None and not pinned and state.comfyui_process is not None:
+            # 2026-11-24 (V-Noveller): ComfyUI sat on GPU 1 (started there while GPU 0 was full), GPU 0 held only an
+            # idle Qwen 27B -- the free-room check above can't see that unloading it would make room, so every job
+            # got a 507. An idle ComfyUI asks the other GPUs too (the gateway unloads idle users there) and moves.
+            if await _comfyui_busy_reason() is None:
+                room = await MANAGER.room()
+                for other in sorted((g for g in room if g != gpu), key=lambda g: -room[g]):
+                    try:
+                        res, _, _ = await MANAGER.reserve(other, full, f"image:{label}")
+                    except HTTPException as e:
+                        if e.status_code != 507:
+                            raise
+                        res = None
+                    if res is not None:
+                        await _restart_comfyui_on(other)
+                        gpu = other
+                        break
         if res is None:
+            if refusal is not None:
+                raise refusal
             raise HTTPException(status_code=507, detail=f"No room for the image model on GPU {gpu}: {why}")
         if state.comfyui_process is not None and getattr(state.comfyui_process, "pid", None):
             MANAGER.confirm(res.id, state.comfyui_process.pid)
         _release_comfyui_reservation()   # an older one still open is superseded
         state.comfyui_reservation_id = res.id
     state.comfyui_loaded_models = files
+
+
+def prompt_refusal(status: int, text: str, label: str) -> HTTPException:
+    """ComfyUI said no to a queued workflow: a 400 is a bad request (its message names the node and input, e.g. an
+    unknown model file) and stays the caller's 400; anything else is ComfyUI failing -> 502 (2026-11-27: a bad
+    model_name came back as a bare 500)."""
+    snippet = (text or "").strip()[:300]
+    if status == 400:
+        return HTTPException(status_code=400, detail=f"ComfyUI refused the {label} request: {snippet}")
+    return HTTPException(status_code=502, detail=f"ComfyUI failed on the {label} request ({status}): {snippet}")
 
 
 async def _queue_comfyui_generate(req: ComfyUIGenerateRequest) -> tuple:
@@ -1411,10 +1552,11 @@ async def _queue_comfyui_generate(req: ComfyUIGenerateRequest) -> tuple:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(f"http://127.0.0.1:{state.comfyui_port}/prompt", json=payload)
-            resp.raise_for_status()
-            prompt_id = resp.json().get("prompt_id")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to queue prompt: {e}")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=503, detail=f"ComfyUI unreachable: {type(e).__name__}")
+    if resp.status_code != 200:
+        raise prompt_refusal(resp.status_code, resp.text, req.model_name or "image")
+    prompt_id = resp.json().get("prompt_id")
     return client_id, prompt_id, start_time
 
 
@@ -1445,7 +1587,7 @@ async def queue_workflow(workflow: Dict[str, Any], label: str) -> Dict[str, str]
     except httpx.HTTPError as e:
         raise HTTPException(status_code=503, detail=f"ComfyUI unreachable: {type(e).__name__}")
     if resp.status_code != 200:   # ComfyUI's validation message names the node/input -- worth passing on
-        raise HTTPException(status_code=500, detail=f"ComfyUI refused the {label} workflow: {resp.text[:300]}")
+        raise prompt_refusal(resp.status_code, resp.text, label)
     prompt_id = resp.json().get("prompt_id")
     asyncio.create_task(_track_and_retrieve_comfyui(client_id, prompt_id, state.comfyui_port, start_time, label))
     return {"status": "queued", "task_id": prompt_id}
@@ -1742,7 +1884,10 @@ async def comfyui_edit(req: ComfyUIEditRequest):
         raise HTTPException(status_code=400, detail=f"FLUX.2 [klein] takes at most {KLEIN_MAX_IMAGES} images")
     if h3 and 1 + len(req.extra_images_base64) > H3_IMAGE_MAX_IMAGES:
         raise HTTPException(status_code=400, detail=f"MiniMax H3 Image takes at most {H3_IMAGE_MAX_IMAGES} images")
-    if not (klein or h3):
+    moss_edit = is_moss_edit(req.model_name)
+    if moss_edit and 1 + len(req.extra_images_base64) > MOSS_EDIT_MAX_IMAGES:
+        raise HTTPException(status_code=400, detail=f"MOSS-Image Edit takes at most {MOSS_EDIT_MAX_IMAGES} images")
+    if not (klein or h3 or moss_edit):
         try:
             with open(os.path.join(WORKFLOWS_DIR, "Qwen-Image-Edit.json"), "r") as f:
                 workflow = json.load(f)
@@ -1751,7 +1896,10 @@ async def comfyui_edit(req: ComfyUIEditRequest):
     names = [await _upload_image_to_comfyui(_decode_image_base64(b))
              for b in [req.image_base64, *req.extra_images_base64]]
     seed = req.seed if req.seed is not None else random.randint(1, 10**14 - 1)
-    if h3:      # its own graph, fixed 6 steps; no LoRA node
+    if moss_edit:   # its own graph; `loras` go after the edit LoRA (its LoraLoaderModelOnly)
+        workflow = build_moss_edit_workflow(names, prompt=req.prompt, lora=req.model_name, seed=seed,
+                                            steps=req.steps, aspect_ratio=req.aspect_ratio)
+    elif h3:      # its own graph, fixed 6 steps; no LoRA node
         workflow = build_h3_image_workflow(names, prompt=req.prompt, model_name=req.model_name, seed=seed,
                                            aspect_ratio=req.aspect_ratio)
     elif klein:   # its own graph; no LoRA node, so `loras` don't apply (like Ideogram 4)
@@ -1767,7 +1915,7 @@ async def comfyui_edit(req: ComfyUIEditRequest):
             _extend_lora_chain(workflow, lora_node_id, req.loras)
 
     client_id = str(uuid.uuid4())
-    await _comfyui_gpu_preflight(workflow, getattr(req, "model", None) or ("minimax-h3-image" if h3 else "flux2-klein" if klein else "qwen-image-edit"),
+    await _comfyui_gpu_preflight(workflow, getattr(req, "model", None) or ("moss-edit" if moss_edit else "minimax-h3-image" if h3 else "flux2-klein" if klein else "qwen-image-edit"),
                                  pinned=getattr(req, "gpu_id", None) is not None)
     payload = {"prompt": workflow, "client_id": client_id}
     state.comfyui_progress = {"step": 0, "max_steps": 0, "node": "", "value": 0}
@@ -1878,6 +2026,77 @@ async def comfyui_remove_background(image_bytes: bytes, model_id: str, model_fil
     await _ensure_comfyui_running()
     name = await _upload_image_to_comfyui(image_bytes)
     return await queue_workflow(remove_background_workflow(name, model_file), model_id)
+
+
+UPSCALE_SCALES = (2, 4)
+UPSCALE_MAX_OUTPUT_PIXELS = 4096 * 4096   # ~16.8 MP: a 16:9 picture to 5456x3072; above that the PNG alone is >50 MB
+
+
+def upscale_workflow(image_name: str, model_file: str, scale: int) -> Dict[str, Any]:
+    """ComfyUI's own upscale-model chain (tiles by itself, smaller tiles on OOM). The ESRGAN models are 4x; 2x
+    halves that result (lanczos) -- the usual way, sharper than running the model on a halved picture."""
+    if scale not in UPSCALE_SCALES:
+        raise ValueError(f"scale: {' or '.join(map(str, UPSCALE_SCALES))}")
+    wf = {
+        "1": {"class_type": "LoadImage", "inputs": {"image": image_name}},
+        "2": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": model_file}},
+        "3": {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["2", 0], "image": ["1", 0]}},
+        "5": {"class_type": "SaveImage", "inputs": {"images": ["3", 0], "filename_prefix": "upscale"}},
+    }
+    if scale == 2:
+        wf["4"] = {"class_type": "ImageScaleBy", "inputs": {"image": ["3", 0], "upscale_method": "lanczos",
+                                                            "scale_by": 0.5}}
+        wf["5"]["inputs"]["images"] = ["4", 0]
+    return wf
+
+
+def image_size(data: bytes) -> Optional[tuple]:
+    """(width, height) from a PNG, JPEG or WebP header (no PIL in this venv); None if it's none of them."""
+    import struct
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
+        return struct.unpack(">II", data[16:24])
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP" and len(data) >= 30:
+        kind = data[12:16]
+        if kind == b"VP8X":
+            return (int.from_bytes(data[24:27], "little") + 1, int.from_bytes(data[27:30], "little") + 1)
+        if kind == b"VP8L":
+            b = int.from_bytes(data[21:25], "little")
+            return ((b & 0x3FFF) + 1, ((b >> 14) & 0x3FFF) + 1)
+        if kind == b"VP8 ":
+            return (struct.unpack("<H", data[26:28])[0] & 0x3FFF, struct.unpack("<H", data[28:30])[0] & 0x3FFF)
+        return None
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                return None
+            marker = data[i + 1]
+            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                i += 2
+                continue
+            seg = struct.unpack(">H", data[i + 2:i + 4])[0]
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                return (w, h)
+            i += 2 + seg
+    return None
+
+
+def check_upscale_size(image_bytes: bytes, scale: int) -> None:
+    """ValueError when the upload is no PNG/JPEG/WebP or the result would be too large."""
+    size = image_size(image_bytes)
+    if not size or not all(size):
+        raise ValueError("upscale takes a PNG, JPEG or WebP picture")
+    w, h = size
+    if w * h * scale * scale > UPSCALE_MAX_OUTPUT_PIXELS:
+        raise ValueError(f"{w}x{h} times {scale} is too large (at most {UPSCALE_MAX_OUTPUT_PIXELS / 1e6:.1f} MP "
+                         "out) -- use scale 2 or a smaller picture")
+
+
+async def comfyui_upscale(image_bytes: bytes, model_id: str, model_file: str, scale: int) -> Dict[str, str]:
+    await _ensure_comfyui_running()
+    name = await _upload_image_to_comfyui(image_bytes)
+    return await queue_workflow(upscale_workflow(name, model_file, scale), model_id)
 
 
 async def _await_comfyui_task(prompt_id: str, timeout_s: int = COMFYUI_SYNC_TIMEOUT_S) -> str:

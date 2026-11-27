@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException
 
 from backend.config import TRAIN_SERVE_SERVICE_ID, TRAIN_SERVE_URL
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.train-client")
 _start_lock = asyncio.Lock()
@@ -16,7 +17,7 @@ _start_lock = asyncio.Lock()
 
 async def health() -> bool:
     try:
-        async with httpx.AsyncClient(timeout=2.0) as c:
+        async with httpclient.AsyncClient(timeout=2.0) as c:
             return (await c.get(f"{TRAIN_SERVE_URL}/health")).status_code == 200
     except httpx.HTTPError:
         return False
@@ -51,7 +52,7 @@ async def ensure_running(timeout_s: float = 30.0) -> bool:
 async def running_jobs() -> List[Dict[str, Any]]:
     """Jobs train-serve reports as running (with their pid); [] when it isn't up."""
     try:
-        async with httpx.AsyncClient(timeout=3.0) as c:
+        async with httpclient.AsyncClient(timeout=3.0) as c:
             r = await c.get(f"{TRAIN_SERVE_URL}/api/training-monitor/jobs")
         jobs = r.json() if r.status_code == 200 else []
     except (httpx.HTTPError, ValueError):

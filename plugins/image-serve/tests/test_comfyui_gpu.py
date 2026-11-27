@@ -154,6 +154,111 @@ def test_moves_to_a_free_gpu_instead_of_unloading_others(fake, monkeypatch):
     assert fake[0][0] == 0
 
 
+def test_moves_where_unloading_an_idle_user_makes_room(fake, monkeypatch):
+    """2026-11-24 (V-Noveller): ComfyUI on GPU 1 (desktop programs, no room even after unloading), GPU 0 full of
+    an idle Qwen 27B -- the free room said "stay", so every job was a 507. The other GPU is asked too; its yes
+    (the gateway unloads the idle model) moves ComfyUI there."""
+    from image_serve import gpu as local
+
+    async def room():
+        return {0: 3000, 1: 7800}
+    monkeypatch.setattr(local.MANAGER, "room", room)
+    asked = []
+
+    async def reserve(gpu, need, purpose):
+        asked.append((gpu, need))
+        return (local.Reservation("r0"), [], "") if gpu == 0 else (None, [], "GPU 1: other programs use 6539 MB")
+    monkeypatch.setattr(local.MANAGER, "reserve", reserve)
+
+    class P:
+        pid = 777
+    monkeypatch.setattr(state, "comfyui_process", P())
+    monkeypatch.setattr(state, "comfyui_gpu_id", 1)
+    moved = []
+
+    async def restart_on(gpu):
+        moved.append(gpu)
+        state.comfyui_gpu_id = gpu
+    monkeypatch.setattr(media, "_restart_comfyui_on", restart_on)
+
+    async def idle():
+        return None
+    monkeypatch.setattr(media, "_comfyui_busy_reason", idle)
+    asyncio.run(media._comfyui_gpu_preflight(WF, "z"))
+    assert moved == [0] and [g for g, _ in asked] == [1, 0]
+    assert state.comfyui_reservation_id == "r0"
+
+
+def test_the_gateways_507_no_also_moves_it(fake, monkeypatch):
+    """2026-11-24 17:59, live: the gateway says no with HTTP 507, which MANAGER.reserve raises -- the fallback above
+    never ran. Same case with the real reserve() over a faked gateway."""
+    import httpx
+    from image_serve import gpu as local
+
+    async def room():
+        return {0: 3000, 1: 7900}
+    monkeypatch.setattr(local.MANAGER, "room", room)
+    asked = []
+
+    async def call(method, path, **kw):
+        req = httpx.Request(method, "http://gw" + path)
+        if path == "/api/coordination/gpu-preflight":
+            asked.append(kw["json"]["gpu"])
+            if kw["json"]["gpu"] == 1:
+                return httpx.Response(507, json={"detail": "gave up: GPU 1: needs 11526 MB"}, request=req)
+            return httpx.Response(200, json={"granted": True, "reservation_id": "g0"}, request=req)
+        return httpx.Response(200, json={}, request=req)
+    monkeypatch.setattr(local, "_call", call)
+    monkeypatch.setattr(local.MANAGER, "reserve", type(local.MANAGER).reserve.__get__(local.MANAGER))  # the real one
+    monkeypatch.setattr(local.MANAGER, "confirm", lambda rid, pid: None)
+
+    class P:
+        pid = 777
+    monkeypatch.setattr(state, "comfyui_process", P())
+    monkeypatch.setattr(state, "comfyui_gpu_id", 1)
+    moved = []
+
+    async def restart_on(gpu):
+        moved.append(gpu)
+        state.comfyui_gpu_id = gpu
+    monkeypatch.setattr(media, "_restart_comfyui_on", restart_on)
+
+    async def idle():
+        return None
+    monkeypatch.setattr(media, "_comfyui_busy_reason", idle)
+    asyncio.run(media._comfyui_gpu_preflight(WF, "z"))
+    assert asked == [1, 0] and moved == [0] and state.comfyui_reservation_id == "g0"
+
+
+def test_a_busy_comfyui_is_not_moved_on_a_no(fake, monkeypatch):
+    from image_serve import gpu as local
+
+    async def room():
+        return {0: 3000, 1: 7800}
+    monkeypatch.setattr(local.MANAGER, "room", room)
+
+    async def reserve(gpu, need, purpose):
+        return (local.Reservation("r0"), [], "") if gpu == 0 else (None, [], "no room")
+    monkeypatch.setattr(local.MANAGER, "reserve", reserve)
+
+    class P:
+        pid = 777
+    monkeypatch.setattr(state, "comfyui_process", P())
+    monkeypatch.setattr(state, "comfyui_gpu_id", 1)
+    moved = []
+
+    async def restart_on(gpu):
+        moved.append(gpu)
+    monkeypatch.setattr(media, "_restart_comfyui_on", restart_on)
+
+    async def busy():
+        return "1 job(s) in ComfyUI's own queue"
+    monkeypatch.setattr(media, "_comfyui_busy_reason", busy)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(media._comfyui_gpu_preflight(WF, "z"))
+    assert e.value.status_code == 507 and moved == []
+
+
 def test_a_pinned_request_never_moves_it(fake, monkeypatch):
     from image_serve import gpu as local
 

@@ -51,6 +51,10 @@ document.getElementById('ocr-run-btn').addEventListener('click', async () => {
         const pages = (r.pages || []).length;
         ocrResultText = r.content != null ? r.content : JSON.stringify(r.parsed, null, 2);
         out.textContent = ocrResultText || tx('(empty)');
+        // read text as a document (tables as tables, docsrender.js -- escaped, only bare known tags); fields stay JSON
+        const asDocument = r.content != null && !!ocrResultText.trim();
+        document.getElementById('ocr-rendered').innerHTML = asDocument ? renderDocument(ocrResultText) : '';
+        showOcrView(asDocument);
         status.textContent = `${r.status === 'completed' ? tx('Done') : r.status === 'partial' ? tx('Partly') : r.status} · ${pages === 1 ? tx('1 page') : tx('{n} pages', { n: pages })} · ${((performance.now() - t0) / 1000).toFixed(1)} s`;
         document.getElementById('ocr-copy-btn').disabled = !ocrResultText;
         addLog(tx('Document read: {name}', { name: file.name }), 'info');
@@ -63,4 +67,16 @@ document.getElementById('ocr-run-btn').addEventListener('click', async () => {
 
 document.getElementById('ocr-copy-btn').addEventListener('click', async () => {
     logCopyResult(await copyTextToClipboard(ocrResultText), tx('Result'));
+});
+
+// the read text as a document, or as it came (to check what the model wrote)
+function showOcrView(asDocument) {
+    document.getElementById('ocr-rendered').hidden = !asDocument;
+    document.getElementById('ocr-result').hidden = asDocument;
+    const btn = document.getElementById('ocr-view-btn');
+    btn.hidden = !document.getElementById('ocr-rendered').innerHTML;
+    btn.textContent = asDocument ? tx('Show the raw text') : tx('Show as a document');
+}
+document.getElementById('ocr-view-btn').addEventListener('click', () => {
+    showOcrView(document.getElementById('ocr-rendered').hidden);
 });

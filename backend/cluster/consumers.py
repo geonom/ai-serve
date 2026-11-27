@@ -76,8 +76,24 @@ def attribute_vram(procs: Iterable[Tuple[int, int, int]], parents: Mapping[int, 
     return out
 
 
+# Used this recently = still working, never unloaded (2026-11-25, V-Noveller: a story run sends one Gemma call right
+# after the other; a picture's make_room found Gemma idle in the milliseconds between two calls and stopped it while
+# the next call came in -- twice in one morning). The one asking for room gets the usual fast no and retries.
+# Not for the asker's own models: a plugin stamps its last use as a call starts, so its idle model would never give
+# way to the next one it needs (2026-11-25: ComfyUI kept qwen-edit Q2 and refused every call for 4+ minutes).
+# 60 s at first; 20 s since 2026-11-27 (owner): a video right after the prompt writer waited a whole minute.
+RECENT_USE_S = 20.0
+
+
+def recently_used(last_used: float, now: float) -> bool:
+    return bool(last_used) and 0 <= now - last_used < RECENT_USE_S
+
+
 def _ledger(gpu: Mapping[str, Any], consumers: Sequence[Consumer], att: Mapping[Tuple[str, int], int],
-            pinned: FrozenSet[str], spent: FrozenSet[str] = frozenset()) -> Tuple[Ledger, str]:
+            pinned: FrozenSet[str], spent: FrozenSet[str] = frozenset(),
+            now: Optional[float] = None, requester: Optional[str] = None) -> Tuple[Ledger, str]:
+    import time
+    now = time.time() if now is None else now
     acc = Accelerator(node="local", index=int(gpu["index"]), kind=AccelKind.CUDA, name=str(gpu.get("name", "")),
                       total_mb=int(gpu["total"]), budget_mb=int(gpu["total"]))
     ledger = Ledger([acc])
@@ -87,7 +103,9 @@ def _ledger(gpu: Mapping[str, Any], consumers: Sequence[Consumer], att: Mapping[
             continue
         ledger.record(Lease(
             id=c.id, accel=acc.id, consumer=_KIND.get(c.kind, ConsumerKind.LLM), label=c.label, mb=mb,
-            last_used=c.last_used, busy=c.busy or not c.evictable_kind, pinned=c.pin in pinned or c.id in spent,
+            last_used=c.last_used, busy=c.busy or not c.evictable_kind or (recently_used(c.last_used, now)
+                                                         and not (requester and c.plugin == requester)),
+            pinned=c.pin in pinned or c.id in spent,
             exclusive=c.kind == "exclusive"))
     return ledger, acc.id
 
@@ -95,8 +113,9 @@ def _ledger(gpu: Mapping[str, Any], consumers: Sequence[Consumer], att: Mapping[
 def plan_room(gpu_index: int, need_mb: int, gpus: Sequence[Mapping[str, Any]], consumers: Sequence[Consumer],
               att: Mapping[Tuple[str, int], int], pinned: FrozenSet[str] = frozenset(),
               reserved_mb: int = 0, exclusive_holder: Optional[str] = None,
-              spent: FrozenSet[str] = frozenset()) -> RoomPlan:
-    """reserved_mb: memory promised to loads that haven't allocated it yet;
+              spent: FrozenSet[str] = frozenset(), requester: Optional[str] = None) -> RoomPlan:
+    """requester: the plugin asking -- its own models don't get the recent-use protection;
+    reserved_mb: memory promised to loads that haven't allocated it yet;
     exclusive_holder: who holds this GPU exclusively (Strata), if anyone;
     spent: consumers already unloaded for this request -- what they still hold is their process's CUDA context,
     which another unload can't free (not counted again, and named as such in the reason)."""
@@ -106,7 +125,13 @@ def plan_room(gpu_index: int, need_mb: int, gpus: Sequence[Mapping[str, Any]], c
     gpu = next((g for g in gpus if int(g["index"]) == gpu_index), None)
     if gpu is None:
         return RoomPlan(False, [], f"no GPU {gpu_index}")
-    ledger, aid = _ledger(gpu, consumers, att, pinned, spent)
+    import time
+    now = time.time()
+    ledger, aid = _ledger(gpu, consumers, att, pinned, spent, now=now, requester=requester)
+    # blockers that only count as busy because they were just used: their age (for an honest reason)
+    recent = {c.id: now - c.last_used for c in consumers
+              if not c.busy and c.evictable_kind and recently_used(c.last_used, now)
+              and not (requester and c.plugin == requester)}
     free = int(gpu.get("free") or 0) - int(reserved_mb)
     if free >= need_mb:
         return RoomPlan(True, [])
@@ -121,7 +146,7 @@ def plan_room(gpu_index: int, need_mb: int, gpus: Sequence[Mapping[str, Any]], c
         if free + freed >= need_mb:
             return RoomPlan(True, evict)
     blockers = [l for l in held if not l.evictable]
-    why = ", ".join(f"{l.label} ({_blocked(l, spent)}, {l.mb} MB)" for l in blockers)
+    why = ", ".join(f"{l.label} ({_blocked(l, spent, recent.get(l.id))}, {l.mb} MB)" for l in blockers)
     other = att.get((OTHER, gpu_index), 0)
     return RoomPlan(False, [], f"GPU {gpu_index}: needs {need_mb} MB, {free} MB free"
                     + (f" ({reserved_mb} MB promised to loads in progress)" if reserved_mb else "")
@@ -130,7 +155,9 @@ def plan_room(gpu_index: int, need_mb: int, gpus: Sequence[Mapping[str, Any]], c
                     + (f"; other programs use {other} MB" if other else ""))
 
 
-def _blocked(lease: Lease, spent: FrozenSet[str]) -> str:
+def _blocked(lease: Lease, spent: FrozenSet[str], used_ago: Optional[float] = None) -> str:
+    if lease.busy and used_ago is not None and not lease.pinned:
+        return f"used {used_ago:.0f} s ago, can be unloaded in {max(1, RECENT_USE_S - used_ago):.0f} s"
     if lease.busy:
         return "busy"
     if lease.id in spent:

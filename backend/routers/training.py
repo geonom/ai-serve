@@ -18,6 +18,7 @@ from starlette.background import BackgroundTask
 
 from backend import train_client
 from backend.config import TRAIN_SERVE_URL
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.training-proxy")
 router = APIRouter(tags=["training"])
@@ -29,7 +30,7 @@ _transport: Optional[httpx.AsyncBaseTransport] = None  # tests put a MockTranspo
 
 
 def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(base_url=TRAIN_SERVE_URL, transport=_transport,
+    return httpclient.AsyncClient(base_url=TRAIN_SERVE_URL, transport=_transport,
                              timeout=httpx.Timeout(30.0, read=None, write=None))
 
 

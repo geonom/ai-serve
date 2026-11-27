@@ -35,11 +35,16 @@ def _tts_modes(e: Dict[str, Any], default_voice: str,
 
 
 def audio_catalog(tts_view: Optional[Dict[str, Any]], stt_view: Optional[Dict[str, Any]],
-                  default_voice: str, synthetic_voices: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                  default_voice: str, synthetic_voices: Optional[List[Dict[str, Any]]] = None,
+                  default_engine: str = "") -> Dict[str, Any]:
+    """default_engine: the gateway's DEFAULT_TTS_ENGINE -- what a request without an engine gets, so the catalog
+    names it as the default when tts-serve has it (2026-11-27: it named tts-serve's own default instead)."""
     if tts_view is None:
         tts = _down("tts-serve", "speech output")
     else:
-        tts = {"available": True, "default_engine": tts_view.get("default_engine"), "engines": [
+        ids = {e.get("id") for e in tts_view.get("engines") or []}
+        wanted = (default_engine or "").strip().lower()
+        tts = {"available": True, "default_engine": wanted if wanted in ids else tts_view.get("default_engine"), "engines": [
             {"id": e["id"], "label": e.get("name") or e["id"], "description": e.get("description", ""),
              "license": e.get("license", ""), "aliases": list(e.get("aliases") or []),
              "languages": list(e.get("languages") or []), "params": list(e.get("params") or []),

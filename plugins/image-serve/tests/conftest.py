@@ -40,3 +40,14 @@ def _room_for_jobs(monkeypatch):
     async def yes(workflow, label):
         return None
     monkeypatch.setattr(comfy, "check_room", yes)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_comfyui(monkeypatch):
+    """Unit tests never see the ComfyUI running on this machine (2026-11-27: a release test failed whenever someone
+    was making a picture -- the busy check asked the live ComfyUI's /queue). Its port points at nothing, and the
+    process search finds nothing unless a test fakes it."""
+    from image_serve import comfy
+    from image_serve.state import state
+    monkeypatch.setattr(state, "comfyui_port", 9)          # discard port: refused at once
+    monkeypatch.setattr(comfy, "find_comfyui_process", lambda *a, **kw: None)

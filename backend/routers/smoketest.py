@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from backend.model_manager import kill_process_on_port, stop_server_by_port
 from backend.routers.dashboard import StartRequest, list_models, start_server
 from backend.state import state
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.smoketest")
 router = APIRouter()
@@ -57,7 +58,7 @@ async def _run_smoke_test(req: SmokeTestRequest):
             for _ in range(30):
                 await asyncio.sleep(2)
                 try:
-                    async with httpx.AsyncClient(timeout=1.0) as client:
+                    async with httpclient.AsyncClient(timeout=1.0) as client:
                         resp = await client.get(f"http://127.0.0.1:{_SMOKE_TEST_PORT}/health")
                         if resp.status_code == 200:
                             ready = True
@@ -71,7 +72,7 @@ async def _run_smoke_test(req: SmokeTestRequest):
 
             state.smoke_test_progress["status"] = "testing"
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpclient.AsyncClient(timeout=60.0) as client:
                     resp = await client.post(
                         f"http://127.0.0.1:{_SMOKE_TEST_PORT}/v1/chat/completions",
                         json={

@@ -313,3 +313,12 @@ def test_no_gpu_room_is_a_507_before_any_job_exists(monkeypatch, root):
     assert r.status_code == 507 and "No room" in r.json()["detail"]
     assert asked["label"] == "Wan 2.2 14B (4 steps, Q4)" and asked["files"]            # the model's own files
     assert len(video.JOBS._jobs) == before
+
+
+def test_sulphur_3_is_minimax_h3_with_its_own_main_model(root):
+    g = video.workflow(video.parse_request({"prompt": "x", "model": "sulphur-3", "seed": 1}, root), None, "p")
+    assert g["unet"]["inputs"]["unet_name"] == "Sulphur-3-Q4_K_M.gguf"
+    h3 = video.workflow(video.parse_request({"prompt": "x", "model": "minimax-h3", "seed": 1}, root), None, "p")
+    assert {k: v for k, v in g.items() if k != "unet"} == {k: v for k, v in h3.items() if k != "unet"}
+    row = next(r for r in video.listing(str(root)) if r["id"] == "sulphur-3")
+    assert row["audio"] and row["prompt_guide"] == "minimax-h3" and not row["default"]

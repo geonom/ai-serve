@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 ASPECTS = ("1:1", "4:3", "3:4", "16:9", "9:16")
-SOURCES = ("bild", "vergleich", "positionen")
+SOURCES = ("bild", "vergleich", "positionen", "edit", "style", "upscale", "cutout")
 _ID = re.compile(r"^[0-9a-f]{25}$")
 _MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,119}$")
 _TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}

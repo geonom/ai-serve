@@ -38,6 +38,7 @@ LICENSES: Dict[str, tuple] = {
     "qwen-image-2.1-int8": ("Apache-2.0", True), "qwen-edit-2511": ("Apache-2.0", True),
     "qwen-edit-2511-q3": ("Apache-2.0", True), "ernie-turbo": ("", None), "ideogram-4": ("", None),
     "birefnet": ("MIT", True), "flux2-klein-4b": ("Apache-2.0", True),
+    "realesrgan-x4": ("BSD-3-Clause", True), "realesrgan-x4-anime": ("BSD-3-Clause", True),
     # free below MiniMax's revenue threshold, else their commercial terms (license Section IV)
     "minimax-h3-image": ("MiniMax-H3-Image Community License", None),
 }
@@ -247,14 +248,18 @@ async def edits(image: Optional[List[UploadFile]] = File(None),
                 image_list: Optional[List[UploadFile]] = File(None, alias="image[]"),
                 prompt: Optional[str] = Form(None), model: Optional[str] = Form(None),
                 seed: Optional[int] = Form(None), task: str = Form("edit"), reference: Optional[UploadFile] = File(None),
-                aspect_ratio: Optional[str] = Form(None), x_request_id: Optional[str] = Header(None)):
+                aspect_ratio: Optional[str] = Form(None), scale: Optional[int] = Form(None),
+                x_request_id: Optional[str] = Header(None)):
     """OpenAI's edits shape + the contract's `task`: edit (1-3 images: `image` repeated or `image[]`, in the prompt
     "picture 1..3"; `aspect_ratio` = output shape, else the first image's), style (`image` = content, `reference` =
-    style) or remove_background (no prompt; the image back as a PNG with alpha)."""
+    style), remove_background (no prompt; the image back as a PNG with alpha) or upscale (no prompt; `scale` 2 or 4,
+    default 2)."""
     if seed is not None and not 0 <= seed < 2 ** 50:
         raise HTTPException(status_code=400, detail="seed must be 0 .. 2^50")
-    if task not in ("edit", "style", "remove_background"):
-        raise HTTPException(status_code=400, detail="task: edit, style or remove_background")
+    if task not in ("edit", "style", "remove_background", "upscale"):
+        raise HTTPException(status_code=400, detail="task: edit, style, remove_background or upscale")
+    if scale is not None and task != "upscale":
+        raise HTTPException(status_code=400, detail="scale is for task=upscale")
     if image and image_list:
         raise HTTPException(status_code=400, detail="send the images either as image or as image[], not both")
     images = image or image_list or []
@@ -267,7 +272,7 @@ async def edits(image: Optional[List[UploadFile]] = File(None),
         raise HTTPException(status_code=400, detail=f"aspect_ratio (edit only): {', '.join(comfy.EDIT_SIZES)}")
     image = images[0]
     rid = jobs.valid_request_id(x_request_id)
-    if task == "remove_background":
+    if task in ("remove_background", "upscale"):
         try:
             target = catalog.for_task(model, task)
         except catalog.CatalogError as e:
@@ -276,6 +281,16 @@ async def edits(image: Optional[List[UploadFile]] = File(None),
             label = target.label if target else model
             raise HTTPException(status_code=400, detail=f"{label} is not installed on this machine")
         data = await image.read()
+        if task == "upscale":
+            factor = 2 if scale is None else scale
+            try:
+                if factor not in comfy.UPSCALE_SCALES:
+                    raise ValueError("scale: 2 or 4")
+                comfy.check_upscale_size(data, factor)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            b64 = await _run(lambda _r: comfy.comfyui_upscale(data, target.id, target.file, factor), None, rid)
+            return {"created": int(time.time()), "data": [{"b64_json": b64}]}
         b64 = await _run(lambda _r: comfy.comfyui_remove_background(data, target.id, target.file), None, rid)
         return {"created": int(time.time()), "data": [{"b64_json": b64}]}
     if not prompt:
@@ -550,7 +565,7 @@ async def status():
     running = _running() or comfy.find_comfyui_process() is not None
     reason = await comfy._comfyui_busy_reason() if running else None
     workers = [{"id": "comfyui", "label": "ComfyUI" + (f" ({state.comfyui_active_model})" if state.comfyui_active_model else ""),
-                "pid": state.comfyui_pid or comfy.get_pid_on_port(state.comfyui_port),
+                "pid": comfy.live_pid(),
                 "loaded": state.comfyui_loaded_models is not None, "busy": reason is not None,
                 "last_used": state.comfyui_last_used or None, "gpu": state.comfyui_gpu_id}] if running else []
     if not running:

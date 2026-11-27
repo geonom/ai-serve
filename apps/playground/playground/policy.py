@@ -19,6 +19,7 @@ forward_headers(headers, peer) -> the headers to send upstream.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Dict, Mapping
 
@@ -53,6 +54,8 @@ _RULES = [
     ("GET", r"/v1/models"),                # the standard OpenAI model list (a plain Ollama / LM Studio upstream)
     ("GET", r"/v1/llm/models"),            # the gateway's language models: here, on devices, Strata (Chat tab)
     ("GET", r"/v1/audio/models"),          # the gateway's speech engines with their modes and options (Sprache tab)
+    ("POST", r"/v1/images/upscale"),       # enlarge a picture 2x / 4x (Real-ESRGAN, JSON base64)
+    ("POST", r"/v1/images/edits"),         # multipart: task=remove_background (cut-out); quota "image"
     ("POST", r"/v1/images/cancel"),        # stop one running image by its request id (Vergleich's cancel)
     ("GET", r"/api/plugins/installs"),     # what can be downloaded (missing models / engines) -- shown to everyone
     ("POST", rf"/api/plugins/{_SEG}/install"),   # start a download: the owner only (quota.classify -> owner_only)
@@ -134,3 +137,32 @@ def websocket_headers(headers: Mapping[str, str], peer: str) -> Dict[str, str]:
     out["Upgrade"] = "websocket"
     out["Connection"] = "Upgrade"
     return out
+
+
+# fields only the owner may send, per path: files saved by name share one folder and are read back by name
+# (2026-11-26); the voices/ folder holds recordings of real people, and a transcript is written next to the clip
+# (2026-11-27)
+_OWNER_FIELDS = (
+    (re.compile(r"^/api/comfyui/(generate|edit|style-transfer)$"), ("filename",)),
+    (re.compile(r"^/api/tts/generate$"), ("ref_voice_path",)),
+    (re.compile(r"^/api/stt/transcribe$"), ("audio_path",)),
+)
+
+
+def guest_body(method: str, path: str, body):
+    """A guest's request body as forwarded, without the fields only the owner may send (_OWNER_FIELDS). Anything
+    else, or a body that isn't a JSON object, goes unchanged."""
+    if method != "POST" or not body:
+        return body
+    fields = next((f for rx, f in _OWNER_FIELDS if rx.match(path)), None)
+    if not fields:
+        return body
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return body
+    if not isinstance(data, dict) or not any(k in data for k in fields):
+        return body
+    for k in fields:
+        data.pop(k, None)
+    return json.dumps(data).encode()

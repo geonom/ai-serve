@@ -247,7 +247,9 @@ async function api(path, method = 'GET', body = null) {
     const resp = await swFetch(`${BASE_URL}${path}`, options);
     if (!resp.ok) {
         const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.detail || `HTTP Error ${resp.status}`);
+        const e = new Error(errorText(errData, resp.status));
+        e.status = resp.status;
+        throw e;
     }
     return resp.json();
 }
@@ -1089,7 +1091,7 @@ function appendChatMessage(sender, text, meta = {}) {
         msgDiv.style.display = 'flex';
         msgDiv.style.justifyContent = 'center';
         msgDiv.style.margin = '0.5rem 0';
-        msgDiv.innerHTML = `<div class="chat-system-message" style="background: rgba(148, 163, 184, 0.08); border: 1px dashed var(--border); border-radius: 8px; padding: 0.5rem 1rem; max-width: 90%; font-size: 0.8rem; color: var(--text-dim); text-align: left; line-height: 1.4;">📝 <em>${text}</em></div>`;
+        msgDiv.innerHTML = `<div class="chat-system-message" style="background: rgba(148, 163, 184, 0.08); border: 1px dashed var(--border); border-radius: 8px; padding: 0.5rem 1rem; max-width: 90%; font-size: 0.8rem; color: var(--text-dim); text-align: left; line-height: 1.4;">📝 <em>${escapeHtml(text)}</em></div>`;
         UI.chatMessages.appendChild(msgDiv);
         UI.chatMessages.scrollTop = UI.chatMessages.scrollHeight;
         return;
@@ -1103,7 +1105,7 @@ function appendChatMessage(sender, text, meta = {}) {
     if (sender === 'user' && meta.filename) {
         innerHTML += `
             <div style="font-size: 0.75rem; background: rgba(0,0,0,0.1); padding: 0.35rem 0.6rem; border-radius: 6px; margin-bottom: 0.4rem; font-weight: 600;">
-                📎 ${meta.format === 'image' ? tx('Image attached: {name}', { name: meta.filename }) : tx('Audio attached: {name}', { name: meta.filename })}
+                📎 ${escapeHtml(meta.format === 'image' ? tx('Image attached: {name}', { name: meta.filename }) : tx('Audio attached: {name}', { name: meta.filename }))}
             </div>
         `;
     }
@@ -1112,22 +1114,22 @@ function appendChatMessage(sender, text, meta = {}) {
     if (sender === 'assistant' && meta.thinking) {
         innerHTML += `
             <details class="thinking-block">
-                <summary>Gedankengang</summary>
-                <div class="thinking-content">${meta.thinking}</div>
+                <summary>${escapeHtml(tx('Reasoning'))}</summary>
+                <div class="thinking-content">${escapeHtml(meta.thinking)}</div>
             </details>
         `;
     }
 
-    innerHTML += `<div class="message-bubble">${text}</div>`;
+    innerHTML += `<div class="message-bubble">${escapeHtml(text)}</div>`;
 
     // Metadaten
     if (sender === 'assistant' && !meta.error) {
         // streamed answers carry no speed/time/token figures -- show only what is known
         const stats = [
-            meta.model ? `<span>Model: ${meta.model}</span>` : '',
-            meta.tps != null ? `<span>Speed: ${meta.tps} TPS</span>` : '',
-            meta.runtime != null ? `<span>Time: ${meta.runtime}s</span>` : '',
-            meta.tokens != null ? `<span>Tokens: ${meta.tokens}</span>` : '',
+            meta.model ? `<span>Model: ${escapeHtml(meta.model)}</span>` : '',
+            meta.tps != null ? `<span>Speed: ${escapeHtml(meta.tps)} TPS</span>` : '',
+            meta.runtime != null ? `<span>Time: ${escapeHtml(meta.runtime)}s</span>` : '',
+            meta.tokens != null ? `<span>Tokens: ${escapeHtml(meta.tokens)}</span>` : '',
         ].join('');
         if (stats) innerHTML += `<div class="message-metadata">${stats}</div>`;
     }
@@ -1150,7 +1152,7 @@ async function loadModels() {
         const data = await api('/v1/llm/models');
         lastApiData.llm = data.models || [];
         const keep = UI.gatewayModelSelect.value;
-        UI.gatewayModelSelect.innerHTML = lastApiData.backend.kind === 'openai' ? '' : '<option value="">Auto (Gemma 4 12B / aktiv)</option>';
+        UI.gatewayModelSelect.innerHTML = lastApiData.backend.kind === 'openai' ? '' : `<option value="">${escapeHtml(tx('Auto (Gemma 4 12B, or the loaded one)'))}</option>`;
         for (const g of ChatModels.groups(lastApiData.llm)) {
             const og = document.createElement('optgroup');
             og.label = g.label;
@@ -1199,12 +1201,10 @@ async function pollSystemStatus() {
     try {
         lastApiData.status = await api('/api/status');
         UI.statusBackend.className = 'status-indicator online';
-        const comfy = (lastApiData.status.instances || []).some(i => i.port === 8189);
-        UI.statusComfyui.className = `status-indicator ${comfy ? 'online' : 'offline'}`;
+        // (the "Images" dot follows the image catalog -- loadImageModels; ComfyUI is a plugin that starts on demand)
         updateTokenEstimate();
     } catch (err) {
         UI.statusBackend.className = 'status-indicator offline';
-        UI.statusComfyui.className = 'status-indicator offline';
     }
 }
 
@@ -1240,22 +1240,35 @@ function setComfyMode(mode) {
     UI.comfyModeEditBtn.classList.toggle('active', mode === 'edit');
     UI.comfyModeStyleBtn.classList.toggle('active', mode === 'style');
     UI.comfyModeBatchBtn.classList.toggle('active', mode === 'batch');
+    const tool = mode === 'upscale' || mode === 'cutout';   // a picture in, a picture out: no prompt, steps or seed
+    document.getElementById('comfy-mode-upscale-btn').classList.toggle('active', mode === 'upscale');
+    document.getElementById('comfy-mode-cutout-btn').classList.toggle('active', mode === 'cutout');
+    document.getElementById('comfy-picture-group').style.display = (mode === 'edit' || tool) ? 'block' : 'none';
+    document.getElementById('comfy-picture-label').textContent = mode === 'upscale' ? tx('The picture to enlarge')
+        : mode === 'cutout' ? tx('The picture to cut out') : tx('Picture 1 – the image to edit, or the scene');
+    document.getElementById('comfy-tool-fields').style.display = tool ? 'block' : 'none';
+    document.getElementById('comfy-upscale-factor-group').style.display = mode === 'upscale' ? 'block' : 'none';
+    if (tool) fillToolModels();
     UI.comfyGenerateOnlyFields.style.display = mode === 'generate' ? 'block' : 'none';
     UI.comfyEditFields.style.display = mode === 'edit' ? 'block' : 'none';
     UI.comfyStyleFields.style.display = mode === 'style' ? 'block' : 'none';
     UI.comfyBatchFields.style.display = mode === 'batch' ? 'block' : 'none';
     UI.comfyNegativePromptGroup.style.display = mode === 'generate' ? 'block' : 'none';
+    if (mode === 'generate') showComfyOnlyFields();
     if (UI.comfyDenoiseGroup) UI.comfyDenoiseGroup.style.display = (mode === 'style' || mode === 'edit') ? 'block' : 'none';
     // Batch mode has its own start button + its own progress/results panel — the
     // single-shot config grid, prompt card, and generate button all apply to exactly
     // one image at a time and don't make sense once a whole JSON list is driving it.
-    UI.comfySingleConfigGrid.style.display = mode === 'batch' ? 'none' : 'grid';
-    UI.comfySingleFilenameGroup.style.display = mode === 'batch' ? 'none' : 'block';
+    UI.comfySingleConfigGrid.style.display = (mode === 'batch' || tool) ? 'none' : 'grid';
+    // saving under a file name writes into one folder shared by everybody: the owner's (quota.js sets pgIsOwner)
+    UI.comfySingleFilenameGroup.style.display = (mode === 'batch' || tool || !window.pgIsOwner) ? 'none' : 'block';
+    document.querySelector('.comfy-prompt-card').style.display = tool ? 'none' : '';
     UI.comfyGenerateBtn.style.display = mode === 'batch' ? 'none' : 'inline-flex';
     UI.comfySingleResults.style.display = mode === 'batch' ? 'none' : 'block';
     UI.comfyBatchResults.style.display = mode === 'batch' ? 'block' : 'none';
     UI.comfyPromptLabel.textContent = mode === 'generate' ? tx('What should be in the picture?') : mode === 'edit' ? tx('What should change?') : tx('How should the style be transferred?');
-    UI.comfyGenerateBtn.textContent = mode === 'generate' ? tx('Generate image') : mode === 'edit' ? tx('Edit image') : tx('Transfer style');
+    UI.comfyGenerateBtn.textContent = mode === 'generate' ? tx('Generate image') : mode === 'edit' ? tx('Edit image')
+        : mode === 'upscale' ? tx('Enlarge picture') : mode === 'cutout' ? tx('Cut out') : tx('Transfer style');
     if (typeof applyStepsField === 'function') applyStepsField();   // each mode has its own model
 
     // The prompt box is shared across modes — leaving the Generate-mode sample text in
@@ -1284,21 +1297,26 @@ UI.comfyLora.addEventListener('change', () => {
 UI.comfyModeGenerateBtn.addEventListener('click', () => setComfyMode('generate'));
 UI.comfyModeEditBtn.addEventListener('click', () => setComfyMode('edit'));
 UI.comfyModeStyleBtn.addEventListener('click', () => setComfyMode('style'));
+document.getElementById('comfy-mode-upscale-btn').addEventListener('click', () => setComfyMode('upscale'));
+document.getElementById('comfy-mode-cutout-btn').addEventListener('click', () => setComfyMode('cutout'));
 
 // Drag & Drop / File select for the image-to-edit
 UI.comfyEditUploadZone.addEventListener('click', () => UI.comfyEditInput.click());
-UI.comfyEditInput.addEventListener('change', (e) => {
+// the picture for Edit / Enlarge / Cut out -- from a file, "My images" or a result's "Edit it" (pictures.js)
+let comfyEditPrompt = '';   // the prompt the chosen picture was made with (kept with an enlarged / cut-out copy)
+function setEditPicture(dataUrl, name, prompt) {
+    comfyEditImageBase64 = PictureUse.b64(dataUrl);
+    comfyEditPrompt = prompt || '';
+    UI.comfyEditPlaceholder.style.display = 'none';
+    UI.comfyEditPreviewContainer.style.display = 'block';
+    UI.comfyEditImgPreview.src = PictureUse.dataUrl(dataUrl);
+    if (name) addLog(tx('Picture: {name}', { name }), 'system');
+    if (comfyMode === 'upscale') updateUpscaleNote();
+}
+UI.comfyEditInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-        comfyEditImageBase64 = evt.target.result.split(',')[1];
-        UI.comfyEditPlaceholder.style.display = 'none';
-        UI.comfyEditPreviewContainer.style.display = 'block';
-        UI.comfyEditImgPreview.src = evt.target.result;
-        addLog(tx('Image to edit: {name}', { name: file.name }), 'system');
-    };
-    reader.readAsDataURL(file);
+    setEditPicture(await readAsDataUrl(file), file.name);
 });
 
 UI.comfyEditRemoveBtn.addEventListener('click', (e) => {
@@ -1365,16 +1383,18 @@ function readAsDataUrl(file) {
     });
 }
 
-UI.comfyEditExtraZone.addEventListener('click', () => UI.comfyEditExtraInput.click());
-UI.comfyEditExtraInput.addEventListener('change', async (e) => {
-    const files = [...e.target.files];
-    UI.comfyEditExtraInput.value = '';
-    const urls = await Promise.all(files.map(readAsDataUrl));
-    const { list, dropped } = EditImages.add(comfyEditExtra, urls.map(url => ({ url, b64: url.split(',')[1] })),
+function addEditExtraPictures(urls) {
+    const { list, dropped } = EditImages.add(comfyEditExtra, urls.map(url => ({ url: PictureUse.dataUrl(url), b64: PictureUse.b64(url) })),
                                              EditImages.extraLimit(editModelRow().maxImages));
     comfyEditExtra = list;
     if (dropped) addLog(tx('{n} picture(s) left out – this model takes {max} more at most.', { n: dropped, max: EditImages.extraLimit(editModelRow().maxImages) }), 'warn');
     renderEditExtras();
+}
+UI.comfyEditExtraZone.addEventListener('click', () => UI.comfyEditExtraInput.click());
+UI.comfyEditExtraInput.addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    UI.comfyEditExtraInput.value = '';
+    addEditExtraPictures(await Promise.all(files.map(readAsDataUrl)));
 });
 
 // Drag & Drop / File select for the style-transfer content and reference images
@@ -1384,14 +1404,15 @@ function wireImageUploadZone(zone, input, previewContainer, imgPreview, removeBt
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (evt) => {
-            onLoaded(evt.target.result.split(',')[1]);
-            placeholder.style.display = 'none';
-            previewContainer.style.display = 'block';
-            imgPreview.src = evt.target.result;
-        };
+        reader.onload = (evt) => set(evt.target.result);
         reader.readAsDataURL(file);
     });
+    function set(dataUrl) {
+        onLoaded(PictureUse.b64(dataUrl));
+        placeholder.style.display = 'none';
+        previewContainer.style.display = 'block';
+        imgPreview.src = PictureUse.dataUrl(dataUrl);
+    }
     removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         onCleared();
@@ -1400,14 +1421,15 @@ function wireImageUploadZone(zone, input, previewContainer, imgPreview, removeBt
         previewContainer.style.display = 'none';
         imgPreview.src = "";
     });
+    return set;
 }
 
-wireImageUploadZone(
+const setStyleContent = wireImageUploadZone(
     UI.comfyStyleContentUploadZone, UI.comfyStyleContentInput, UI.comfyStyleContentPreviewContainer,
     UI.comfyStyleContentImgPreview, UI.comfyStyleContentRemoveBtn, UI.comfyStyleContentPlaceholder,
     (b64) => { comfyStyleContentBase64 = b64; }, () => { comfyStyleContentBase64 = null; }
 );
-wireImageUploadZone(
+const setStyleRef = wireImageUploadZone(
     UI.comfyStyleRefUploadZone, UI.comfyStyleRefInput, UI.comfyStyleRefPreviewContainer,
     UI.comfyStyleRefImgPreview, UI.comfyStyleRefRemoveBtn, UI.comfyStyleRefPlaceholder,
     (b64) => { comfyStyleRefBase64 = b64; }, () => { comfyStyleRefBase64 = null; }
@@ -1416,6 +1438,8 @@ wireImageUploadZone(
 UI.comfyGenerateBtn.addEventListener('click', () => {
     if (comfyMode === 'edit') {
         startImageEdit();
+    } else if (comfyMode === 'upscale' || comfyMode === 'cutout') {
+        startPictureTool(comfyMode);
     } else if (comfyMode === 'style') {
         startStyleTransfer();
     } else {
@@ -1433,6 +1457,7 @@ async function startStyleTransfer() {
     UI.imagePlaceholderBox.style.display = 'none';
     UI.comfyResultImg.style.display = 'none';
     UI.comfyProgressPanel.style.display = 'block';
+    resetImageProgress();
 
     addLog(tx('Starting the style transfer…'), 'system');
 
@@ -1447,6 +1472,9 @@ async function startStyleTransfer() {
             filename: UI.comfyFilename.value.trim() || null
         };
         if (prompt) payload.prompt = prompt;
+        pendingGalleryMeta = PictureUse.galleryMeta('style', { prompt, model: payload.model_name,
+            label: (UI.comfyStyleModel.selectedOptions[0] || {}).textContent, steps: payload.steps, seed: payload.seed });
+        pendingResultMode = 'style';
         const resp = await api('/api/comfyui/style-transfer', 'POST', payload);
 
         addLog(tx('Task queued: {id}. Following its progress…', { id: resp.task_id }), 'system');
@@ -1454,10 +1482,9 @@ async function startStyleTransfer() {
         if (comfyPollInterval) clearInterval(comfyPollInterval);
         comfyPollInterval = setInterval(() => pollComfyTask(resp.task_id), 1500);
     } catch (err) {
-        addLog(tx('Style transfer failed: {err}', { err: err.message }), 'error');
+        showImageFailure(err, tx('Style transfer failed'));
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
-        UI.imagePlaceholderBox.style.display = 'block';
         UI.comfyProgressPanel.style.display = 'none';
     }
 }
@@ -1472,8 +1499,13 @@ async function startImageEdit() {
     UI.imagePlaceholderBox.style.display = 'none';
     UI.comfyResultImg.style.display = 'none';
     UI.comfyProgressPanel.style.display = 'block';
+    resetImageProgress();
 
     addLog(tx('Editing started …'), 'system');
+    pendingGalleryMeta = PictureUse.galleryMeta('edit', { prompt, model: UI.comfyEditModel.value,
+        label: (UI.comfyEditModel.selectedOptions[0] || {}).textContent, steps: stepsForRequest(),
+        seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null });
+    pendingResultMode = 'edit';
 
     try {
         const resp = await api('/api/comfyui/edit', 'POST', {
@@ -1492,10 +1524,9 @@ async function startImageEdit() {
         if (comfyPollInterval) clearInterval(comfyPollInterval);
         comfyPollInterval = setInterval(() => pollComfyTask(resp.task_id), 1500);
     } catch (err) {
-        addLog(tx('Editing failed: {err}', { err: err.message }), 'error');
+        showImageFailure(err, tx('Editing failed'));
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
-        UI.imagePlaceholderBox.style.display = 'block';
         UI.comfyProgressPanel.style.display = 'none';
     }
 }
@@ -1509,6 +1540,7 @@ async function startImageGeneration() {
     UI.imagePlaceholderBox.style.display = 'none';
     UI.comfyResultImg.style.display = 'none';
     UI.comfyProgressPanel.style.display = 'block';
+    resetImageProgress();
     
     const gatewayOpt = UI.comfyModel.selectedOptions[0];
     if (gatewayOpt && gatewayOpt.dataset.gateway) return generateViaGateway(prompt, gatewayOpt.value, gatewayOpt.textContent);
@@ -1517,6 +1549,7 @@ async function startImageGeneration() {
                            steps: stepsForRequest(),
                            seed: UI.comfySeed.value ? parseInt(UI.comfySeed.value) : null,
                            aspect_ratio: UI.comfyAspectRatio.value, source: 'bild' };
+    pendingResultMode = 'generate';
     addLog(tx('Generating the image …'), 'system');
     
     try {
@@ -1538,10 +1571,9 @@ async function startImageGeneration() {
         if (comfyPollInterval) clearInterval(comfyPollInterval);
         comfyPollInterval = setInterval(() => pollComfyTask(resp.task_id), 1500);
     } catch (err) {
-        addLog(tx('Generating failed: {err}', { err: err.message }), 'error');
+        showImageFailure(err, tx('Generating failed'));
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
-        UI.imagePlaceholderBox.style.display = 'block';
         UI.comfyProgressPanel.style.display = 'none';
     }
 }
@@ -1557,7 +1589,7 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
     for (const m of rows) {
         const o = document.createElement('option');
         o.value = valueOf(m);
-        if (m.provider !== 'comfyui' && select === UI.comfyModel) o.dataset.gateway = '1';
+        if (select === UI.comfyModel && ImageRoute.generateRoute(m).gateway) o.dataset.gateway = '1';
         o.textContent = m.available ? m.label : tx('{label} (not installed)', { label: m.label });
         o.title = m.description ? tx(m.description) : '';
         o.disabled = !m.available;
@@ -1574,11 +1606,23 @@ function fillImageModelSelect(select, rows, valueOf, noteEl) {
         : (def ? valueOf(def) : (options.find(o => !o.disabled) || options[0] || {}).value);
     const showNote = () => {
         if (noteEl) noteEl.textContent = (select.selectedOptions[0] || {}).dataset?.description || '';
+        if (select === UI.comfyModel) showComfyOnlyFields();
         applyStepsField();
         if (select === UI.comfyEditModel) renderEditExtras();
     };
     select.onchange = showNote;
     showNote();
+}
+
+// resolution, LoRA and "not in the picture" only reach main-ComfyUI checkpoints (ImageRoute) -- hidden for the others
+function showComfyOnlyFields() {
+    const viaGateway = !!(UI.comfyModel.selectedOptions[0] || {}).dataset?.gateway;
+    const show = (el, on) => { if (el) el.style.display = on ? '' : 'none'; };
+    show(UI.comfyResolution.closest('.input-group'), !viaGateway);
+    show(UI.comfyLora.closest('.input-group'), !viaGateway);
+    if (viaGateway) UI.comfyLoraStrengthGroup.style.display = 'none';
+    else UI.comfyLoraStrengthGroup.style.display = UI.comfyLora.value ? 'block' : 'none';
+    UI.comfyNegativePromptGroup.style.display = (comfyMode === 'generate' && !viaGateway) ? 'block' : 'none';
 }
 
 // The model the current Bild mode uses, and its catalog steps ({default, adjustable, max}) -- static/imagesteps.js
@@ -1606,15 +1650,21 @@ function stepsForRequest() {
 }
 
 async function loadImageModels() {
-    const comfyFile = m => (m.aliases || []).slice(-1)[0];   // the checkpoint filename (last alias)
     try {
-        const [gen, edit, style] = await Promise.all(['generate', 'edit', 'style'].map(t => api(`/v1/images/models?task=${t}`)));
-        fillImageModelSelect(UI.comfyModel, gen.data || [], m => m.provider === 'comfyui' ? comfyFile(m) : m.id);
+        const [gen, edit, style, upscale, cutout] = await Promise.all(['generate', 'edit', 'style', 'upscale', 'remove_background'].map(t =>
+            api(`/v1/images/models?task=${t}`).catch(() => ({ data: [] }))));
+        toolModels = { upscale: (upscale.data || []).filter(m => m.available), cutout: (cutout.data || []).filter(m => m.available) };
+        document.getElementById('comfy-mode-upscale-btn').hidden = !toolModels.upscale.length;
+        document.getElementById('comfy-mode-cutout-btn').hidden = !toolModels.cutout.length;
+        if (comfyMode === 'upscale' || comfyMode === 'cutout') fillToolModels();
+        window.dispatchEvent(new CustomEvent('pg-image-models', { detail: { edit: edit.data || [], style: style.data || [], ...toolModels } }));
+        fillImageModelSelect(UI.comfyModel, gen.data || [], m => ImageRoute.generateRoute(m).value);
         fillImageModelSelect(UI.comfyEditModel, edit.data || [], m => m.id, document.getElementById('comfy-edit-model-note'));
         fillImageModelSelect(UI.comfyStyleModel, style.data || [], m => m.id, document.getElementById('comfy-style-model-note'));
         UI.comfyModel.dispatchEvent(new Event('change'));
         // missing models: what can be downloaded, and a plain word when an ability isn't there at all
         const usable = rows => (rows || []).some(m => m.available);
+        UI.statusComfyui.className = `status-indicator ${usable(gen.data) ? 'online' : 'offline'}`;
         Downloads.panel(document.getElementById('dl-image-gen'), 'image',
             usable(gen.data) ? '' : tx('No image model is installed yet.'));
         Downloads.panel(document.getElementById('dl-image-edit'), false, usable(edit.data) ? '' :
@@ -1637,15 +1687,15 @@ async function generateViaGateway(prompt, model, label) {
         const data = await api('/v1/images/generations', 'POST', body);
         UI.comfyResultImg.src = `data:image/png;base64,${data.data[0].b64_json}`;
         UI.comfyResultImg.style.display = 'inline-block';
+        lastResultPrompt = prompt;
+        if (typeof showResultActions === 'function') showResultActions('generate');
         addLog(tx('{label}: done after {s} s.', { label, s: Math.round((Date.now() - t0) / 100) / 10 }), 'success');
         if (typeof saveToGallery === 'function') {
             saveToGallery(data.data[0].b64_json, { prompt, model, label, seed: body.seed, steps: body.steps, aspect_ratio: body.aspect_ratio,
                                                    seconds: (Date.now() - t0) / 1000, source: 'bild' });
         }
     } catch (err) {
-        addLog(tx('{label} failed: {err}', { label, err: err.message }), 'error');
-        UI.imagePlaceholderBox.style.display = 'block';
-        UI.imagePlaceholderBox.textContent = '❌ ' + tx('{label} failed: {err}', { label, err: err.message });
+        showImageFailure(err, label);
     } finally {
         UI.comfyGenerateBtn.disabled = false;
         UI.comfyLoading.style.display = 'none';
@@ -1656,7 +1706,103 @@ async function generateViaGateway(prompt, model, label) {
 loadImageModels();
 window.addEventListener('sw-installed', (e) => { if (e.detail.capability === 'image') loadImageModels(); });
 
-let pendingGalleryMeta = null;   // set by a Bild "Generate", consumed when its task completes
+let pendingGalleryMeta = null;   // set by Generate / Edit / Transfer style, consumed when its task completes
+let pendingResultMode = 'generate';
+let lastResultPrompt = '';   // pictures.js passes it on with "Use this picture"
+
+// a failed picture: a plain sentence where the picture would be, the technical message in the log (apierror.js)
+function showImageFailure(err, label) {
+    const status = err && err.status ? err.status : (/no room|507/i.test(String(err && err.message)) ? 507 : 0);
+    const f = errorText.friendly(status, err && err.message);
+    addLog((label ? label + ': ' : '') + (f.details || f.text), 'error');
+    UI.imagePlaceholderBox.style.display = 'block';
+    UI.imagePlaceholderBox.textContent = '❌ ' + f.text;
+    UI.comfyResultImg.style.display = 'none';
+    document.getElementById('comfy-result-actions').hidden = true;
+}
+// a new job starts: progress from zero, no buttons that point at the previous picture
+function resetImageProgress() {
+    UI.comfyProgressPercentage.textContent = '0%';
+    UI.comfyProgressFill.style.width = '0%';
+    UI.comfyProgressNode.textContent = tx('Starting …');
+    document.getElementById('comfy-result-actions').hidden = true;
+}
+
+// ---------------------------------------------------- Enlarge (Real-ESRGAN) and Cut out (BiRefNet), 2026-11-26
+let toolModels = { upscale: [], cutout: [] };
+
+function fillToolModels() {
+    const sel = document.getElementById('comfy-tool-model');
+    const rows = toolModels[comfyMode] || [];
+    const keep = sel.dataset[comfyMode] || sel.value;
+    sel.replaceChildren(...rows.map(m => new Option(m.label || m.id, m.id)));
+    if (rows.some(m => m.id === keep)) sel.value = keep;
+    const row = rows.find(m => m.id === sel.value);
+    document.getElementById('comfy-tool-model-note').textContent = row && row.description ? tx(row.description) : '';
+    updateUpscaleNote();
+}
+document.getElementById('comfy-tool-model').addEventListener('change', (e) => {
+    e.target.dataset[comfyMode] = e.target.value;
+    fillToolModels();
+});
+
+// which factors fit the picture (the gateway allows at most 4096 x 4096)
+function updateUpscaleNote() {
+    const note = document.getElementById('comfy-upscale-note');
+    const img = UI.comfyEditImgPreview;
+    const w = comfyEditImageBase64 ? img.naturalWidth : 0, h = comfyEditImageBase64 ? img.naturalHeight : 0;
+    const fits = PictureUse.upscaleFactors(w, h);
+    const sel = document.getElementById('comfy-upscale-factor');
+    for (const o of sel.options) o.disabled = !fits.includes(parseInt(o.value));
+    if (fits.length && !fits.includes(parseInt(sel.value))) sel.value = String(fits[0]);
+    note.textContent = !w ? '' : !fits.length ? tx('This picture is already too large to enlarge (at most 4096 × 4096 pixels come out).')
+        : tx('{w} × {h} → {W} × {H} pixels', { w, h, W: w * parseInt(sel.value), H: h * parseInt(sel.value) });
+}
+UI.comfyEditImgPreview.addEventListener('load', () => { if (comfyMode === 'upscale') updateUpscaleNote(); });
+document.getElementById('comfy-upscale-factor').addEventListener('change', updateUpscaleNote);
+
+async function startPictureTool(mode) {
+    if (!comfyEditImageBase64) return addLog(mode === 'upscale' ? tx('Please choose the picture to enlarge.') : tx('Please choose the picture to cut out.'), 'warn');
+    const model = document.getElementById('comfy-tool-model').value || undefined;
+    const label = (document.getElementById('comfy-tool-model').selectedOptions[0] || {}).textContent || model;
+    UI.comfyGenerateBtn.disabled = true;
+    UI.comfyLoading.style.display = 'flex';
+    UI.imagePlaceholderBox.style.display = 'none';
+    UI.comfyResultImg.style.display = 'none';
+    document.getElementById('comfy-result-actions').hidden = true;
+    const t0 = Date.now();
+    addLog(mode === 'upscale' ? tx('Enlarging the picture …') : tx('Cutting out …'), 'system');
+    try {
+        let data;
+        if (mode === 'upscale') {
+            const scale = parseInt(document.getElementById('comfy-upscale-factor').value) || 2;
+            data = await api('/v1/images/upscale', 'POST', { image: comfyEditImageBase64, scale, model });
+        } else {
+            const form = new FormData();
+            const bytes = Uint8Array.from(atob(comfyEditImageBase64), c => c.charCodeAt(0));
+            form.append('image', new Blob([bytes], { type: 'image/png' }), 'picture.png');
+            form.append('task', 'remove_background');
+            if (model) form.append('model', model);
+            form.append('response_format', 'b64_json');
+            const res = await swFetch(`${BASE_URL}/v1/images/edits`, { method: 'POST', body: form });
+            data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(errorText(data, res.status));
+        }
+        const b64 = data.data[0].b64_json;
+        UI.comfyResultImg.src = PictureUse.dataUrl(b64);
+        UI.comfyResultImg.style.display = 'inline-block';
+        const seconds = (Date.now() - t0) / 1000;
+        addLog(tx('Done after {s} s.', { s: Math.round(seconds * 10) / 10 }), 'success');
+        lastResultPrompt = comfyEditPrompt;
+        if (typeof showResultActions === 'function') showResultActions(mode);
+        if (typeof saveToGallery === 'function') saveToGallery(b64, PictureUse.galleryMeta(mode, { prompt: comfyEditPrompt, model: data.model || model, label, seconds }));
+    } catch (err) {
+        showImageFailure(err, label);
+    } finally {
+        UI.comfyGenerateBtn.disabled = false;
+        UI.comfyLoading.style.display = 'none';
+    }
+}
 
 async function pollComfyTask(taskId) {
     try {
@@ -1666,7 +1812,7 @@ async function pollComfyTask(taskId) {
         
         if (data.status === 'processing') {
             const prog = data.progress;
-            UI.comfyProgressNode.textContent = prog.node ? `Node: ${prog.node}` : tx('Generating…');
+            UI.comfyProgressNode.textContent = tx('Generating…');   // ComfyUI's node numbers mean nothing to a visitor
             UI.comfyProgressPercentage.textContent = `${prog.value}%`;
             UI.comfyProgressFill.style.width = `${prog.value}%`;
         } else if (data.status === 'completed') {
@@ -1675,6 +1821,8 @@ async function pollComfyTask(taskId) {
             
             UI.comfyResultImg.src = data.image_base64.startsWith('data:') ? data.image_base64 : `data:image/png;base64,${data.image_base64}`;
             UI.comfyResultImg.style.display = 'inline-block';
+            lastResultPrompt = (pendingGalleryMeta && pendingGalleryMeta.prompt) || '';
+            if (typeof showResultActions === 'function') showResultActions(pendingResultMode);
             if (pendingGalleryMeta && typeof saveToGallery === 'function') {
                 saveToGallery(data.image_base64, { ...pendingGalleryMeta, seconds: data.runtime_seconds });
             }
@@ -1684,11 +1832,9 @@ async function pollComfyTask(taskId) {
             UI.comfyProgressPanel.style.display = 'none';
         } else if (data.status === 'failed') {
             clearInterval(comfyPollInterval);
-            addLog(tx('Failed: {err}', { err: data.error }), 'error');
+            showImageFailure({ message: data.error }, '');
             UI.comfyLoading.style.display = 'none';
             UI.comfyGenerateBtn.disabled = false;
-            UI.imagePlaceholderBox.style.display = 'block';
-            UI.imagePlaceholderBox.textContent = '❌ ' + tx('Failed: {err}', { err: data.error });
             UI.comfyProgressPanel.style.display = 'none';
         }
     } catch (err) {

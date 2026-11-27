@@ -37,11 +37,17 @@ const TextRules = (() => {
             .sort((a, b) => b.score - a.score);
     }
 
+    // a score as percent: a rerank model's logit through the sigmoid, an embedding similarity (cosine) as it is
+    function percent(score, how) {
+        const p = how === 'rerank' ? 1 / (1 + Math.exp(-score)) : Math.max(0, score);
+        return Math.round(100 * Math.min(1, p));
+    }
+
     function modelsOfKind(models, kind) {
         return (models || []).filter(m => m.kind === kind && m.where.some(p => p.place !== 'device' || p.online));
     }
 
-    return { lines, cosine, matrix, closestPairs, rankByEmbedding, rankFromRerank, modelsOfKind };
+    return { lines, cosine, matrix, closestPairs, rankByEmbedding, rankFromRerank, percent, modelsOfKind };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = TextRules;
@@ -123,7 +129,9 @@ if (typeof document !== 'undefined' && document.getElementById('texts-tab')) (()
                 const r = await api('/v1/rerank', 'POST', { model: opt.value, query, documents: docs });
                 ranked = R.rankFromRerank(r.results, docs);
             }
-            $('rr-result').textContent = ranked.map((x, i) => `${i + 1}. ${x.score.toFixed(3)}  ${x.document}`).join('\n');
+            const how = opt.dataset.emb ? 'similarity' : 'rerank';
+            $('rr-result').textContent = tx('How well each text fits the question:') + '\n\n'
+                + ranked.map((x, i) => `${i + 1}. ${String(R.percent(x.score, how)).padStart(3)} %  ${x.document}`).join('\n');
             status.textContent = tx('Done · {how} · {s} s', { how: opt.dataset.emb ? tx('by similarity') : 'Rerank', s: ((performance.now() - t0) / 1000).toFixed(1) });
         } catch (err) {
             status.textContent = tx('Failed: {err}', { err: err.message });

@@ -77,9 +77,9 @@ def test_edit_and_style_models_are_in_the_catalog():
     edit = {m.id for m in catalog.CATALOG if "edit" in m.tasks}
     style = {m.id for m in catalog.CATALOG if "style" in m.tasks}
     assert style == {"qwen-edit-2511", "qwen-edit-2511-q3"}
-    assert edit == style | {"flux2-klein-4b", "minimax-h3-image"}
+    assert edit == style | {"flux2-klein-4b", "minimax-h3-image", "moss-edit-v5"}
     assert catalog.DEFAULTS == {"generate": "z-image-turbo", "edit": "qwen-edit-2511", "style": "qwen-edit-2511",
-                                "remove_background": "birefnet"}
+                                "remove_background": "birefnet", "upscale": "realesrgan-x4"}
 
 
 @pytest.mark.parametrize("old", ["Qwen_Image_Edit-Q2_K.gguf", "Qwen_Image_Edit-Q4_K_S.gguf", "qwen-edit", "qwen-edit-q4"])
@@ -92,7 +92,7 @@ def test_listing_by_task():
     gen = {r["id"] for r in catalog.listing()}
     assert "z-image-turbo" in gen and "qwen-edit-2511" not in gen          # generate stays as it was
     rows = {r["id"]: r for r in catalog.listing(task="edit")}
-    h3 = {"minimax-h3-image"} if catalog.available(catalog.resolve("minimax-h3-image")) else set()   # not a bundle
+    h3 = {m for m in ("minimax-h3-image", "moss-edit-v5") if catalog.available(catalog.resolve(m))}   # not bundles
     assert set(rows) == {"qwen-edit-2511", "qwen-edit-2511-q3", "flux2-klein-4b"} | h3 and rows["qwen-edit-2511"]["default"]
     assert {r["id"] for r in catalog.listing(task="style") if r["default"]} == {"qwen-edit-2511"}
     assert len(catalog.listing(task="all")) == len(catalog.CATALOG)

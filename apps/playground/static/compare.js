@@ -201,7 +201,14 @@ function cmpRender() {
     if (job.status !== 'running') { cancelBtn.disabled = false; cancelBtn.textContent = tx('Cancel'); }
     if (job.status === 'cancelled' && document.getElementById('cmp-status').classList.contains('ok')) cmpSay(tx('Cancelled.'), 'ok');
     document.getElementById('cmp-run').disabled = job.status === 'running';
-    if (job.status === 'done' && document.getElementById('cmp-status').classList.contains('ok')) cmpSay('');
+    if (job.status === 'done' && document.getElementById('cmp-status').classList.contains('ok')) {
+        const failed = job.cells.filter(c => c.status !== 'done').length;
+        cmpSay(failed ? tx('Finished: {done} of {n} images – the others could not be made (see the tiles).', { done, n: job.cells.length })
+                      : tx('Finished: all {n} images are below and in “My images”.', { n: job.cells.length }), failed ? 'error' : 'ok');
+    }
+    if (job.status === 'running' && document.getElementById('cmp-status').classList.contains('ok')) {
+        cmpSay(tx('Running: {done} of {n} images done – keeps going on the server even if you close the page.', { done, n: job.cells.length }), 'ok');
+    }
 
     // Wrapping tiles instead of a fixed table: as many side by side as the width allows, never wider
     // than the page. Models only: one block (per seed); with step counts: one block per model.
@@ -421,6 +428,7 @@ function renderMeta(e, other) {
     dl.href = imgUrl(e.id);
     dl.download = `${(e.model || 'image').replace(/[^\w.-]+/g, '_')}-${e.steps ?? ''}-${e.seed ?? e.id}.png`;
     mine.current = e;
+    if (typeof refreshViewerActions === 'function') refreshViewerActions(other ? null : e);   // pictures.js
 }
 
 function fillPickers() {

@@ -31,6 +31,7 @@ from backend.response_processing import (
     is_draft_head,
 )
 from backend.state import state
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.model_manager")
 
@@ -540,8 +541,12 @@ def llama_env() -> Dict[str, str]:
 
 async def fetch_gpu_status() -> Dict[str, Any]:
     """Return GPU metrics from nvidia-smi (or psutil fallback).
-    Called by the /api/gpu/status route handler AND internally by model loading.
-    """
+    Called by the /api/gpu/status route handler AND internally by model loading. Runs in a thread: nvidia-smi /
+    ioreg take a moment, and on the loop they held up every request (2026-11-26, backend/loop_watch.py)."""
+    return await asyncio.to_thread(_fetch_gpu_status_sync)
+
+
+def _fetch_gpu_status_sync() -> Dict[str, Any]:
     if sys.platform == "darwin":
         try:
             mem = psutil.virtual_memory()
@@ -879,7 +884,7 @@ async def is_port_busy(port: int, info: Dict[str, Any]) -> bool:
     if info.get("active_requests", 0) > 0 or info.get("loading"):
         return True   # loading: /slots doesn't answer yet (2026-11-01 an unload_all killed a gateway load midway)
     try:
-        async with httpx.AsyncClient(timeout=0.5) as client:
+        async with httpclient.AsyncClient(timeout=0.5) as client:
             resp = await client.get(f"http://127.0.0.1:{port}/slots")
             if resp.status_code == 200:
                 return any(slot.get("is_processing") for slot in resp.json())
@@ -1420,7 +1425,7 @@ async def _load_locked(
                 break
             await asyncio.sleep(1)
             try:
-                async with httpx.AsyncClient(timeout=0.5) as client:
+                async with httpclient.AsyncClient(timeout=0.5) as client:
                     resp = await client.get(f"http://127.0.0.1:{port}/health")
                     if resp.status_code == 200:
                         ready = True

@@ -34,6 +34,7 @@ from backend.cluster.service import SERVICE as CLUSTER, Upstream
 from backend.state import state
 from backend import chat_jobs
 from backend import realtime_speech
+from backend import httpclient
 
 logger = logging.getLogger("ai-serve-ui.gateway")
 router = APIRouter()
@@ -427,7 +428,7 @@ def _upstream_client(up: Upstream, default_timeout: float) -> httpx.AsyncClient:
     it may load for minutes on the first request and serve slowly."""
     if up.kind == "plugin":
         return llm_plugins.registry._client(PLUGIN_UPSTREAM_TIMEOUT_S)
-    return httpx.AsyncClient(timeout=default_timeout)
+    return httpclient.AsyncClient(timeout=default_timeout)
 
 
 def _for_upstream(payload: Dict[str, Any], up: Upstream) -> Dict[str, Any]:
@@ -441,7 +442,7 @@ async def get_props(model: Optional[str] = None):
     port = find_active_model_port(model)
     if port is None:
         raise HTTPException(status_code=404, detail="No active model server found.")
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpclient.AsyncClient(timeout=10.0) as client:
         resp = await client.get(f"http://127.0.0.1:{port}/props")
         resp.raise_for_status()
         return resp.json()
@@ -1138,7 +1139,7 @@ async def _slot_count(up: Upstream) -> int:
     recorded count -- the adopted 2-slot Omni then took two conversations and a German answer stalled, 2026-11-03),
     else the recorded count, else REALTIME_SLOTS."""
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpclient.AsyncClient(timeout=3.0) as client:
             r = await client.get(up.url("/slots"), headers=up.headers)
         if r.status_code == 200 and isinstance(r.json(), list) and r.json():
             return len(r.json())
@@ -1284,7 +1285,7 @@ class _RealtimeSpeaker:
     async def _speak_all(self):
         body = {"lang": self.speak.language, "voice": self.speak.voice, "response_format": "pcm", "stream": True}
         # a sentence is a few seconds of speech: 30 s without bytes means something is stuck (no free slot ...)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+        async with httpclient.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
             while True:
                 sentence = await self.queue.get()
                 if sentence is None:

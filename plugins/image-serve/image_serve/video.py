@@ -17,6 +17,7 @@ Models (all distilled / few-step variants; files in COMFYUI_MODELS_ROOT):
                   8-step turbo LoRA (6 steps, as Comfy-Org's template); `minimax-h3-4step` with the 4-step 768p LoRA.
                   Text or first frame -> video with stereo sound, 24 fps, frames on a 17k+5 grid. MiniMax Community
                   License. Added 2026-11-14 (owner: "download minimax h3 now"); speed LoRAs in loras/minimax-h3-speed/.
+- `sulphur-3`     SulphurAI's uncensored MiniMax H3 fine-tune (Abiray's GGUF Q4_K_M), otherwise as minimax-h3 (2026-11-26).
 Graphs follow Comfy-Org's templates (video_ltx2_5_t2v.json, video_wan2_2_14B_i2v.json, video_wan2_2_5B_ti2v.json)
 in API form, measured 2026-11-13 (CLAUDE.md "Video").
 
@@ -129,6 +130,15 @@ CATALOG = CATALOG + (
                _H3_FILES + (("loras", "minimax-h3-speed/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"),),
                "MiniMax H3 with the 4-step turbo LoRA (trained for 768p): faster, possibly less detail.",
                _H3_LICENSE, 24, 2, 10, 5, _H3_RES, audio=True, default_steps=4),
+    # 2026-11-26 (owner: "runterladen und testen"): SulphurAI's uncensored MiniMax H3 fine-tune (s3, RL-baked), as
+    # Abiray's GGUF Q4_K_M; a non-turbo base, run with the same 8-step turbo LoRA as minimax-h3
+    VideoModel("sulphur-3", "Sulphur-3 (MiniMax H3 fine-tune, uncensored, Q4)", "minimax-h3",
+               ("text_to_video", "image_to_video"),
+               (("diffusion_models", "Sulphur-3-Q4_K_M.gguf"),) + _H3_FILES[1:]
+               + (("loras", "minimax-h3-speed/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"),),
+               "SulphurAI's uncensored fine-tune of MiniMax H3: text or picture -> video with stereo sound "
+               "(Abiray's GGUF Q4_K_M, the same encoder and turbo LoRA as minimax-h3).",
+               _H3_LICENSE, 24, 2, 10, 5, _H3_RES, audio=True, default_steps=6),
 )
 DEFAULTS = {"text_to_video": "ltx-2.5", "image_to_video": "ltx-2.5"}   # LTX: faster and with sound (owner, 2026-11-13)
 

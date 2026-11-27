@@ -14,6 +14,7 @@ from playground.server import make_server
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 16
 HITS = []
+BODIES = []
 CATALOG = {"data": [{"id": "z", "label": "Z", "available": True, "aspect_ratios": ["1:1"],
                      "steps": {"default": 8, "adjustable": True, "max": 60}}]}
 
@@ -38,6 +39,7 @@ class FakeGateway(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         HITS.append(self.path)
+        BODIES.append(body)
         if self.path == "/v1/video/jobs":
             return self._json({"id": "comfyui.vid-1", "status": "queued", "model": "ltx-2.5"}, status=202)
         if self.path == "/v1/images/generations":
@@ -68,6 +70,7 @@ class TestQuotaServer(unittest.TestCase):
         self.sw = serve(make_server(0, f"http://127.0.0.1:{self.gw.server_address[1]}", data_dir=self.tmp.name,
                                     identify=fake_identify))
         HITS.clear()
+        BODIES.clear()
 
     def tearDown(self):
         self.sw.shutdown()
@@ -108,6 +111,14 @@ class TestQuotaServer(unittest.TestCase):
         self.assertEqual(self.req("POST", "/api/comfyui/batch", "anna", {"items": []})[0], 403)
         self.assertEqual(self.req("POST", "/api/comfyui/batch", "alex", {"items": []})[0], 200)
         self.assertEqual(HITS, ["/api/comfyui/batch"])
+
+    def test_files_saved_by_name_are_the_owners(self):
+        # 2026-11-26: one shared folder, read back by name -- guests neither save there nor read from it
+        self.req("POST", "/api/comfyui/generate", "anna", {"prompt": "x", "filename": "owner-secret"})
+        self.req("POST", "/api/comfyui/generate", "alex", {"prompt": "x", "filename": "mine"})
+        self.assertEqual([json.loads(b).get("filename") for b in BODIES], [None, "mine"])
+        self.assertEqual(self.req("GET", "/api/comfyui/images/mine.png", "anna")[0], 403)
+        self.assertEqual(self.req("GET", "/api/comfyui/images/mine.png", "alex")[0], 200)
 
     def test_downloads_are_the_owners(self):
         # owner, 2026-10-22: missing models can be downloaded from the Playground -- by the owner only

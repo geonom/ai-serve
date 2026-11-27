@@ -107,3 +107,14 @@ def test_stt_engine_is_not_a_fixed_list_any_more():
     assert STTTranscribeRequest(engine="future-engine").engine == "future-engine"
     with pytest.raises(Exception):
         STTTranscribeRequest(engine="a b; rm")
+
+
+def test_the_default_engine_is_the_one_the_gateway_uses():
+    # 2026-11-27: the catalog named tts-serve's default (piper) while requests without an engine went to
+    # DEFAULT_TTS_ENGINE (cosyvoice) -- the Playground preselected the wrong one
+    from backend.audio_catalog import audio_catalog
+    view = {"default_engine": "piper", "engines": [{"id": "piper"}, {"id": "cosyvoice"}]}
+    assert audio_catalog(view, None, "v.wav", default_engine="cosyvoice")["tts"]["default_engine"] == "cosyvoice"
+    assert audio_catalog(view, None, "v.wav", default_engine="")["tts"]["default_engine"] == "piper"
+    # a configured engine that isn't there: tts-serve's own default, not a name that would fail
+    assert audio_catalog(view, None, "v.wav", default_engine="omnivoice")["tts"]["default_engine"] == "piper"

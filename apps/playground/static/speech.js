@@ -40,7 +40,8 @@ const SpeechRules = (() => {
         if (mode.variant) body.variant = mode.variant;
         const inputs = mode.inputs || {};
         if (inputs.reference) {
-            if (v.refVoicePath) body.ref_voice_path = v.refVoicePath;
+            if (v.voice) body.voice = v.voice;   // a ready-made (synthetic) or own voice: the gateway picks its clip
+            else if (v.refVoicePath) body.ref_voice_path = v.refVoicePath;
             else if (v.refAudioBase64) body.ref_audio_base64 = v.refAudioBase64;
         }
         if (inputs.ref_text && v.refText) body.ref_text = v.refText;
@@ -50,6 +51,21 @@ const SpeechRules = (() => {
         for (const p of mode.params || []) if (v.params && v.params[p.name] !== undefined) params[p.name] = v.params[p.name];
         if (Object.keys(params).length) body.params = params;
         return body;
+    }
+
+    // The "Recording to clone" choices (2026-11-27): the gateway's ready-made voices (synthetic, and the person's own),
+    // then -- for the owner only -- the recordings in the server's voices/ folder (real people among them: never
+    // offered to guests). Values: "voice:<id>" or "path:<server path>".
+    function voiceChoices(mode, clips, isOwner) {
+        if (!(mode.inputs || {}).reference) return [];
+        const out = [];
+        const ready = (mode.voices || []).map(v => ({ value: `voice:${v.id}`, text: v.label || v.id }));
+        if (ready.length) out.push({ label: tx('Ready-made voices'), options: ready });
+        if (isOwner && (clips || []).length) {
+            out.push({ label: tx('Recordings on this server'),
+                       options: clips.map(c => ({ value: `path:${c.path}`, text: c.name.replace(/\.[a-z0-9]+$/i, '') })) });
+        }
+        return out;
     }
 
     // Tag groups (e.g. OmniVoice): at most one tag per group; clicking a selected tag clears its group.
@@ -79,7 +95,7 @@ const SpeechRules = (() => {
         return segs.filter(s => (s.text || '').trim()).map(s => `[${t(s.start)}] ${s.speaker || '?'}: ${s.text.trim()}`).join('\n');
     }
 
-    return { visibleFields, sttPayload, missingInputs, ttsPayload, toggleTag, toSrt, readable };
+    return { visibleFields, sttPayload, missingInputs, ttsPayload, voiceChoices, toggleTag, toSrt, readable };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = SpeechRules;
@@ -91,7 +107,7 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         try { const d = new Intl.DisplayNames([I18N.lang], { type: 'language' }); return c => d.of(c) || c; }
         catch (e) { return c => c; }
     })();
-    let catalog = null, voices = [];
+    let catalog = null, voices = [], isOwner = false;
     const tts = { engine: null, mode: null, refAudioBase64: null, tags: [], params: {} };
     const stt = { engine: null, values: {}, audioBase64: null, last: null };
 
@@ -120,11 +136,18 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         });
     }
 
-    function audioPicker(label, onChange, emptyLabel) {
+    // groups: [{label, options: [{value: "voice:<id>" | "path:<server path>", text}]}] (R.voiceChoices); a file
+    // upload is always there. onChange gets {voice} | {path} | {base64} | {}.
+    function audioPicker(label, onChange, emptyLabel, groups) {
         const sel = h('select', {}, h('option', { value: '', text: emptyLabel }),
-            voices.map(v => h('option', { value: v.path, text: v.name.replace(/\.[a-z0-9]+$/i, '') })));
+            (groups || []).map(g => h('optgroup', { label: g.label }, g.options.map(o => h('option', { value: o.value, text: o.text })))));
         const file = h('input', { type: 'file', accept: 'audio/*,video/*' });
-        sel.addEventListener('change', () => { if (sel.value) file.value = ''; onChange({ path: sel.value || null }); });
+        sel.addEventListener('change', () => {
+            if (sel.value) file.value = '';
+            const [kind, ...rest] = sel.value.split(':');
+            const value = rest.join(':');
+            onChange(kind === 'voice' ? { voice: value } : kind === 'path' ? { path: value } : {});
+        });
         file.addEventListener('change', async () => {
             if (!file.files[0]) return onChange({});
             sel.value = '';
@@ -181,12 +204,13 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
 
         const inp = m.inputs || {};
         if (inp.reference) {
-            form.append(audioPicker(tx('Recording to clone') + need(inp.reference) + (m.default_voice ? ' ' + tx('– empty = default voice') : ''),
-                ({ path, base64 }) => {
-                    tts.refVoicePath = path || null; tts.refAudioBase64 = base64 || null;
+            form.append(audioPicker(tx('Voice to clone') + need(inp.reference) + (m.default_voice ? ' ' + tx('– empty = default voice') : ''),
+                ({ voice, path, base64 }) => {
+                    tts.voice = voice || null; tts.refVoicePath = path || null; tts.refAudioBase64 = base64 || null;
                     const v = voices.find(x => x.path === path);
                     if (inp.ref_text && v && v.transcript) { tts.refText = v.transcript; const ta = document.getElementById('tts-ref-text'); if (ta) ta.value = v.transcript; }
-                }, inp.reference === 'required' ? tx('– choose or upload a recording –') : tx('– none –')));
+                }, inp.reference === 'required' ? tx('– choose a voice or upload a recording –') : tx('– none –'),
+                R.voiceChoices(m, voices, isOwner)));
         }
         if (inp.ref_text) {
             const ta = h('textarea', { id: 'tts-ref-text', rows: 3, placeholder: tx('What is said in the recording') });
@@ -246,7 +270,7 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
         if (!tts.engine) return;
         if (!text) { status.textContent = tx('Enter a text first.'); return; }
         const m = tts.mode;
-        const reference = !!(tts.refVoicePath || tts.refAudioBase64) || !!m.default_voice;
+        const reference = !!(tts.voice || tts.refVoicePath || tts.refAudioBase64) || !!m.default_voice;
         const missing = R.missingInputs(m, { reference, ref_text: !!tts.refText, instruct: !!tts.instruct, speaker: !!tts.speaker });
         if (missing.length) { status.textContent = tx('Still missing: {what}.', { what: missing.join(', ') }); return; }
         const body = R.ttsPayload(tts.engine, m, { ...tts, text });
@@ -290,7 +314,8 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
             s.engines.map(x => h('option', { value: x.id, disabled: !x.available, text: x.label + (x.available ? '' : ' ' + tx('(not set up)')) })));
         engSel.value = e.id;
         form.append(group('Engine', engSel, note(e.description)));
-        form.append(audioPicker(tx('Recording'), ({ path, base64 }) => { stt.audioPath = path || null; stt.audioBase64 = base64 || null; }, tx('– upload a file –')));
+        form.append(audioPicker(tx('Recording'), ({ path, base64 }) => { stt.audioPath = path || null; stt.audioBase64 = base64 || null; }, tx('– upload a file –'),
+            isOwner && voices.length ? [{ label: tx('Recordings on this server'), options: voices.map(v => ({ value: `path:${v.path}`, text: v.name.replace(/\.[a-z0-9]+$/i, '') })) }] : []));
         for (const f of R.visibleFields(e.fields, stt.values)) form.append(fieldInput(f));
     }
 
@@ -372,7 +397,10 @@ if (typeof document !== 'undefined' && document.getElementById('speech-tab')) ((
     document.getElementById('stt-form').after(h('div', { style: 'padding: 0 1.25rem 1.25rem;' }, sttRun));
 
     async function load() {
-        try { voices = (await api('/api/voices')).voices || []; } catch (e) { voices = []; }
+        try { isOwner = !!(await api('/sw/me')).is_owner; } catch (e) { isOwner = false; }
+        // the server folder's recordings (real people among them) only for the owner -- the server refuses others too
+        voices = [];
+        if (isOwner) { try { voices = (await api('/api/voices')).voices || []; } catch (e) { voices = []; } }
         try { catalog = await api('/v1/audio/models'); }
         catch (err) { catalog = null; addLog(tx('Couldn\'t load speech engines: {err}', { err: err.message }), 'error'); }
         renderTts(); renderStt();

@@ -91,6 +91,8 @@ document.getElementById('quota-tab-link').addEventListener('click', quotaLoadAdm
 (async function quotaInit() {
     try { quota.me = await sw('/me'); } catch (err) { return; }
     document.getElementById('quota-tab-group').hidden = !quota.me.is_owner;
+    window.pgIsOwner = !!quota.me.is_owner;
+    if (typeof setComfyMode === 'function') setComfyMode(comfyMode);   // shows the owner's "Save as a file"
     quotaBadge();
     setInterval(quotaBadge, 30000);
 })();

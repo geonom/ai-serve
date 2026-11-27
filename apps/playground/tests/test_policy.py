@@ -15,7 +15,7 @@ once the dashboard exposes it) the gateway's full management API. Rules:
 """
 import unittest
 
-from playground.policy import MAX_BODY_BYTES, Refused, forward_headers, route
+from playground.policy import MAX_BODY_BYTES, Refused, forward_headers, guest_body, route
 
 
 class TestRoute(unittest.TestCase):
@@ -41,6 +41,11 @@ class TestRoute(unittest.TestCase):
                      ("GET", "/v1/audio/models"), ("GET", "/v1/llm/models"),
                      ("POST", "/v1/embeddings"), ("POST", "/v1/rerank"),        # the gateway's image and speech catalogs
                      ("POST", "/api/plugins/comfyui/start")]:   # a plugin whose downloads a page needs (owner only)
+            self.ok(m, p)
+
+    def test_upscale_and_remove_background(self):
+        # 2026-11-26 (owner: pictures made here usable everywhere): enlarge and cut out, both JSON / multipart
+        for m, p in [("POST", "/v1/images/upscale"), ("POST", "/v1/images/edits")]:
             self.ok(m, p)
 
     def test_video_jobs(self):
@@ -130,3 +135,38 @@ def test_origin_and_referer_are_not_forwarded():
     out = forward_headers({"Origin": "https://playground.apps.example.org", "Referer": "https://playground.apps.example.org/x",
                            "Content-Type": "application/json"}, peer="127.0.0.1")
     assert "Origin" not in out and "Referer" not in out and out["Content-Type"] == "application/json"
+
+
+class TestGuestBody(unittest.TestCase):
+    """2026-11-26: "Save as a file" wrote into one folder shared by everybody, readable by name -- a guest could fetch
+    or overwrite another person's picture. Guests' image jobs go without `filename`; the owner keeps it."""
+
+    def test_filename_is_dropped_for_guests(self):
+        import json
+        for path in ("/api/comfyui/generate", "/api/comfyui/edit", "/api/comfyui/style-transfer"):
+            out = guest_body("POST", path, json.dumps({"prompt": "a fox", "filename": "../x"}).encode())
+            self.assertEqual(json.loads(out), {"prompt": "a fox"})
+
+    def test_other_bodies_pass_unchanged(self):
+        raw = b'{"prompt": "a fox", "filename": "keep"}'
+        self.assertIs(guest_body("POST", "/v1/images/generations", raw), raw)
+        self.assertIsNone(guest_body("POST", "/api/comfyui/generate", None))
+        self.assertEqual(guest_body("POST", "/api/comfyui/generate", b"not json"), b"not json")   # the gateway refuses it
+
+
+class TestGuestVoices(unittest.TestCase):
+    """2026-11-27: the server's voices/ folder holds recordings of real people -- guests neither clone them
+    (ref_voice_path) nor transcribe from there (audio_path; the gateway writes the transcript next to the clip)."""
+
+    def test_server_clips_are_dropped_for_guests(self):
+        import json
+        out = json.loads(guest_body("POST", "/api/tts/generate", json.dumps(
+            {"text": "Hallo", "ref_voice_path": "/srv/voices/Someone.wav", "voice": "synthetic:warm-narrator"}).encode()))
+        self.assertEqual(out, {"text": "Hallo", "voice": "synthetic:warm-narrator"})
+        out = json.loads(guest_body("POST", "/api/stt/transcribe", json.dumps(
+            {"engine": "whisperx", "audio_path": "/srv/voices/Someone.wav"}).encode()))
+        self.assertEqual(out, {"engine": "whisperx"})
+
+    def test_uploads_pass(self):
+        raw = b'{"engine": "whisperx", "audio_base64": "AAAA"}'
+        self.assertIs(guest_body("POST", "/api/stt/transcribe", raw), raw)

@@ -60,7 +60,8 @@ _GPU_ID_DESC = (
     "regardless of its current load; the other GPU's instance stays idle. Set this "
     "explicitly to target a specific GPU's instance. If no instance is running yet, "
     "leaving this unset auto-picks the GPU with the most free VRAM. A GPU is its number or, "
-    "optionally, its UUID (GET /api/gpu/status lists both)."
+    "optionally, its UUID (GET /api/gpu/status lists both). \"all\": spread the model over every GPU "
+    "(for a model no single card holds; each card's share reserved with the GPU manager; never done unasked)."
 )
 
 

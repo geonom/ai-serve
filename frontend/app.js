@@ -493,7 +493,7 @@ UI.startBtn.addEventListener('click', async () => {
             ctx_size: parseInt(UI.ctxSize.value),
             threads: parseInt(UI.threads.value),
             n_gpu_layers: parseInt(UI.gpuLayers.value),
-            gpu_id: UI.gpuSelect.value !== "" ? parseInt(UI.gpuSelect.value) : 0
+            gpu_id: UI.gpuSelect.value === "all" ? "all" : (UI.gpuSelect.value !== "" ? parseInt(UI.gpuSelect.value) : 0)
         };
         if (UI.enableVision.checked && UI.mmprojSelect.value) {
             payload.mmproj_path = UI.mmprojSelect.value;
@@ -651,7 +651,9 @@ function renderGPUContainer(gpus) {
     const prevSmoketestGpuVal = UI.smoketestGpuSelect.value;
     const prevComfyuiGpuVal = UI.comfyuiGpuSelect.value;
 
-    UI.gpuSelect.innerHTML = `<option value="">Auto (All)</option>${optionsHtml}`;
+    // "all": one model spread over every card (gpu_id "all", backend/gpu_split.py) -- for a model no single card holds
+    const spreadHtml = gpus.length > 1 ? `<option value="all">${tx('All GPUs together (one model spread over them)')}</option>` : '';
+    UI.gpuSelect.innerHTML = `<option value="">Auto (All)</option>${optionsHtml}${spreadHtml}`;
     UI.smoketestGpuSelect.innerHTML = optionsHtml;
     UI.comfyuiGpuSelect.innerHTML = `<option value="">Auto (All)</option>${optionsHtml}`;
 
@@ -682,7 +684,7 @@ function renderInstancesList(instances) {
                 <div class="details">
                     ${inst.port !== null && inst.port !== undefined ? `<div>Port: <span class="badge-port">${inst.port}</span></div>` : ''}
                     <div>PID: ${inst.pid || '-'}</div>
-                    <div>GPU layers: ${inst.n_gpu_layers} (GPU: ${inst.gpu_id !== null ? inst.gpu_id : 'Auto'})</div>
+                    <div>GPU layers: ${inst.n_gpu_layers} (GPU: ${inst.gpu_ids && inst.gpu_ids.length > 1 ? inst.gpu_ids.join(' + ') : (inst.gpu_id !== null ? inst.gpu_id : 'Auto')})</div>
                     ${inst.ctx_size ? `<div>Context: ${inst.ctx_size.toLocaleString()} tokens</div>` : ''}
                     ${inst.reranking ? '<div>Mode: <span class="badge badge-primary" style="font-size:0.7rem; padding:0.1rem 0.3rem;">Reranking</span></div>' : (inst.embedding ? '<div>Mode: <span class="badge badge-primary" style="font-size:0.7rem; padding:0.1rem 0.3rem;">Embedding</span></div>' : '')}
                     ${inst.mtp_active ? '<div>Speculative: <span class="badge badge-primary" style="font-size:0.7rem; padding:0.1rem 0.3rem;">MTP</span></div>' : ''}

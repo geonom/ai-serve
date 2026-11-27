@@ -427,3 +427,16 @@ def test_unified_memory_skips_gone_and_tiny_processes():
     cons = [Consumer("a", "llm", "a", {1, 2}), Consumer("b", "llm", "b", {3})]
     procs = unified_procs(cons, lambda pid: [], {1: 900, 2: None, 3: 12}.get)
     assert procs == [(1, 0, 900)]          # 2 is gone (None), 3 is below the noise floor
+
+
+def test_one_process_on_two_cards_learns_each_cards_own_peak():
+    """2026-11-27, live (gpu_id "all"): one llama-server held 20924 MB on the 3090 and 7466 MB on the 4060 Ti; the
+    3090's figure was written into the 4060 Ti's reservation too, which then learned a need no 16 GB card can give."""
+    rs = Reservations(hold_s=5, bound_max_s=120)
+    a = rs.add(0, 22000, "llm:big@4096+split", now=0)
+    b = rs.add(1, 8000, "llm:big@4096+split", now=0)
+    rs.confirm(a.id, 77, now=1)
+    rs.confirm(b.id, 77, now=1)
+    assert rs.outstanding(0, 2, {77}, {77: 20924}) == 22000 - 20924
+    assert rs.outstanding(1, 2, {77}, {77: 7466}) == 8000 - 7466
+    assert (a.peak_mb, b.peak_mb) == (20924, 7466)

@@ -16,7 +16,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 import psutil
 from fastapi import HTTPException
-from backend.gpu_ids import from_visible_devices, visible_devices
+from backend import gpu_split
+from backend.gpu_ids import ALL_GPUS, from_visible_devices, visible_devices, visible_devices_list
 from backend.header_cache import HeaderCache
 from backend.procs import processes
 
@@ -829,6 +830,26 @@ async def _reserve_for_load(gpu_id: Optional[int], preferred: int, need_mb: int,
         return None, ""
 
 
+async def _reserve_split(need_mb: int, purpose: str):
+    """`gpu_id: "all"`: reserve each card's share (gpu_split.shares over what the cards can give) with the GPU
+    manager, the leading card first; all or nothing. Returns (reservations, share, reason)."""
+    from backend.cluster.local import MANAGER
+    caps = gpu_split.capacities(await MANAGER.view())
+    share = gpu_split.shares(need_mb, caps)
+    if share is None:
+        can = ", ".join(f"GPU {g} {mb}MB" for g, mb in sorted(caps.items())) or "no GPUs"
+        return [], {}, f"together the GPUs can give {can} (busy, pinned and other programs' memory stays)"
+    got = []
+    for g in gpu_split.order(share):
+        res, _, reason = await MANAGER.reserve(g, share[g], f"{purpose}+split")
+        if res is None:
+            for r in got:
+                MANAGER.release(r.id)
+            return [], {}, f"GPU {g} ({share[g]}MB): {reason}"
+        got.append(res)
+    return got, share, ""
+
+
 async def stop_server_by_port(port: int):
     info = state.managed_processes.get(port)
     if info is not None:
@@ -1048,9 +1069,13 @@ def scan_existing_llama_servers():
             # made every already-adopted instance permanently unmatchable by any request
             # that specified gpu_id explicitly -- spawning a brand new, redundant
             # instance on the same physical GPU instead of reusing the adopted one.
+            gpu_ids_spread = None
             try:
                 gpu_id_env = proc.environ().get("CUDA_VISIBLE_DEVICES")
                 gpu_id = from_visible_devices(gpu_id_env)   # a number, or the UUID we pin with now
+                spread = gpu_split.devices_of(gpu_id_env) if gpu_id is None else []
+                if len(spread) > 1:                          # spread over several cards (gpu_id "all")
+                    gpu_id, gpu_ids_spread = spread[0], spread
             except Exception:
                 gpu_id = None
 
@@ -1116,6 +1141,7 @@ def scan_existing_llama_servers():
                     "ctx_size": ctx_size,
                     "n_gpu_layers": n_gpu_layers,
                     "gpu_id": gpu_id,
+                    "gpu_ids": gpu_ids_spread,
                     "keep_alive": 300,
                     "keep_alive_task": None,
                     "last_used": time.time(),
@@ -1214,7 +1240,7 @@ async def _load_locked(
 
     for port, info in list(state.managed_processes.items()):
         if os.path.abspath(info["model"]) == os.path.abspath(model_path):
-            if gpu_id is None or info.get("gpu_id") == gpu_id:
+            if gpu_split.serves(gpu_id, info):   # a number: on that card alone; "all": a spread instance
                 proc = info.get("process")
                 if proc and proc.poll() is None:
                     existing_ctx = info.get("ctx_size") or 0
@@ -1259,8 +1285,11 @@ async def _load_locked(
     if draft_model_path:
         check_model_file_exists(draft_model_path, "MTP draft model file")
 
-    target_gpu_id = gpu_id
-    if target_gpu_id is None:
+    split = gpu_id == ALL_GPUS
+    if split and sys.platform == "darwin":
+        raise HTTPException(status_code=400, detail='gpu_id "all" needs NVIDIA GPUs; this machine has one GPU')
+    target_gpu_id = None if split else gpu_id
+    if target_gpu_id is None and not split:
         try:
             status = await fetch_gpu_status()
             if status.get("gpus"):
@@ -1271,10 +1300,21 @@ async def _load_locked(
             target_gpu_id = 0
 
     model_size_mb = get_model_size_mb(model_path)
-    free_vram = await get_free_vram_for_gpu(target_gpu_id)
+    free_vram = 0 if split else await get_free_vram_for_gpu(target_gpu_id)
 
     reservation = None
-    if sys.platform != "darwin" and model_size_mb > 0:
+    reservations: List[Any] = []     # every card's share when spread (gpu_split.py)
+    split_devices: List[int] = []
+    split_share: Dict[int, int] = {}
+    if split:
+        need = (model_size_mb or 0) + estimate_kv_overhead_mb(ctx_size)
+        reservations, split_share, why = await _reserve_split(int(need), f"llm:{os.path.basename(model_path)}@{ctx_size}")
+        if not reservations:
+            raise HTTPException(status_code=507, detail=f"No room to spread {os.path.basename(model_path)} over the "
+                                                        f"GPUs (need {need:.0f}MB): {why}")
+        split_devices = gpu_split.order(split_share)
+        target_gpu_id = split_devices[0]
+    elif sys.platform != "darwin" and model_size_mb > 0:
         required_free = model_size_mb + estimate_kv_overhead_mb(ctx_size)
         # Central GPU manager (backend/cluster/local.py): every load reserves its
         # memory -- unloading idle consumers of any kind (other LLMs, ComfyUI, TTS
@@ -1286,6 +1326,7 @@ async def _load_locked(
                                                    f"{os.path.basename(model_path)}@{ctx_size}")
         if reservation is not None:
             target_gpu_id = reservation.gpu
+            reservations = [reservation]
         # refused by the manager (even if measured room exists: it may be promised to
         # a load in progress), or the manager is unusable and measured room is short
         if reservation is None and (why or free_vram < required_free):
@@ -1340,7 +1381,10 @@ async def _load_locked(
 
     port = await reserve_free_port()
     env = llama_env()
-    if target_gpu_id is not None and sys.platform != "darwin":
+    if split_devices:
+        env["CUDA_VISIBLE_DEVICES"] = visible_devices_list(split_devices)   # in order: CUDA's device 0 leads
+        logger.info(f"CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']} (GPUs {split_devices}) for port {port}")
+    elif target_gpu_id is not None and sys.platform != "darwin":
         env["CUDA_VISIBLE_DEVICES"] = visible_devices(target_gpu_id)   # the UUID: the same card in CUDA's order
         logger.info(f"CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']} (GPU {target_gpu_id}) for port {port}")
 
@@ -1381,6 +1425,8 @@ async def _load_locked(
     if (get_model_traits(model_path) or {}).get("kind") == "decision":
         cmd.extend(["-b", str(DECISION_BATCH), "-ub", str(DECISION_BATCH)])
     cmd.extend(speech_flags(get_model_traits(model_path)))
+    if split_devices:
+        cmd.extend(gpu_split.flags(split_share, split_devices))
 
     try:
         log_file_path = os.path.join(LOGS_DIR, f"llama-server-{port}.log")
@@ -1388,9 +1434,10 @@ async def _load_locked(
         proc = subprocess.Popen(
             cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True
         )
-        if reservation is not None:
+        if reservations:
             from backend.cluster.local import MANAGER
-            MANAGER.confirm(reservation.id, proc.pid)  # now bound to this process
+            for r in reservations:
+                MANAGER.confirm(r.id, proc.pid)  # now bound to this process (on each card it uses)
         remember_origin(proc.pid, "gateway")
         state.managed_processes[port] = {
             "process": proc,
@@ -1401,6 +1448,7 @@ async def _load_locked(
             "threads": threads,
             "n_gpu_layers": n_gpu_layers,
             "gpu_id": target_gpu_id,
+            "gpu_ids": split_devices or None,   # spread over these cards (gpu_split.py); the first leads
             "last_used": time.time(),
             "active_requests": 0,
             "origin": "gateway",
@@ -1454,17 +1502,21 @@ async def _load_locked(
 
         logger.info(f"Server ready on port {port} after {elapsed}s.")
         from backend import events
-        if target_gpu_id is not None:
+        if split_devices:
+            events.record("model", "{model} loaded on GPUs {gpu} ({s} s)", model=os.path.basename(model_path),
+                          gpu=" + ".join(str(g) for g in split_devices), s=elapsed)
+        elif target_gpu_id is not None:
             events.record("model", "{model} loaded on GPU {gpu} ({s} s)", model=os.path.basename(model_path),
                           gpu=target_gpu_id, s=elapsed)
         else:
             events.record("model", "{model} loaded ({s} s)", model=os.path.basename(model_path), s=elapsed)
         state.managed_processes[port]["loading"] = False
-        if reservation is not None:
+        if reservations:
             # loaded: from now on its real, measured usage counts -- not the estimate
             # (the KV estimate is generous; a lingering reservation would block room)
             from backend.cluster.local import MANAGER
-            MANAGER.release(reservation.id)
+            for r in reservations:
+                MANAGER.release(r.id)
 
         reset_keep_alive(port, keep_alive)
         return port
@@ -1472,9 +1524,10 @@ async def _load_locked(
     except HTTPException:
         raise   # already says what went wrong, with its own status (a stalled disk is a 503)
     except Exception as e:
-        if reservation is not None and reservation.pid is None:
-            from backend.cluster.local import MANAGER
-            MANAGER.release(reservation.id)  # Popen never ran -- give the room back now
+        from backend.cluster.local import MANAGER
+        for r in reservations:
+            if r.pid is None:
+                MANAGER.release(r.id)  # Popen never ran -- give the room back now
         # If we never got past reserving the port (e.g. Popen itself raised),
         # state.managed_processes still holds the reservation placeholder --
         # drop it so the port doesn't look permanently occupied.

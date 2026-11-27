@@ -283,15 +283,17 @@ class Reservations:
                                         (not r.exclusive and now - (r.confirmed_at or now) > self.bound_max_s)):
                 self._end(rid)
 
-    def observe(self, measured: Mapping[int, int]) -> None:
-        """Remember how far each bound process has grown past its baseline."""
+    def observe(self, measured: Mapping[int, int], gpu: Optional[int] = None) -> None:
+        """Remember how far each bound process has grown past its baseline. `measured` is one card's figures (`gpu`):
+        a process spread over several cards (gpu_id "all") has one reservation per card, and each learns only its own
+        card's (2026-11-27: the 3090's 20.9 GB landed in the 4060 Ti's reservation too)."""
         for r in self._items.values():
-            if r.pid is not None and r.pid in measured:
+            if r.pid is not None and r.pid in measured and (gpu is None or r.gpu == gpu):
                 r.peak_mb = max(r.peak_mb, int(measured[r.pid]) - r.baseline_mb)
 
     def outstanding(self, gpu: int, now: float, alive: Set[int], measured: Mapping[int, int]) -> int:
         """measured: MiB allocated per PID (the reserving process's own, incl. what it held before confirming)."""
-        self.observe(measured)
+        self.observe(measured, gpu)
         self.prune(now, alive)
         total = 0
         for r in self._items.values():

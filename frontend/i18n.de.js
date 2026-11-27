@@ -179,6 +179,7 @@ I18N.add({
     "loaded": "geladen",
     "Loaded": "Geladen",
     "loaded · GPU {gpu}": "geladen · GPU {gpu}",
+    "All GPUs together (one model spread over them)": "Alle GPUs zusammen (ein Modell über alle verteilt)",
     "loading": "lädt",
     "loading (4–10 min)": "lädt (4–10 min)",
     "Loading…": "Lade…",

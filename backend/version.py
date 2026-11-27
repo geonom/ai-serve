@@ -11,9 +11,19 @@ Do NOT bump for UI-only, ComfyUI, documentation, or other changes that
 don't touch the llama.cpp/model-serving path.
 """
 
-BACKEND_VERSION = 21
+BACKEND_VERSION = 22
 
 VERSION_LOG = [
+    {
+        "version": 22,
+        "date": "2026-11-27",
+        "change": (
+            'gpu_id "all" (gateway and /api/start): one model spread over every GPU with llama.cpp\'s layer split '
+            "(--split-mode layer --tensor-split by what each card can give, the card giving most leads), each card's "
+            "share reserved with the GPU manager and bound to the one process; only when asked. A model used in the "
+            "last 20 s (was 60) counts as busy for the GPU manager."
+        ),
+    },
     {
         "version": 21,
         "date": "2026-11-03",

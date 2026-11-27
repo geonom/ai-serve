@@ -17,7 +17,7 @@ import psutil
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.gpu_ids import GpuRef, visible_devices
+from backend.gpu_ids import ALL_GPUS, GpuRef, visible_devices
 
 from backend.config import DEFAULT_PARALLEL, LLAMA_SERVER_BIN, LLAMA_TOKENIZE_BIN, LOGS_DIR, MODEL_DIRS
 from backend.model_manager import (
@@ -97,7 +97,9 @@ class StartRequest(BaseModel):
     gpu_id: GpuRef = Field(
         None,
         description="GPU to pin this instance to (its number, or optionally its UUID). "
-                     "If omitted, the GPU with the most free VRAM is picked automatically.",
+                     "If omitted, the GPU with the most free VRAM is picked automatically. "
+                     '"all": spread the model over every GPU (llama.cpp layer split, shared by what each card can '
+                     "give; for a model no single card holds).",
     )
     mmproj_path: Optional[str] = Field(
         None,
@@ -208,6 +210,7 @@ class InstanceStatus(BaseModel):
     health: Dict[str, Any]
     n_gpu_layers: int
     gpu_id: Optional[int]
+    gpu_ids: Optional[List[int]] = None   # spread over these cards (gpu_id "all"); gpu_id is the leading one
     ctx_size: Optional[int] = None
     embedding: Optional[bool] = None
     reranking: Optional[bool] = None
@@ -252,6 +255,7 @@ class ActiveModelInfo(BaseModel):
     port: int
     model: str
     gpu_id: Optional[int]
+    gpu_ids: Optional[List[int]] = None
     active_requests: int
     last_used: float
     keep_alive: int
@@ -478,8 +482,14 @@ async def start_server(req: StartRequest):
         embedding = False
         reranking = False
 
-    target_gpu_id = req.gpu_id
-    if target_gpu_id is None and sys.platform != "darwin":
+    split = req.gpu_id == ALL_GPUS        # spread over every GPU (backend/gpu_split.py)
+    if split and sys.platform == "darwin":
+        raise HTTPException(status_code=400, detail='gpu_id "all" needs NVIDIA GPUs; this machine has one GPU')
+    split_devices: List[int] = []
+    split_share: Dict[int, int] = {}
+    reservations: List[Any] = []
+    target_gpu_id = None if split else req.gpu_id
+    if target_gpu_id is None and not split and sys.platform != "darwin":
         try:
             gpu_status = await fetch_gpu_status()
             if gpu_status.get("gpus"):
@@ -493,7 +503,29 @@ async def start_server(req: StartRequest):
     # no otherwise -- callers retry). 507 while a gpu-exclusive plugin holds the GPUs. ignore_strata
     # keeps its old meaning: skip the check entirely (escape hatch).
     reservation = None
-    if not req.ignore_strata and sys.platform != "darwin" and target_gpu_id is not None:
+    if split and not req.ignore_strata:
+        from backend.gpu_share import start_need
+        from backend.model_manager import _reserve_split
+        need, purpose = start_need(req.model_path, req.ctx_size, req.n_gpu_layers, req.n_cpu_moe)
+        try:
+            reservations, split_share, why = await _reserve_split(need, purpose)
+        except HTTPException:
+            if state.managed_processes.get(port, {}).get("reserving"):
+                state.managed_processes.pop(port, None)
+            raise
+        if not reservations:
+            if state.managed_processes.get(port, {}).get("reserving"):
+                state.managed_processes.pop(port, None)
+            raise HTTPException(status_code=507, detail=f"No room to spread {os.path.basename(req.model_path)} "
+                                                        f"over the GPUs: {why}")
+    if split:
+        from backend import gpu_split
+        if not split_share:   # ignore_strata: no manager, shared by measured free memory
+            gpus = (await fetch_gpu_status()).get("gpus", [])
+            split_share = {g["index"]: int(g["free"]) for g in gpus}
+        split_devices = gpu_split.order(split_share)
+        target_gpu_id = split_devices[0]
+    elif not req.ignore_strata and sys.platform != "darwin" and target_gpu_id is not None:
         from backend.cluster.local import MANAGER
         from backend.gpu_share import start_need
         need, purpose = start_need(req.model_path, req.ctx_size, req.n_gpu_layers, req.n_cpu_moe)
@@ -510,8 +542,12 @@ async def start_server(req: StartRequest):
 
     from backend.model_manager import llama_env
     env = llama_env()
-    if target_gpu_id is not None and sys.platform != "darwin":
-        # Always pin to a single GPU: leaving CUDA_VISIBLE_DEVICES unset lets llama.cpp
+    if split_devices:
+        from backend.gpu_ids import visible_devices_list
+        env["CUDA_VISIBLE_DEVICES"] = visible_devices_list(split_devices)   # in order: CUDA's device 0 leads
+        logger.info(f"CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']} (GPUs {split_devices}) for port {port}")
+    elif target_gpu_id is not None and sys.platform != "darwin":
+        # Pin to a single GPU unless "all" was asked: leaving CUDA_VISIBLE_DEVICES unset lets llama.cpp
         # see every GPU and auto tensor-split -ngl -1 across all of them, which is a
         # known slow/hanging failure mode for some models rather than a hard OOM.
         env["CUDA_VISIBLE_DEVICES"] = visible_devices(target_gpu_id)   # the UUID: the same card in CUDA's order
@@ -551,6 +587,9 @@ async def start_server(req: StartRequest):
     elif bundled_mtp:
         cmd.extend(["--spec-type", "draft-mtp"])
         logger.info(f"Enabling MTP speculative decoding using bundled nextn tensors in: {req.model_path}")
+    if split_devices:
+        from backend import gpu_split
+        cmd.extend(gpu_split.flags(split_share, split_devices))
 
     try:
         log_file_path = os.path.join(LOGS_DIR, f"llama-server-{port}.log")
@@ -559,8 +598,11 @@ async def start_server(req: StartRequest):
             cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True
         )
         if reservation is not None:
+            reservations = [reservation]
+        if reservations:
             from backend.cluster.local import MANAGER
-            MANAGER.confirm(reservation.id, proc.pid)  # counts until it has allocated, or exits
+            for r in reservations:
+                MANAGER.confirm(r.id, proc.pid)  # counts until it has allocated, or exits (on each card)
         from backend.model_manager import remember_origin
         remember_origin(proc.pid, "api_start")   # adoption after a restart keeps it an api_start instance
         state.managed_processes[port] = {
@@ -573,6 +615,7 @@ async def start_server(req: StartRequest):
             "n_gpu_layers": req.n_gpu_layers,
             "n_cpu_moe": req.n_cpu_moe,
             "gpu_id": target_gpu_id,
+            "gpu_ids": split_devices or None,   # spread over these cards; the first leads
             "embedding": embedding,
             "reranking": reranking,
             "pooling": req.pooling,
@@ -783,6 +826,7 @@ async def get_status():
             "health": health_details,
             "n_gpu_layers": info.get("n_gpu_layers", -1),
             "gpu_id": info.get("gpu_id"),
+            "gpu_ids": info.get("gpu_ids"),   # spread over these cards (gpu_id "all")
             "ctx_size": info.get("ctx_size"),
             "embedding": info.get("embedding", False),
             "reranking": info.get("reranking", False),
@@ -900,6 +944,7 @@ async def get_active_models():
                 "port": port,
                 "model": info["model"],
                 "gpu_id": info.get("gpu_id"),
+                "gpu_ids": info.get("gpu_ids"),   # spread over these cards (gpu_id "all")
                 "active_requests": info.get("active_requests", 0),
                 "last_used": info.get("last_used", 0.0),
                 "keep_alive": ka,
@@ -953,7 +998,7 @@ async def unload_model(req: UnloadModelRequest):
 async def unload_all_models(gpu_id: Optional[int] = None, force: bool = False):
     candidates = [
         (port, info) for port, info in state.managed_processes.items()
-        if gpu_id is None or info.get("gpu_id") == gpu_id
+        if gpu_id is None or gpu_id in (info.get("gpu_ids") or [info.get("gpu_id")])
     ]
     unloaded_ports = []
     skipped_busy = []

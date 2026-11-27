@@ -54,6 +54,10 @@ concurrent callers that both default to the same port silently killing each othe
 }
 ```
 
+`gpu_id` is a GPU's number or UUID, or `"all"`: the model is spread over every GPU (llama.cpp layer split, shared
+by what each card can give -- for a model no single card holds; each card's share is reserved with the GPU manager,
+**507** naming the card when one can't give its share). The same `"all"` works on the gateway's `/v1` calls.
+
 **Example:**
 ```bash
 curl -X POST http://localhost:8030/api/start \

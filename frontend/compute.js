@@ -218,7 +218,8 @@ async function renderComputeModels() {
     const running = new Map();
     for (const i of (computeStatus && computeStatus.instances) || []) {
         if (i.port === 8189 || !i.model) continue;
-        running.set(base(i.model_path || i.model), i.gpu_id !== null && i.gpu_id !== undefined ? tx('loaded · GPU {gpu}', { gpu: i.gpu_id }) : tx('loaded'));
+        const where = i.gpu_ids && i.gpu_ids.length > 1 ? i.gpu_ids.join(' + ') : i.gpu_id;   // spread: "0 + 1"
+        running.set(base(i.model_path || i.model), where !== null && where !== undefined ? tx('loaded · GPU {gpu}', { gpu: where }) : tx('loaded'));
     }
     const byName = new Map();
     for (const m of computeLocalModels) byName.set(m.name, { ...m, on: ['local'] });

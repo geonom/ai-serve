@@ -528,7 +528,7 @@ class LocalGpuManager:
         if r is not None and r.pid is not None:
             try:
                 await self.snapshot()
-                self.reservations.observe(self._measured(r.gpu, {r.pid}))
+                self.reservations.observe(self._measured(r.gpu, {r.pid}), r.gpu)
             except Exception as e:
                 logger.debug(f"GPU manager: no measurement before releasing {reservation_id}: {e}")
         self.release(reservation_id)

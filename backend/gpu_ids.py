@@ -90,10 +90,21 @@ def from_visible_devices(value: Optional[str], gpus: Optional[Dict[int, str]] = 
         return None
 
 
+def visible_devices_list(indexes, gpus: Optional[Dict[int, str]] = None) -> str:
+    """CUDA_VISIBLE_DEVICES for a model spread over several GPUs, in the order given (CUDA's device 0 = the first)."""
+    return ",".join(visible_devices(i, gpus) for i in indexes)
+
+
+# `gpu_id: "all"` (2026-11-27): one model spread over every GPU, only when asked (backend/gpu_split.py)
+ALL_GPUS = -1
+
+
 def _number(v):
+    if isinstance(v, str) and v.strip().lower() == "all":
+        return ALL_GPUS
     return None if v is None else resolve(v)
 
 
-# A request field naming a GPU: a number, or optionally a UUID (resolved to today's number while the request is read;
-# an unknown one is a 422 that lists this machine's GPUs)
+# A request field naming a GPU: a number, optionally a UUID (resolved to today's number while the request is read;
+# an unknown one is a 422 that lists this machine's GPUs), or "all" (ALL_GPUS: spread over every GPU)
 GpuRef = Annotated[Optional[int], BeforeValidator(_number)]
